@@ -66,10 +66,11 @@ function showQuickPrompt(point=state.lastCanvasPointer){
 }
 function setSourcePreview(id,source){const img=$(id);if(!img||!source)return;img.src=source.toDataURL('image/jpeg',.75);img.classList.remove('hidden')}
 function updateSourceActions(){
-  const baseOnly=Boolean(state.reference&&!state.master);
-  $('generateMasterBtn').classList.toggle('hidden',!baseOnly);
-  $('welcomeBasePromptForm').classList.toggle('hidden',!baseOnly);
-  $('welcomeContinueBtn').classList.toggle('hidden',!baseOnly);
+  const firstImageOnly=Boolean(state.reference&&!state.master);
+  const needsRealMaster=Boolean(state.reference&&(!state.master||state.masterIsBase));
+  $('generateMasterBtn').classList.toggle('hidden',!needsRealMaster);
+  $('welcomeBasePromptForm').classList.toggle('hidden',!firstImageOnly);
+  $('welcomeContinueBtn').classList.toggle('hidden',!firstImageOnly);
   $('editBaseBtn').classList.toggle('hidden',!state.reference);
   $('editMasterBtn').classList.toggle('hidden',!state.master);
   $('editPendingBtn').disabled=!state.pendingSourceId;
