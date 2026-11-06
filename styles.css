@@ -126,3 +126,18 @@
 #premiumStatusBtn.premium-active{color:#b4a5ff}
 #regionGuidesBtn[aria-pressed="true"]{color:#c3b6ff;background:rgba(152,121,240,.12)}
 #premiumLoginDialog .dialog-actions{flex-wrap:wrap}
+
+/* V0.3 – outside-image lasso drafts and contextual Magic Wand */
+.canvas-wrap .selection-draft{position:absolute;inset:0;width:100%;height:100%;overflow:visible;pointer-events:none;z-index:3}
+.canvas-wrap .selection-draft path{stroke-linecap:round}
+.canvas-viewport.is-selecting{touch-action:none}
+.canvas-viewport.is-selecting,.canvas-wrap #overlayCanvas{cursor:default}
+.canvas-viewport:not(.is-selecting){cursor:default}
+.canvas-viewport .canvas-wrap.pan #overlayCanvas,.canvas-viewport:has(.canvas-wrap.pan){cursor:grab}
+.canvas-viewport:has(.canvas-wrap.pan:active){cursor:grabbing}
+.canvas-wrap.brush #overlayCanvas,.canvas-wrap.eraser #overlayCanvas{cursor:crosshair}
+.canvas-wrap.transform #overlayCanvas{cursor:move}
+.wand-options{display:flex;align-items:center;gap:7px;color:#c4c5d1;font-size:11px;white-space:nowrap;flex:none}
+.wand-options input{width:76px;accent-color:#a5a3ff}
+.wand-options output{min-width:19px;font-variant-numeric:tabular-nums}
+@media(max-width:730px){.wand-options{gap:3px}.wand-options input{width:52px}}
