@@ -201,3 +201,22 @@
  .toolbar-utility{display:none}
  .canvas-foot{padding:0 10px}
 }
+
+/* Final fit / usability refinements */
+@media(min-width:731px){
+  #quickMasterBtn,#quickRevitBtn,.premium-pill,.local-tag{display:none}
+  .workspace{grid-template-columns:250px minmax(360px,1fr) 248px}
+  .workspace.inspector-collapsed{grid-template-columns:250px minmax(360px,1fr) 44px}
+  .canvas-viewport{padding:54px}
+}
+@media(max-width:1120px) and (min-width:731px){
+  .workspace{grid-template-columns:226px minmax(360px,1fr)}
+  .workspace.inspector-collapsed{grid-template-columns:226px minmax(360px,1fr)}
+}
+@media(max-width:730px){
+  .canvas-viewport{padding:30px}
+}
+.canvas-viewport:has(.canvas-wrap.pan){touch-action:none}
+.workflow-steps{margin:8px 0 5px;padding-left:21px;display:flex;flex-direction:column;gap:10px;color:#9ba0b0;font-size:11px;line-height:1.55}
+.workflow-steps li::marker{color:#9d91ec;font-weight:800}
+.workflow-steps strong{color:#d7d1fd}
