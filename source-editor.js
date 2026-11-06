@@ -18,15 +18,20 @@ function syncControls(){
   $('sourceEditOpacity').value=Math.round(t.opacity*100);
   $('sourceEditOpacityValue').textContent=Math.round(t.opacity*100)+'%';
 }
+function fittedDimensions(image){
+  const fit=Math.min(canvas.width/image.width,canvas.height/image.height);
+  return {w:image.width*fit,h:image.height*fit};
+}
 function drawTransformed(target,image,t,opacity=1){
+  const {w,h}=fittedDimensions(image);
   target.save();target.translate(canvas.width/2+t.x,canvas.height/2+t.y);
   target.rotate(t.rotation*Math.PI/180);target.scale(t.scale,t.scale);
   target.globalAlpha=opacity;
-  target.drawImage(image,-canvas.width/2,-canvas.height/2,canvas.width,canvas.height);
+  target.drawImage(image,-w/2,-h/2,w,h);
   target.restore();
 }
 function corners(){
-  const t=editing.transform,w=canvas.width/2*t.scale,h=canvas.height/2*t.scale;
+  const t=editing.transform,fit=fittedDimensions(editing.image),w=fit.w/2*t.scale,h=fit.h/2*t.scale;
   const radians=t.rotation*Math.PI/180,c=Math.cos(radians),s=Math.sin(radians);
   const center={x:canvas.width/2+t.x,y:canvas.height/2+t.y};
   return [[-w,-h],[w,-h],[w,h],[-w,h]].map(([x,y])=>({x:center.x+c*x-s*y,y:center.y+s*x+c*y}));
@@ -36,7 +41,8 @@ function imageAt(point){
   const dx=point.x-cx,dy=point.y-cy,r=-t.rotation*Math.PI/180;
   const x=(dx*Math.cos(r)-dy*Math.sin(r))/t.scale;
   const y=(dx*Math.sin(r)+dy*Math.cos(r))/t.scale;
-  return Math.abs(x)<=canvas.width/2&&Math.abs(y)<=canvas.height/2;
+  const fit=fittedDimensions(editing.image);
+  return Math.abs(x)<=fit.w/2&&Math.abs(y)<=fit.h/2;
 }
 function baseBackground(){
   ctx.clearRect(0,0,canvas.width,canvas.height);
@@ -44,7 +50,7 @@ function baseBackground(){
     ctx.drawImage(state.master,0,0,canvas.width,canvas.height);return;
   }
   if(editing.kind==='master'&&state.reference){
-    ctx.drawImage(state.reference,0,0,canvas.width,canvas.height);return;
+    drawTransformed(ctx,state.reference,{x:0,y:0,scale:1,rotation:0},1);return;
   }
   if(editing.kind==='source'){
     if(state.master)ctx.drawImage(state.master,0,0);
