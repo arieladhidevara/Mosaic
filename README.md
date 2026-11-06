@@ -53,9 +53,9 @@ Premium is a private, **single-account** feature (no public signup or billing). 
 
 1. Upload **Base**. Enter the first prompt below the Base card, with up to three optional visual reference images; Generate creates the first Master as a separate image. Alternatively upload Master manually. Base remains the camera/geometry reference.
 2. Draw a Lasso, Rectangle or Oval selection, click **Area**, and enter the instruction for that region. Each requested area receives a new colored contour and numbered label. Multiple areas can have different prompts.
-3. The browser sends the current accepted collage, original Base, exact *transparent edit mask*, a separate colored annotation image, and all active region comments to an authenticated Vercel function. The function sends them to OpenAI Images Edit using `gpt-image-2.5-sunburst`.
-4. The full-frame AI output is stored as the result of the corresponding region. **The original user mask is still used for pixel compositing**, so output outside that region is ignored. If a request fails, use the region's **Generate** button to retry or **Add result** to attach an external result.
-5. Click **Harmonize** to generate the new Master. The Regions panel retains the original Master, all material alternatives and Master 2/3/etc. versions within their respective Regions, newest first. Previous editable snapshots remain in memory for branching.
+3. **AI Edit** crops the selected mask's bounding box plus about 30% of its dimensions (minimum 72px on each side) for context. It sends only those aligned crops of the current collage and Base, together with the local mask, colored guide and prompt notes. The OpenAI Image Edit request uses **medium** quality and an output resolution proportional to this crop. It does **not** render the full architecture image for a local material variation.
+4. The returned **crop-only output** is resized to the original crop window and composited into the correct position on a transparent full-size working layer. The original selection mask limits the applied pixels; all pixels outside the selected area remain unchanged. Use **✦ Regen** on an option to retry or regenerate; this does not erase the approved option if generation fails.
+5. **Harmonize** sends the full approved collage and Base (no local crop) at **high** quality to produce a new full Master. The Groups panel retains prior alternatives, and Master 2/3/etc. appear in the Master Versions browser. Previous editable snapshots remain in memory for branching.
 
 API-generated images are not perfectly geometry-constrained; masking guarantees outside-region pixels are left untouched by regional edits, but a full-image Harmonize may still change geometry. Region guide overlays are only for reference and can be toggled off.
 
@@ -87,6 +87,13 @@ Click an existing region or variation in **Layers** to select it. Mosaic activat
 
 The original Base geometry is preserved separately from the working Master.
 
+## Portable project files (.mosaic)
+
+- Click **Save project** to download a versioned, lossless JSON-based `.mosaic` file. It includes Base, working Master, original uploads, source layers, Groups, Option names/prompts, saved selections, moved/skewed masks, current draft selection, Undo/Redo, queued image files, Master Versions and editable Harmonize history.
+- Click **Open project** to restore a previously saved file and resume editing. Imported images are decoded and validated before the current project is replaced. Files over **300 MB** are rejected; large multi-version projects may create correspondingly large files.
+- Save/Open is local and does not require an AI API request. **Premium passwords and OpenAI API keys are never written into project files**; the user signs in again to use AI.
+- Finished composite export remains separate from project save: use **Export package** for the approved flat images/ZIP, or **Save project** to continue editing later.
+
 ## UX notes (November 2026)
 
 The main toolbar is grouped into **Select**, **Edit / Move**, and **Selection Mode**, while the primary actions **AI Edit** and **Harmonize** remain at the right. Wand tolerance only appears while Wand is active; brush size only appears while Brush/Eraser is active. Manual **Apply** appears only for an imported variation or edited saved mask. A concise workflow appears in the right inspector, with the full AI prompt behind an expandable Advanced section. Selection cursors remain regular arrows; Pan has a grab cursor. The image is fitted with room around its edges so outside-image lasso outlines are visible. On small screens, selection tools scroll horizontally independently from the main AI buttons.
@@ -99,4 +106,4 @@ The main toolbar is grouped into **Select**, **Edit / Move**, and **Selection Mo
 - Group and option labels remain user-editable. Local parsing derives short material/color/lighting labels from prompts (e.g. \"Make it black\" -> \"Black\"). Premium optionally uses GPT-4.1 mini to infer a better 1–4 word option label. Manual names always take precedence.
 - Clicking a group heading reuses the **active option's displayed selection**, including its move/skew, on the current image. An imported variation still requires explicit Apply to commit that mask.
 - On desktop, hovering a recognized Region shows a category tooltip and subtle violet boundary. None of these guides enter exported images.
-- Region memory and names remain browser-local. Create new Regions with the header +; drag options between Regions on desktop, or use the transfer button on any option. Previous Harmonize variants retain their masks.
+- Groups and spatial memory remain browser-local. Click the **+ beside Groups** in the right sidebar to add a Group. The old right-side Guide was replaced by a **Help** dialog containing workflow instructions and the advanced harmonization prompt. Desktop drag/drop still moves options between Groups.
