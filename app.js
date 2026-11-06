@@ -50,7 +50,7 @@ function updateSourceActions(){
   const baseOnly=Boolean(state.reference&&state.master&&state.masterIsBase);
   $('generateMasterBtn').classList.toggle('hidden',!baseOnly);
   $('alignSourcesBtn').classList.toggle('hidden',!(state.rawBase&&state.rawMaster&&!state.masterIsBase));
-  $('alignSourcesBtn').disabled=Boolean(state.groups.length||state.pendingSourceId||state.editingPatchId);
+  $('alignSourcesBtn').disabled=Boolean(state.groups.length||state.pendingSourceId||state.editingPatchId||(window.MosaicPremium?.getMasterVersions?.().length||0)>1);
   $('alignSourcesBtn').title=$('alignSourcesBtn').disabled?'Align Base and Master before adding regions or pending variations.':'Drag Base or Master to align images.';
 }
 function resetSelection(){state.selectionMask=state.master?makeCanvas(canvas.width,canvas.height):null;state.boundaryCanvas=null;state.draftGroupId=null;state.pendingRevealOnly=false;hideQuickPrompt();clearDraft();updateApplyButton();clearHover()}
