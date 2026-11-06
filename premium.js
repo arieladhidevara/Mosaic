@@ -338,7 +338,7 @@ async function generateRegion(patchId){
       const existing=state.patches.get(patchId),source=state.sources.get(patch.sourceId);
       if(!existing||!source)return;
       source.canvas=image;source.name='AI region '+patch.regionNumber;
-      existing.awaitingResult=false;if(!existing.manualName)existing.name=core.optionNameFromPrompt(existing.prompt,'AI edit '+patch.regionNumber);
+      existing.awaitingResult=false;if(!existing.manualName&&!existing.semanticNamed)existing.name=core.optionNameFromPrompt(existing.prompt,'AI edit '+patch.regionNumber);
       existing.generating=false;
       state.selectedPatchId=patchId;core.selectTool('transform');renderGroups();render();
       message('Region '+patch.regionNumber+' ready. All pixels outside the saved mask are untouched.');
@@ -373,7 +373,7 @@ async function suggestSemanticName(patchId,prompt){
     if(!patch||patch.manualName||!result.name)return;
     const label=String(result.name).trim().slice(0,50);
     if(label&&label.split(/\s+/).length<=5&&!/^(?:make it|change it|apply it)\b/i.test(label)){
-      patch.name=label;renderGroups();
+      patch.name=label;patch.semanticNamed=true;renderGroups();
     }
   }catch(error){/* Local semantic naming remains active if the optional model is offline. */}
 }
@@ -430,7 +430,7 @@ async function attachAIResult(file) {
     source.canvas = c;
     source.name = file.name;
     patch.awaitingResult = false;
-    if(!patch.manualName)patch.name = core.optionNameFromPrompt(patch.prompt,file.name.replace(/\.[^.]+$/,''));
+    if(!patch.manualName&&!patch.semanticNamed)patch.name = core.optionNameFromPrompt(patch.prompt,file.name.replace(/\.[^.]+$/,''));
     const group = state.groups.find(g => g.patchIds.includes(patch.id));
     if (group) group.active = patch.id;
     state.selectedPatchId = patch.id;
