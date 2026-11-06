@@ -75,6 +75,26 @@ function handleGroupEvent(e){
   if(!group)return false;
   if(action){
     e.stopPropagation();
+    if(action.dataset.regionAction==='add-option'){
+      selectGroupMask(group);
+      if(window.MosaicAuth?.isReady()){
+        list.querySelectorAll('.region-option-prompt').forEach(el=>el.remove());
+        const field=document.createElement('form');field.className='region-option-prompt';
+        field.innerHTML='<input type="text" maxlength="250" aria-label="New material or edit prompt" placeholder="e.g. Black, Walnut, Terrazzo" required><button type="submit">✦ Generate</button>';
+        section.querySelector('.group-options').prepend(field);
+        field.addEventListener('click',event=>event.stopPropagation());
+        field.addEventListener('submit',event=>{
+          event.preventDefault();event.stopPropagation();
+          const prompt=field.querySelector('input').value.trim();
+          field.remove();if(prompt)window.MosaicPremium?.generateSelection?.(prompt,group.id);
+        });
+        field.querySelector('input').focus({preventScroll:true});
+      }else{
+        core.toast('Add a new image, then press Enter to keep this region.');
+        document.getElementById('variantInput').click();
+      }
+      return true;
+    }
     if(action.dataset.regionAction==='rename-group'){
       inlineRename(section.querySelector('.group-name'),group.name,name=>{group.name=name;group.manualName=true});return true;
     }
@@ -156,7 +176,19 @@ function onPointerMove(e){
     hovering=found.id;state.hoveredGroupId=found.id;
     ghost.width=canvas.width;ghost.height=canvas.height;
     ghostCtx.clearRect(0,0,ghost.width,ghost.height);
-    ghostCtx.save();ghostCtx.globalAlpha=.05;ghostCtx.drawImage(groupMask(found),0,0);ghostCtx.restore();
+    const mask=groupMask(found);
+    ghostCtx.save();ghostCtx.globalAlpha=.05;ghostCtx.fillStyle='#b19aff';ghostCtx.drawImage(mask,0,0);ghostCtx.restore();
+    const width=Math.min(mask.width,720),height=Math.max(1,Math.round(mask.height*width/mask.width));
+    const sample=document.createElement('canvas');sample.width=width;sample.height=height;
+    const sc=sample.getContext('2d',{willReadFrequently:true});sc.drawImage(mask,0,0,width,height);
+    const pixels=sc.getImageData(0,0,width,height).data,outline=sc.createImageData(width,height);
+    for(let y=0;y<height;y++)for(let x=0;x<width;x++){
+      const i=y*width+x,k=i*4;if(pixels[k+3]<110)continue;
+      if(x>0&&x<width-1&&y>0&&y<height-1&&pixels[k-1*4+3]>=110&&pixels[k+4+3]>=110&&pixels[k-width*4+3]>=110&&pixels[k+width*4+3]>=110)continue;
+      outline.data[k]=180;outline.data[k+1]=145;outline.data[k+2]=255;outline.data[k+3]=215;
+    }
+    sc.clearRect(0,0,width,height);sc.putImageData(outline,0,0);
+    ghostCtx.save();ghostCtx.imageSmoothingEnabled=false;ghostCtx.drawImage(sample,0,0,mask.width,mask.height);ghostCtx.restore();
   }
   hint.textContent=found.category&&found.category!=='Region'?found.category:found.name;
   hint.title='Click '+found.name+' in Layers to reuse its mask';
