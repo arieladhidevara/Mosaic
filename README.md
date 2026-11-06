@@ -1,6 +1,6 @@
 # Mosaic — AI Collage Workspace
 
-Mosaic is a manual-first architectural AI collage editor with a Premium workflow preview (the OpenAI API is not yet connected). Choose exactly which parts to keep from multiple AI-generated variations, group alternatives by masked location, and export a ready-to-harmonize ZIP for ChatGPT or another image model.
+Mosaic is a manual-first architectural AI collage editor with optional single-account Premium image generation powered by OpenAI. Choose exactly which parts to keep from multiple AI-generated variations, group alternatives by masked location, and export a ready-to-harmonize ZIP for ChatGPT or another image model.
 
 ## Workflow
 
@@ -13,7 +13,7 @@ Mosaic is a manual-first architectural AI collage editor with a Premium workflow
 7. Use **Compare master**: hold the button with a mouse to compare temporarily; on touch devices tap once to view master and again to return.
 8. Export a ZIP with `01_Base.png`, `02_Final_Collage.png`, and `03_Harmonization_Prompt.txt`.
 
-The prompt can also be copied directly from the interface. There is **no image-generation API or backend yet**; image processing is local and the UI may fetch Google Fonts.
+The prompt can also be copied directly from the interface. Manual image processing is local; Premium edits and harmonization use authenticated serverless OpenAI API routes.
 
 ## Important notes
 
@@ -47,31 +47,33 @@ The public GitHub repository `arieladhidevara/Mosaic` is connected to the Mosaic
 
 MIT License.
 
-## Premium AI workflow preview (no API connected)
+## Premium AI workflow (OpenAI via authenticated backend)
 
-The Premium UI and non-destructive data model are implemented for product testing, **not as an active paid entitlement or AI integration**. There is no checkout, authentication, billing, API key, network image request, or security boundary. Implement a server-validated entitlement before charging for or restricting production functionality.
+Premium is a private, **single-account** feature (no public signup or billing). The username is `arieladhidevara`. The password is never stored in GitHub. Before login will work, configure the Vercel server environment variables listed below.
 
-1. Import the Base image. The design-intent dialog captures a **project prompt**. This is reused in the harmonization instructions.
-2. Lasso an area without importing a new variation, then choose **✦ Prompt area** and enter an edit instruction. Mosaic saves a request including the current composition, original Base image, exact selection mask, and prompt. It immediately creates a region-group option marked **awaiting image**.
-3. Until an OpenAI image-generation endpoint is wired, click **Add result** in that option and attach a full-frame generated image (same framing/crop). Mosaic automatically clips the attached result to the saved mask; no second manual lasso is needed. Normal manual variation masking remains available.
-4. Choose **✧ Harmonize** to review the prompt. For now this makes a **local flattened snapshot** of the current composition and records an intended handoff of originalBase + collage + prompt. It does **not** claim to generate an AI-harmonized image.
-5. **Harmonized 1, 2, ...** appear as gray expandable history groups. Expand them to preview earlier material alternatives; **Branch from edits** restores their editable masks and groups to the canvas, while **Use flattened** starts from the previous flattened image. Old harmonized snapshots remain available after further harmonizations.
+1. Upload **Base**, then provide a project-wide design intent. Base remains permanent and is included as the geometric reference for every AI request.
+2. Draw a Lasso, Rectangle or Oval selection, click **Area**, and enter the instruction for that region. Each requested area receives a new colored contour and numbered label. Multiple areas can have different prompts.
+3. The browser sends the current accepted collage, original Base, exact *transparent edit mask*, a separate colored annotation image, and all active region comments to an authenticated Vercel function. The function sends them to OpenAI Images Edit using `gpt-image-2.5-sunburst`.
+4. The full-frame AI output is stored as the result of the corresponding region. **The original user mask is still used for pixel compositing**, so output outside that region is ignored. If a request fails, use the region's **Generate** button to retry or **Add result** to attach an external result.
+5. Click **Harmonize** to send the original Base, current flattened collage and prompt for a full-image AI harmonization. Upon success, the output becomes the new working Master. All earlier masks, options and layer structure are archived under **Harmonized 1, 2, ...**, with **Preview collage**, **Branch from edits** and **Use flattened**.
 
-Archived nodes preserve: base image, group IDs, every variant source image, edit prompts, selection masks, active variants, flattened output, and the parent history node. The current working image becomes a single flattened base after Harmonize. The original Base image never gets overwritten. History remains available in the current browser tab only.
+API-generated images are not perfectly geometry-constrained; masking guarantees outside-region pixels are left untouched by regional edits, but a full-image Harmonize may still change geometry. Region guide overlays are only for reference and can be toggled off.
 
-### Backend connection contract (future)
+### Activation / security
 
-Do not call OpenAI from premium.js, as that would expose an API key to visitors. Add a server-side authenticated endpoint, enforce Premium entitlements and quotas, then replace the local provider placeholders:
+Required Vercel environment variables, set for Production (and Preview if using previews):
 
-- **edit-region**: send baseImage PNG, original Base PNG, the saved full-resolution transparent selection mask PNG, region prompt, and project prompt. The provider returns a full-frame generated image. On response, clip pixels by the original mask, and attach the result as a new variant in its region group.
-- **harmonize**: send original Base PNG, flattened collage PNG, and harmonization prompt. The provider returns a harmonized full-frame result. Save that returned image as the history node's output/current base, while preserving the pre-harmonization layer tree.
-- Validate ownership, premium entitlement, payload sizes and model costs on the server. Add image storage/IndexedDB to persist the larger non-destructive history; browser memory is prototype-only.
+- `MOSAIC_ADMIN_USERNAME=arieladhidevara`
+- `MOSAIC_PASSWORD_HASH` — run `node scripts/hash-password.cjs` locally, type the admin password (hidden), and paste the generated `scrypt:...` value into Vercel.
+- `MOSAIC_SESSION_SECRET` — generate a strong random value with `node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"`.
 
-**Structural fidelity:** mask compositing locks pixels outside the selection for regional edits. Full-image harmonization can change geometry inside or outside edited areas; preserve the Base image and offer visual comparison rather than promising pixel-perfect geometry.
+Never commit the real values. Redeploy to apply newly configured variables. Login uses a secure HTTP-only signed session cookie with an eight-hour expiry. There is an in-memory login attempt throttle, but for a public website you should also enable distributed rate limiting in Vercel Firewall.
 
-### Important UX limitation
+The OpenAI API key is entered during Premium login and is kept **only in the current tab's JavaScript memory**; it is forwarded over HTTPS to the authenticated server function on each generation and then to OpenAI. It is not stored in the project history, cookies, localStorage, repository or environment variables. Refreshing the tab requires re-entering the key. ChatGPT subscription billing and OpenAI API usage are separate.
 
-When selecting an alternate archived variant, Mosaic shows a preview of that historical *pre-harmonization collage*. This does **not** retroactively regenerate the old AI result; choose **Branch from edits** to work from that alternative and harmonize again.
+Endpoints: `/api/login`, `/api/session`, `/api/logout`, `/api/ai/edit`, `/api/ai/harmonize`. Requests are same-origin and require a valid session for the image endpoints. Image payloads are resized for the Vercel request size limit. All project editing/history remains browser-local; there is no persistent image database yet.
+
+Use Vercel to run Premium; a plain local static file server runs only the manual editor.
 
 ## Move & Skew layers
 
