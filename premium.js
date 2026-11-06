@@ -56,6 +56,7 @@ function setReferenceAsBase() {
 function onReferenceLoaded() {
   setReferenceAsBase();
   if(state.masterIsBase){
+    state.rawMaster=null;
     premium.projectPrompt='';updateIntent();
     // Base is a fallback working canvas, not a real uploaded/generated Master yet.
     premium.masterVersions=[];
@@ -485,7 +486,7 @@ async function harmonizeWithAI(prompt,sourceVersion=null) {
   premium.expanded.add(node.id);
   premium.previewNode = null;
   premium.lastRequest = {
-    originalBase: state.reference||premium.initialMaster||state.master, collage: cloneCanvas(flattened),
+    originalBase: state.reference||premium.initialMaster||state.master, collage: cloneCanvas(sourceVersion?.image||flattened),
     prompt, snapshotId: node.id
   };
   // Preserve region/material alternatives. Share a single image source per Master version,
