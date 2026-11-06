@@ -31,7 +31,7 @@ function decorate(){
     const select=document.createElement('select');select.className='group-category';
     select.dataset.regionCategory=g.id;select.title='Set object category';select.setAttribute('aria-label','Object category');
     for(const category of CATEGORIES){
-      const option=document.createElement('option');option.value=category;option.textContent=category;
+      const option=document.createElement('option');option.value=category;option.textContent=category==='Region'?'Uncategorized':category;
       option.selected=category===(g.category||'Region');select.append(option);
     }
     details.append(badge,select,makeButton('✦','identify','Identify object with AI'),makeButton('×','remove-group','Delete group and its options'));
@@ -42,7 +42,7 @@ function decorate(){
       if(!patch)continue;
       const text=row.querySelector('.variant-text');
       if(text)text.textContent=patch.name;
-      row.draggable=true;row.title='Drag this option into another Region, or use the move button';
+      row.draggable=true;row.title='Drag this option to another Group';
       // Exactly four primary actions are authored by app.js.
       // Drag/drop between Groups remains available without extra buttons.
     }
@@ -112,12 +112,12 @@ function handleGroupEvent(e){
     }
     if(action.dataset.regionAction==='move-option'){
       const patchId=action.closest('.variant-row')?.dataset.patch;
-      if(!patchId||state.groups.length<2){core.toast('Create another Region before moving an option.');return true}
+      if(!patchId||state.groups.length<2){core.toast('Create another Group before moving an option.');return true}
       const row=action.closest('.variant-row');
       row.querySelector('.region-move-picker')?.remove();
       const select=document.createElement('select');select.className='region-move-picker';
       select.setAttribute('aria-label','Move option to region');
-      select.append(new Option('Move to Region…',''));
+      select.append(new Option('Move to Group…',''));
       for(const destination of state.groups){
         if(destination.id===group.id)continue;
         select.append(new Option(destination.name,destination.id));
