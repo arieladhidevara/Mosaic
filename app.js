@@ -44,7 +44,7 @@ function assignGroup(patch){let best=null,bestScore=0;
   }}
   if(!best){best={id:uid('group'),name:`Region ${String(state.groups.length+1).padStart(2,'0')} · ${labelFromPosition(patch.bbox)}`,patchIds:[],active:null};state.groups.push(best)}
   state.patches.set(patch.id,patch);best.patchIds.push(patch.id);best.active=patch.id;state.selectedPatchId=patch.id;return best}
-function render(){if(!state.master)return;ctx.clearRect(0,0,canvas.width,canvas.height);ctx.drawImage(state.master,0,0);
+function render(){if(!state.master)return;ctx.clearRect(0,0,canvas.width,canvas.height);ctx.drawImage(state.before?(window.MosaicPremium?.originalImage()||state.master):state.master,0,0);
   if(!state.before){if(window.MosaicPremium?.drawArchivePreview(ctx)){drawOverlay();return}for(const group of state.groups){if(!group.active)continue;const patch=state.patches.get(group.active),source=patch&&state.sources.get(patch.sourceId);if(!patch||!source)continue;const temp=makeCanvas(canvas.width,canvas.height),tc=temp.getContext('2d');tc.drawImage(source.canvas,0,0);tc.globalCompositeOperation='destination-in';tc.drawImage(patch.mask,0,0);ctx.drawImage(temp,0,0)}
     const pending=state.sources.get(state.pendingSourceId);if(pending)ctx.drawImage(pending.canvas,0,0)}
   drawOverlay()}
@@ -101,7 +101,7 @@ $('masterInput').addEventListener('change',async e=>{await importMaster(e.target
 $('variantInput').addEventListener('change',async e=>{await importVariants(e.target.files);e.target.value=''});
 for(const id of ['addImagesBtn','newVariantBtn'])$(id).addEventListener('click',()=>state.master?$('variantInput').click():toast('Upload a master first.'));
 $('quickMasterBtn').addEventListener('click',()=>$('masterInput').click());$('quickRevitBtn').addEventListener('click',()=>$('referenceInput').click());
-$('welcomeStart').addEventListener('click',()=>$('masterInput').click());$('welcomeRevit').addEventListener('click',()=>$('referenceInput').click());
+$('welcomeStart').addEventListener('click',()=>$('referenceInput').click());$('welcomeRevit').addEventListener('click',()=>$('masterInput').click());
 $('discardPendingBtn').addEventListener('click',discardPending);$('exportBtn').addEventListener('click',exportZip);
 $('groupList').addEventListener('click',groupEvent);
 $('tools').addEventListener('click',e=>{const tool=e.target.closest('[data-tool]'),mode=e.target.closest('[data-mode]');if(tool)selectTool(tool.dataset.tool);if(mode){selectTool('lasso');setMode(mode.dataset.mode)}});
@@ -119,6 +119,6 @@ window.addEventListener('pointerup',e=>{if(e.pointerType==='mouse'&&!compareTap&
 for(const type of ['pointerdown','pointermove','pointerup','pointercancel'])$('overlayCanvas').addEventListener(type,{pointerdown:pointerDown,pointermove:pointerMove,pointerup:pointerUp,pointercancel:pointerUp}[type]);
 window.addEventListener('keydown',onKeys);window.addEventListener('resize',()=>state.master&&updateZoomFit());
 for(const id of ['copyPromptBtn','copyPromptSecondary'])$(id).addEventListener('click',async()=>{try{await navigator.clipboard.writeText(promptText());toast('Prompt copied.')}catch{toast('Clipboard unavailable. Select prompt from the panel.')}});
-const viewport=$('viewport');viewport.addEventListener('dragover',e=>{e.preventDefault();viewport.classList.add('dropping')});viewport.addEventListener('dragleave',()=>viewport.classList.remove('dropping'));viewport.addEventListener('drop',async e=>{e.preventDefault();viewport.classList.remove('dropping');const files=[...e.dataTransfer.files].filter(f=>f.type.startsWith('image/'));if(!state.master){if(files[0])await importMaster(files[0]);if(files.length>1)await importVariants(files.slice(1))}else await importVariants(files)});
+const viewport=$('viewport');viewport.addEventListener('dragover',e=>{e.preventDefault();viewport.classList.add('dropping')});viewport.addEventListener('dragleave',()=>viewport.classList.remove('dropping'));viewport.addEventListener('drop',async e=>{e.preventDefault();viewport.classList.remove('dropping');const files=[...e.dataTransfer.files].filter(f=>f.type.startsWith('image/'));if(!state.master){if(files[0])await importReference(files[0]);if(files.length>1)await importVariants(files.slice(1))}else await importVariants(files)});
 window.MosaicCore = {state,canvas,overlay,ctx,makeCanvas,uid,toast,message,promptText,loadFileToCanvas,setMaster,render,renderGroups,maskBoundingBox,assignGroup,resetSelection,updateMaskWithLasso,updateZoomFit,selectTool,escapeHTML};
 promptText();
