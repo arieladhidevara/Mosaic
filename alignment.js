@@ -49,7 +49,7 @@ function showPreview(){
 }
 function open(){
   if(!state.rawBase||!state.rawMaster||state.masterIsBase){toast('Upload both Base and Master to align.');return}
-  if(state.groups.length||state.pendingSourceId||state.editingPatchId){toast('Finish masking before aligning; alignment is available before creating regions.');return}
+  if(state.groups.length||state.pendingSourceId||state.editingPatchId||(window.MosaicPremium?.getMasterVersions?.().length||0)>1){toast('Align sources before creating regions or generating more Masters.');return}
   transforms=state.alignmentTransforms?structuredClone(state.alignmentTransforms):{base:defaultTransform(),master:defaultTransform()};
   active='base';drag=null;
   dialog.showModal();showPreview();
@@ -57,7 +57,7 @@ function open(){
 function close(){drag=null;if(dialog.open)dialog.close()}
 function apply(){
   if(!state.rawBase||!state.rawMaster)return;
-  if(state.groups.length||state.pendingSourceId){toast('Finish all region edits before aligning.');return}
+  if(state.groups.length||state.pendingSourceId||(window.MosaicPremium?.getMasterVersions?.().length||0)>1){toast('Alignment is locked once additional Masters exist.');return}
   const base=aligned(state.rawBase,transforms.base),master=aligned(state.rawMaster,transforms.master);
   state.reference=base;state.master=master;
   state.alignmentTransforms=structuredClone(transforms);
