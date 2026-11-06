@@ -649,42 +649,130 @@ function originalImage() {
   return premium.originalMaster||premium.initialMaster;
 }
 /* Per-request visual references: optional, capped, compressed, and never persisted in browser storage. */
-const referenceState={master:[],area:[],quick:[],welcome:[]};
-const referenceInputIds={master:['masterReferenceInput','masterReferencePreviews'],area:['areaReferenceInput','areaReferencePreviews'],quick:['quickAreaReferenceInput','quickAreaReferencePreviews'],welcome:['welcomeBaseReferenceInput','welcomeBaseReferencePreviews']};
+/* Every AI prompt accepts images from file picker, clipboard or drag/drop. */
+const referenceState={master:[],area:[],quick:[],welcome:[],harmonize:[]};
+const referenceInputIds={
+  master:['masterReferenceInput','masterReferencePreviews'],
+  area:['areaReferenceInput','areaReferencePreviews'],
+  quick:['quickAreaReferenceInput','quickAreaReferencePreviews'],
+  welcome:['welcomeBaseReferenceInput','welcomeBaseReferencePreviews'],
+  harmonize:['harmonizeReferenceInput','harmonizeReferencePreviews']
+};
 function getReferenceFiles(scope){return [...(referenceState[scope]||[])]}
-function clearReferenceFiles(scope){
-  if(!referenceInputIds[scope])return;
-  referenceState[scope]=[];
-  const [id]=referenceInputIds[scope];$(id).value='';
-  renderReferenceFiles(scope);
+function validReference(file){
+  return file&&/^image\/(jpeg|png|webp)$/.test(file.type)&&file.size<=10000000&&file.size>0;
+}
+function incomingImageFiles(event){
+  const transfer=event.clipboardData||event.dataTransfer;
+  if(!transfer)return [];
+  const result=[];
+  if(transfer.items?.length){
+    for(const item of transfer.items){
+      if(item.kind!=='file'||!item.type.startsWith('image/'))continue;
+      const image=item.getAsFile?.();
+      if(image)result.push(image);
+    }
+  }
+  if(!result.length&&transfer.files?.length)
+    result.push(...[...transfer.files].filter(file=>file.type.startsWith('image/')));
+  return result;
+}
+function ingestReferences(files,bucket,render){
+  let added=0;
+  for(const file of files){
+    if(bucket.length>=3){toast('Maximum 3 reference images per prompt.');break}
+    if(!validReference(file)){toast('Reference must be JPG, PNG or WEBP under 10 MB.');continue}
+    bucket.push(file);added++;
+  }
+  if(added)render();
+  return added;
+}
+function renderThumbnails(container,files,onRemove){
+  if(!container)return;
+  for(const element of container.querySelectorAll('[data-preview-url]'))
+    URL.revokeObjectURL(element.dataset.previewUrl);
+  container.replaceChildren();
+  files.forEach((file,index)=>{
+    const item=document.createElement('span');item.className='reference-thumb';
+    const image=document.createElement('img'),url=URL.createObjectURL(file);
+    image.src=url;image.alt=file.name||'Reference image';item.dataset.previewUrl=url;
+    const remove=document.createElement('button');
+    remove.type='button';remove.textContent='×';remove.title='Remove reference';
+    remove.setAttribute('aria-label','Remove reference '+(index+1));
+    remove.addEventListener('click',event=>{event.preventDefault();event.stopPropagation();onRemove(index)});
+    item.append(image,remove);container.append(item);
+  });
 }
 function renderReferenceFiles(scope){
-  const [,id]=referenceInputIds[scope],container=$(id);
-  if(!container)return;
-  for(const element of container.querySelectorAll('[data-preview-url]'))URL.revokeObjectURL(element.dataset.previewUrl);
-  container.replaceChildren();
-  (referenceState[scope]||[]).forEach((file,index)=>{
-    const item=document.createElement('span');item.className='reference-thumb';
-    const img=document.createElement('img');const url=URL.createObjectURL(file);
-    img.src=url;img.alt=file.name;item.dataset.previewUrl=url;
-    const remove=document.createElement('button');remove.type='button';remove.textContent='×';remove.title='Remove '+file.name;
-    remove.setAttribute('aria-label','Remove '+file.name);
-    remove.addEventListener('click',()=>{referenceState[scope].splice(index,1);renderReferenceFiles(scope)});
-    item.append(img,remove);container.append(item);
+  const pair=referenceInputIds[scope];
+  if(!pair)return;
+  renderThumbnails($(pair[1]),referenceState[scope],index=>{
+    referenceState[scope].splice(index,1);renderReferenceFiles(scope);
+  });
+}
+function clearReferenceFiles(scope){
+  if(!referenceInputIds[scope])return;
+  referenceState[scope]=[];$(referenceInputIds[scope][0]).value='';
+  renderReferenceFiles(scope);
+}
+function wireReferencePasteDrop(form,addFiles){
+  if(!form)return;
+  form.classList.add('reference-prompt-target');
+  form.addEventListener('paste',event=>{
+    const images=incomingImageFiles(event);
+    if(!images.length)return; // Ordinary text pasting remains unchanged.
+    event.preventDefault();event.stopPropagation();
+    addFiles(images);
+  });
+  form.addEventListener('dragover',event=>{
+    const transfer=event.dataTransfer;
+    const hasFile=Boolean(transfer?.types&&[...transfer.types].includes('Files'));
+    if(!hasFile)return; // Do not interfere with text dragging.
+    event.preventDefault();event.stopPropagation();
+    transfer.dropEffect='copy';form.classList.add('reference-drag-over');
+  });
+  form.addEventListener('dragleave',event=>{
+    if(event.relatedTarget&&form.contains(event.relatedTarget))return;
+    form.classList.remove('reference-drag-over');
+  });
+  form.addEventListener('drop',event=>{
+    form.classList.remove('reference-drag-over');
+    const transfer=event.dataTransfer;
+    const hasFile=Boolean(transfer?.types&&[...transfer.types].includes('Files'));
+    if(!hasFile)return;
+    event.preventDefault();event.stopPropagation();
+    const images=incomingImageFiles(event);
+    if(images.length)addFiles(images);
+    else toast('Drop a JPG, PNG or WEBP image into the prompt.');
   });
 }
 for(const [scope,[inputId]] of Object.entries(referenceInputIds)){
   $(inputId).addEventListener('change',event=>{
-    const selected=[...event.target.files];
-    const files=referenceState[scope];
-    for(const file of selected){
-      if(files.length>=3){toast('Maximum 3 reference images.');break}
-      if(!/^image\/(jpeg|png|webp)$/.test(file.type)||file.size>10000000){toast('Reference must be JPG, PNG or WEBP under 10 MB.');continue}
-      files.push(file);
-    }
+    ingestReferences([...event.target.files],referenceState[scope],()=>renderReferenceFiles(scope));
     event.target.value='';
-    renderReferenceFiles(scope);
   });
+  const form={
+    master:'masterGenerateForm',area:'areaPromptForm',
+    quick:'quickAreaPromptForm',welcome:'welcomeBasePromptForm',
+    harmonize:'harmonizeForm'
+  }[scope];
+  wireReferencePasteDrop($(form),files=>ingestReferences(files,referenceState[scope],()=>renderReferenceFiles(scope)));
+}
+function bindInlineReferencePrompt(form){
+  const input=form.querySelector('.region-reference-input');
+  const previews=form.querySelector('.region-inline-previews');
+  const refs=[];
+  const render=()=>renderThumbnails(previews,refs,index=>{refs.splice(index,1);render()});
+  input.addEventListener('change',event=>{
+    ingestReferences([...event.target.files],refs,render);
+    event.target.value='';
+  });
+  wireReferencePasteDrop(form,files=>ingestReferences(files,refs,render));
+  return {getFiles:()=>[...refs],clear:()=>{
+    for(const element of previews.querySelectorAll('[data-preview-url]'))
+      URL.revokeObjectURL(element.dataset.previewUrl);
+    refs.length=0;previews.replaceChildren();
+  }};
 }
 async function prepareReferenceImages(files){
   const list=[...(files||[])];
@@ -795,7 +883,7 @@ function onPatchApplied() {
 }
 window.MosaicPremium = {
   projectPrompt: () => premium.projectPrompt,
-  onReferenceLoaded, onMasterLoaded, onBaseContinue, onSourcesAligned, onSourceEdited, onMasterReset, canSelectArea, onPatchApplied, generateSelection, regenerateOption, decorateActive: activePatchMarkup, getReferenceFiles, clearReferenceFiles, getMasterVersions, regenerateMaster, initialMasterImage, exportProjectState, restoreProjectState,
+  onReferenceLoaded, onMasterLoaded, onBaseContinue, onSourcesAligned, onSourceEdited, onMasterReset, canSelectArea, onPatchApplied, generateSelection, regenerateOption, bindInlineReferencePrompt, decorateActive: activePatchMarkup, getReferenceFiles, clearReferenceFiles, getMasterVersions, regenerateMaster, initialMasterImage, exportProjectState, restoreProjectState,
   drawArchivePreview, isPreviewing, renderHistory, handleGroupEvent,
   originalImage, exportPrompt, drawRegionGuides, classifyArea
 };
