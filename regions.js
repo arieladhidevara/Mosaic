@@ -43,8 +43,8 @@ function decorate(){
       const text=row.querySelector('.variant-text');
       if(text)text.textContent=patch.name;
       row.draggable=true;row.title='Drag this option into another Region, or use the move button';
-      row.querySelector('.variant-action')?.before(makeButton('⇄','move-option','Move option to another Region'));
-      row.querySelector('.variant-action')?.before(makeButton('✎','rename-option','Rename option'));
+      // Exactly four primary actions are authored by app.js.
+      // Drag/drop between Groups remains available without extra buttons.
     }
   }
 }
@@ -129,6 +129,11 @@ function handleGroupEvent(e){
         if(select.value)core.moveOptionToGroup(patchId,select.value);
         else select.remove();
       });
+      return true;
+    }
+    if(action.dataset.regionAction==='regen-option'){
+      const patchId=action.closest('.variant-row')?.dataset.patch;
+      if(patchId)void window.MosaicPremium?.regenerateOption?.(patchId);
       return true;
     }
     if(action.dataset.regionAction==='rename-option'){
