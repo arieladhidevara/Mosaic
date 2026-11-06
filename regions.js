@@ -42,6 +42,8 @@ function decorate(){
       if(!patch)continue;
       const text=row.querySelector('.variant-text');
       if(text)text.textContent=patch.name;
+      row.draggable=true;row.title='Drag this option into another Region, or use the move button';
+      row.querySelector('.variant-action')?.before(makeButton('⇄','move-option','Move option to another Region'));
       row.querySelector('.variant-action')?.before(makeButton('✎','rename-option','Rename option'));
     }
   }
@@ -100,13 +102,34 @@ function handleGroupEvent(e){
         });
         field.querySelector('input').focus({preventScroll:true});
       }else{
-        state.queuedGroupId=group.id;core.toast('Choose another image, then press Enter to keep this region.');
+        state.queuedGroupId=group.id;core.toast('Choose another image, then select its area and click Apply.');
         document.getElementById('variantInput').click();
       }
       return true;
     }
     if(action.dataset.regionAction==='rename-group'){
       inlineRename(section.querySelector('.group-name'),group.name,name=>{group.name=name;group.manualName=true});return true;
+    }
+    if(action.dataset.regionAction==='move-option'){
+      const patchId=action.closest('.variant-row')?.dataset.patch;
+      if(!patchId||state.groups.length<2){core.toast('Create another Region before moving an option.');return true}
+      const row=action.closest('.variant-row');
+      row.querySelector('.region-move-picker')?.remove();
+      const select=document.createElement('select');select.className='region-move-picker';
+      select.setAttribute('aria-label','Move option to region');
+      select.append(new Option('Move to Region…',''));
+      for(const destination of state.groups){
+        if(destination.id===group.id)continue;
+        select.append(new Option(destination.name,destination.id));
+      }
+      row.append(select);select.focus({preventScroll:true});
+      select.addEventListener('click',event=>event.stopPropagation());
+      select.addEventListener('change',event=>{
+        event.stopPropagation();
+        if(select.value)core.moveOptionToGroup(patchId,select.value);
+        else select.remove();
+      });
+      return true;
     }
     if(action.dataset.regionAction==='rename-option'){
       const row=action.closest('.variant-row'),patch=state.patches.get(row?.dataset.patch);
@@ -142,6 +165,36 @@ function handleGroupEvent(e){
   if(e.target.closest('.group-head')){selectGroupMask(group);return true}
   return false;
 }
+let draggedPatchId=null;
+list.addEventListener('dragstart',event=>{
+  const row=event.target.closest('.variant-row[data-patch]');
+  if(!row||row.dataset.patch==='master'||!state.patches.has(row.dataset.patch))return;
+  draggedPatchId=row.dataset.patch;
+  event.dataTransfer.effectAllowed='move';
+  event.dataTransfer.setData('text/plain',draggedPatchId);
+  row.classList.add('dragging');
+});
+list.addEventListener('dragover',event=>{
+  if(!draggedPatchId)return;
+  const destination=event.target.closest('.region-group[data-group]');
+  if(!destination)return;
+  event.preventDefault();event.dataTransfer.dropEffect='move';
+  destination.classList.add('region-drop-target');
+});
+list.addEventListener('dragleave',event=>{
+  if(!event.target.closest('.region-group[data-group]'))return;
+  if(!event.currentTarget.contains(event.relatedTarget))list.querySelectorAll('.region-drop-target').forEach(el=>el.classList.remove('region-drop-target'));
+});
+list.addEventListener('drop',event=>{
+  const region=event.target.closest('.region-group[data-group]');
+  if(!region||!draggedPatchId)return;
+  event.preventDefault();
+  core.moveOptionToGroup(draggedPatchId,region.dataset.group);
+  draggedPatchId=null;list.querySelectorAll('.region-drop-target,.dragging').forEach(el=>el.classList.remove('region-drop-target','dragging'));
+});
+list.addEventListener('dragend',()=>{
+  draggedPatchId=null;list.querySelectorAll('.region-drop-target,.dragging').forEach(el=>el.classList.remove('region-drop-target','dragging'));
+});
 list.addEventListener('change',e=>{
   const select=e.target.closest('[data-region-category]');if(!select)return;
   const group=state.groups.find(g=>g.id===select.dataset.regionCategory);
