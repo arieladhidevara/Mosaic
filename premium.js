@@ -272,7 +272,7 @@ function encodeRequest(prompt,patch=null){
   for(const maxSize of [1350,1120,900]){
     const scale=Math.min(1,maxSize/Math.max(canvas.width,canvas.height));
     const w=Math.max(128,Math.round(canvas.width*scale)),h=Math.max(128,Math.round(canvas.height*scale));
-    const payload={collage:resizedFrame(collage,w,h),base:resizedFrame(state.reference,w,h),
+    const payload={collage:resizedFrame(collage,w,h),base:resizedFrame(state.reference||premium.initialMaster||state.master,w,h),
       projectPrompt:premium.projectPrompt,prompt,regions:annotationNotes(patch?.id)};
     if(patch){
       payload.mask=transparentEditMask(patch.mask,w,h);
@@ -411,7 +411,7 @@ async function attachAIResult(file) {
   } catch (error) {toast('Could not attach result: ' + error.message);}
 }
 async function openHarmonize() {
-  if (!state.master || !state.reference) {toast('Upload Base first.');return;}
+  if (!state.master) {toast('Upload Base or Master first.');return;}
   if (state.pendingSourceId || state.editingPatchId) {toast('Apply or discard the current mask first.');return;}
   if (premium.previewNode) {toast('Close the archive preview or branch from it before harmonizing.');return;}
   if (state.groups.some(g => g.active && state.patches.get(g.active)?.awaitingResult)) {
@@ -445,7 +445,7 @@ async function harmonizeWithAI(prompt) {
   premium.expanded.add(node.id);
   premium.previewNode = null;
   premium.lastRequest = {
-    originalBase: state.reference, collage: cloneCanvas(flattened),
+    originalBase: state.reference||premium.initialMaster||state.master, collage: cloneCanvas(flattened),
     prompt, snapshotId: node.id
   };
   // Preserve region/material alternatives. Share a single image source per Master version,
