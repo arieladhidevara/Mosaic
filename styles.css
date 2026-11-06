@@ -28,3 +28,7 @@
  .left-sidebar .section-heading{padding:10px 13px 4px}
  .workspace{grid-template-rows:minmax(420px,1fr) 245px}
 }
+/* Shape selection tools: keep controls accessible when the toolbar gets narrow. */
+.toolset{flex:none}
+.tool[data-tool="rect"],.tool[data-tool="ellipse"]{white-space:nowrap}
+@media(max-width:1100px){.tool-row{overflow-x:auto;scrollbar-width:thin}.tool-row .tool-spacer{min-width:4px}}
