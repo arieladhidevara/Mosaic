@@ -41,6 +41,7 @@ function showQuickPrompt(point=state.lastCanvasPointer){
   form.style.left=Math.max(6,Math.min(x,r.width-280))+'px';
   form.style.top=Math.max(6,Math.min(y,r.height-190))+'px';
   form.classList.remove('hidden');
+  window.MosaicPremium?.clearReferenceFiles?.('quick');
   $('quickAreaPromptInput').value='';
   $('quickAreaPromptInput').focus({preventScroll:true});
 }
@@ -607,7 +608,8 @@ $('quickAreaPromptForm').addEventListener('submit',e=>{
   e.preventDefault();
   if(!window.MosaicAuth?.isReady())return hideQuickPrompt();
   const prompt=$('quickAreaPromptInput').value.trim();if(!prompt)return;
-  hideQuickPrompt();window.MosaicPremium?.generateSelection?.(prompt);
+  const referenceFiles=window.MosaicPremium?.getReferenceFiles?.('quick')||[];
+  hideQuickPrompt();void window.MosaicPremium?.generateSelection?.(prompt,null,referenceFiles);
 });
 $('discardPendingBtn').addEventListener('click',discardPending);$('exportBtn').addEventListener('click',exportZip);
 $('groupList').addEventListener('click',groupEvent);
