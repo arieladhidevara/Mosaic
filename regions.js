@@ -41,7 +41,7 @@ function decorate(){
       const patch=state.patches.get(row.dataset.patch);
       if(!patch)continue;
       const text=row.querySelector('.variant-text');
-      if(text){text.textContent=patch.name;const number=document.createElement('small');number.textContent=' #'+(g.patchIds.indexOf(patch.id)+1);text.append(number)}
+      if(text)text.textContent=patch.name;
       row.querySelector('.variant-action')?.before(makeButton('✎','rename-option','Rename option'));
     }
   }
@@ -81,7 +81,7 @@ function handleGroupEvent(e){
         list.querySelectorAll('.region-option-prompt').forEach(el=>el.remove());
         const field=document.createElement('form');field.className='region-option-prompt';
         field.innerHTML='<input type="text" maxlength="250" aria-label="New material or edit prompt" placeholder="e.g. Black, Walnut, Terrazzo" required><button type="submit">✦ Generate</button>';
-        section.querySelector('.group-options').prepend(field);
+        list.querySelector('.region-group[data-group="'+group.id+'"] .group-options')?.prepend(field);
         field.addEventListener('click',event=>event.stopPropagation());
         field.addEventListener('submit',event=>{
           event.preventDefault();event.stopPropagation();
