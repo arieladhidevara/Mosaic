@@ -25,7 +25,7 @@ function promptText(){const p=`Create one seamless photorealistic architectural 
 async function loadFileToCanvas(file,maxDimension=2400){if(!file||!file.type.startsWith('image/'))throw Error('Choose an image file.');let image;try{image=await createImageBitmap(file)}catch{image=await new Promise((resolve,reject)=>{const img=new Image(),url=URL.createObjectURL(file);img.onload=()=>{URL.revokeObjectURL(url);resolve(img)};img.onerror=()=>{URL.revokeObjectURL(url);reject(Error('Cannot open this image'))};img.src=url})}
   const scale=Math.min(1,maxDimension/Math.max(image.width,image.height)),c=makeCanvas(Math.round(image.width*scale),Math.round(image.height*scale));c.getContext('2d').drawImage(image,0,0,c.width,c.height);image.close?.();return c}
 async function importMaster(file){if(!file)return;if(state.rawMaster&&!state.masterIsBase){toast('Master is already uploaded. Open its preview or generate a new version.');return}
-  if(state.masterIsBase&&state.groups.length&&!window.confirm('Upload Master and replace the current Base-only draft and its Regions?'))return;
+  if(state.masterIsBase&&state.groups.length&&!window.confirm('Upload Master and replace the current Base-only draft and its Groups?'))return;
   try{const c=await loadFileToCanvas(file);setMaster(c,fileName(file));toast('Master ready. Add another image and select a region to keep.')}catch(e){toast(e.message)}}
 function setMaster(c,name){window.MosaicPremium?.onMasterReset();state.master=c;state.rawMaster=c;state.masterIsBase=false;state.alignmentTransforms=null;state.sources.clear();state.groups=[];state.patches.clear();state.pendingSourceId=null;state.queue=[];state.editingPatchId=null;state.selectedPatchId=null;state.undo=[];state.redo=[];state.selectionGeneration++;state.hoveredGroupId=null;state.queuedGroupId=null;
   canvas.width=overlay.width=c.width;canvas.height=overlay.height=c.height;setSourcePreview('masterPreview',c);window.MosaicPremium?.onMasterLoaded?.(c,name);$('selectionDraft').setAttribute('viewBox',`0 0 ${c.width} ${c.height}`);resetSelection();
@@ -130,7 +130,7 @@ function rememberMask(group,mask){
 }
 function groupLabel(group){
   const cat=group.category||'Region';
-  return cat==='Region'?'Region '+String(state.groups.indexOf(group)+1).padStart(2,'0'):
+  return cat==='Region'?'Group '+String(state.groups.indexOf(group)+1).padStart(2,'0'):
     cat+' · '+labelFromPosition(group.area||{x:0,y:0,w:canvas.width,h:canvas.height});
 }
 function newGroup(mask,category='Region'){
@@ -189,13 +189,13 @@ function identifyGroup(group,mask,login=false){
   })();
 }
 function createBlankRegion(){
-  if(!state.master){toast('Upload Master before creating Regions.');return}
+  if(!state.master){toast('Upload Master or continue with Base before creating Groups.');return}
   const group=newGroup(makeCanvas(canvas.width,canvas.height));
-  group.manualName=true;group.name='Region '+String(state.groups.length).padStart(2,'0');
+  group.manualName=true;group.name='Group '+String(state.groups.length).padStart(2,'0');
   resetSelection();state.draftGroupId=group.id;state.queuedGroupId=group.id;
   setMode('new');selectTool('lasso');renderGroups();
-  message('New '+group.name+'. Draw its area, then add an image or generate an option.');
-  toast('New Region created.');
+  message('New Group: '+group.name+'. Draw its area, then add an image or generate an option.');
+  toast('New Group created.');
 }
 function prepareSelectionGroup(){
   if(!state.selectionMask||state.editingPatchId)return;
@@ -559,7 +559,7 @@ function renderGroups(){
   $('pendingBanner').classList.toggle('hidden',!state.pendingSourceId);
   if(state.pendingSourceId){const source=state.sources.get(state.pendingSourceId);$('pendingName').textContent='● Editing: '+(source?.name||'New variation')}
   if(!state.groups.length){
-    list.innerHTML='<div class="empty-groups"><span>◌</span><strong>No regions yet</strong><p>Import a variation, select an area, then click Apply to keep it.</p></div>';
+    list.innerHTML='<div class="empty-groups"><span>◌</span><strong>No groups yet</strong><p>Select an area or press + to create a group.</p></div>';
     return;
   }
   list.innerHTML=state.groups.map(g=>{
@@ -567,7 +567,7 @@ function renderGroups(){
     const optionRow=(pid)=>{
       const p=state.patches.get(pid);if(!p)return '';
       const isMaster=p.isMasterVersion||p.isOriginalMaster;
-      return `<div class="variant-row ${g.active===pid?'selected':''}" data-action="choose" data-group="${g.id}" data-patch="${pid}" ${isMaster?'data-master-version="true"':''}><span class="variant-dot"></span><span class="variant-text">${escapeHTML(p.name)}</span><button class="variant-action" title="Edit image position and size" data-action="edit-image" data-group="${g.id}" data-patch="${pid}">▧</button><button class="variant-action" title="Edit mask" data-action="edit" data-group="${g.id}" data-patch="${pid}">✎</button><button class="variant-action" title="Delete option" data-action="delete" data-group="${g.id}" data-patch="${pid}">×</button></div>`;
+      return `<div class="variant-row ${g.active===pid?'selected':''}" data-action="choose" data-group="${g.id}" data-patch="${pid}" ${isMaster?'data-master-version="true"':''}><span class="variant-dot"></span><span class="variant-text">${escapeHTML(p.name)}</span><button type="button" class="variant-action" title="Edit image and placement" data-action="edit-image" data-group="${g.id}" data-patch="${pid}">Edit</button><button type="button" class="variant-action" title="Rename option" data-region-action="rename-option" data-group="${g.id}" data-patch="${pid}">Rename</button><button type="button" class="variant-action" title="Delete option" data-action="delete" data-group="${g.id}" data-patch="${pid}">Delete</button><button type="button" class="variant-action" title="Regenerate this option (Premium)" data-region-action="regen-option" data-group="${g.id}" data-patch="${pid}">${p.generating?'Generating…':'✦ Regen'}</button></div>`;
     };
     const originalRow=g.hasHarmonizedMaster?'':`<div class="variant-row ${g.active===null?'selected':''}" data-action="choose" data-group="${g.id}" data-patch="master"><span class="variant-dot"></span><span class="variant-text">Original Master</span></div>`;
     return `<div class="region-group" data-group="${g.id}"><div class="group-head" data-action="focus" data-group="${g.id}"><span class="group-icon">▧</span><span class="group-name">${escapeHTML(g.name)}</span><span class="group-count">${g.patchIds.length} options</span><button type="button" class="variant-action group-add-option" data-region-action="add-option" title="Add an option to this region" aria-label="Add region option">＋</button></div><div class="group-options">${order.map(optionRow).join('')}${originalRow}</div></div>`;
@@ -586,7 +586,7 @@ function selectTool(tool){if(window.MosaicSourceEditor?.isEditing())return;clear
   $('wandOptions').classList.toggle('hidden',tool!=='wand');
   $('brushOptions').classList.toggle('hidden',tool!=='reveal'&&tool!=='erase');
   overlay.style.cursor='';
-  if(tool==='select')message('Select: click an existing region to choose it or generate a new option.');
+  if(tool==='select')message('Select: click an existing Group to choose it or generate a new option.');
   else if(tool==='wand')message('Magic Wand: click a connected color area. Adjust tolerance; New / Add / Subtract also work.');
   else if(tool==='lasso')message('Lasso: click corners or drag. You can trace outside the image; Mosaic clips the final mask to its edges.');
   else if(tool==='pan')message('Pan: drag to move around the canvas.');
@@ -780,7 +780,7 @@ function pointerDown(e){if(!state.master||state.busy||state.before||e.button!==0
   if(state.tool==='select'){
     const region=findRegionAt(canvasPoint(e));
     if(region){selectGroupMask(region);showQuickPrompt(state.lastCanvasPointer);message('Selected '+region.name+'. '+(state.pendingSourceId?'Press Enter to keep this area.':'Generate an option or refine the selection.'))}
-    else{hideQuickPrompt();message('Click a saved region, or draw one using Lasso / Rect / Oval / Wand.')}
+    else{hideQuickPrompt();message('Click a saved Group, or draw one using Lasso / Rect / Oval / Wand.')}
     return;
   }
   if(state.tool==='reveal'||state.tool==='erase'){
@@ -924,8 +924,8 @@ $('inspectorToggle').addEventListener('click',()=>{
   document.querySelector('.workspace').classList.toggle('inspector-collapsed',collapsed);
   toggle.textContent=collapsed?'›':'−';
   toggle.setAttribute('aria-expanded',String(!collapsed));
-  toggle.setAttribute('aria-label',collapsed?'Expand guide':'Minimize guide');
-  toggle.title=collapsed?'Expand guide':'Minimize guide';
+  toggle.setAttribute('aria-label',collapsed?'Expand Groups':'Minimize Groups');
+  toggle.title=collapsed?'Expand Groups':'Minimize Groups';
   const wasFit=state.master&&Math.abs(state.zoom-state.fitZoom)<.001;
   if(wasFit)requestAnimationFrame(updateZoomFit);
 });
@@ -941,5 +941,5 @@ $('viewport').addEventListener('dblclick',e=>{if(state.tool==='lasso'&&state.las
 window.addEventListener('keydown',onKeys);window.addEventListener('resize',()=>state.master&&updateZoomFit());
 for(const id of ['copyPromptBtn','copyPromptSecondary'])$(id).addEventListener('click',async()=>{try{await navigator.clipboard.writeText(promptText());toast('Prompt copied.')}catch{toast('Clipboard unavailable. Select prompt from the panel.')}});
 const viewport=$('viewport');viewport.addEventListener('pointerleave',()=>window.MosaicRegions?.clearHover());viewport.addEventListener('dragover',e=>{e.preventDefault();viewport.classList.add('dropping')});viewport.addEventListener('dragleave',()=>viewport.classList.remove('dropping'));viewport.addEventListener('drop',async e=>{e.preventDefault();viewport.classList.remove('dropping');const files=[...e.dataTransfer.files].filter(f=>f.type.startsWith('image/'));if(!state.master){if(files[0])await importReference(files[0]);if(files.length>1)await importVariants(files.slice(1))}else await importVariants(files)});
-window.MosaicCore = {state,canvas,overlay,ctx,makeCanvas,uid,toast,message,promptText,loadFileToCanvas,setMaster,setSourcePreview,updateSourceActions,render,composeApprovedCanvas,renderGroups,drawPatch,selectTool,maskBoundingBox,assignGroup,resetSelection,updateSelectionOutline,updateMaskWithLasso,updateZoomFit,escapeHTML,categoryFromText,updateGroupCategory,optionNameFromPrompt,prepareSelectionGroup,groupMask,selectGroupMask,CATEGORIES,showQuickPrompt,hideQuickPrompt,createBlankRegion,moveOptionToGroup,displayedPatchMask,renderedPatchLayer,refreshGroupFootprint,invalidateDisplayedMask};
+window.MosaicCore = {state,canvas,overlay,ctx,makeCanvas,uid,toast,message,promptText,loadFileToCanvas,setMaster,setSourcePreview,updateSourceActions,render,composeApprovedCanvas,renderGroups,drawPatch,selectTool,setMode,updateApplyButton,maskBoundingBox,assignGroup,resetSelection,updateSelectionOutline,updateMaskWithLasso,updateZoomFit,escapeHTML,categoryFromText,updateGroupCategory,optionNameFromPrompt,prepareSelectionGroup,groupMask,selectGroupMask,CATEGORIES,showQuickPrompt,hideQuickPrompt,createBlankRegion,moveOptionToGroup,displayedPatchMask,renderedPatchLayer,refreshGroupFootprint,invalidateDisplayedMask};
 promptText();

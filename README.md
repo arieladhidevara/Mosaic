@@ -5,7 +5,7 @@ Mosaic is a manual-first architectural AI collage editor with optional single-ac
 ## Workflow
 
 1. Upload a **Base image**. Mosaic stays on onboarding until you **upload a Master**, **generate a Master from the inline prompt**, or deliberately click **Continue with Base only**. Just uploading Base never silently starts the editor or creates Master.
-2. Upload your own **Master image**, generate a Master with Premium, or click **Continue with Base only** to start a local manual working draft. The draft is not registered as an uploaded/generated Master, and a real Master can still be added later (with confirmation if it would replace existing Region work).
+2. Upload your own **Master image**, generate a Master with Premium, or click **Continue with Base only** to start a local manual working draft. The draft is not registered as an uploaded/generated Master, and a real Master can still be added later (with confirmation if it would replace existing Group work).
 3. Upload one or more AI images. Each becomes a temporary top layer, one at a time.
 4. Choose **Lasso**, **Rect**, **Oval**, or **Magic Wand**. Lasso uses click-to-place polygon points or freehand dragging; close at the start, double-click, or press Enter. Start/draw outside the image if needed: the live outline stays visible in the surrounding viewport and the applied selection automatically clips to the image rectangle. Rect/Oval support Shift-constrained shapes. Magic Wand flood-selects connected, similar-colored pixels under the click, with an adjustable **Tolerance** slider. **New / Add / Subtract** work with every selection tool.
 5. Click **Apply** to keep only the selected region of the uploaded image. **Enter** closes an unfinished Lasso; selection remains a draft until Apply. The unselected pixels are hidden non-destructively.
@@ -18,10 +18,10 @@ The prompt can also be copied directly from the interface. Manual image processi
 ## Important notes
 
 - **No automatic image difference detection**. The Magic Wand operates on connected pixels of similar color in the visible composition, not semantic objects. Region grouping still happens only *after* applying a mask.
-- Automatic Region grouping now requires strong **actual mask intersection**, not just similar bounding boxes. Use the **+ next to Regions** to create a separate group explicitly. Use the per-option move picker (including on mobile) or drag options to another Region on desktop.
-- For position/crop mismatches, click **Edit** beside Base, Master, a pending upload, or an option in Regions. A 20%-opacity image overlay and bounding box appear directly on canvas. On an **applied option**, its visible image and selection mask move/scale/rotate together, preserving the mask-to-image relationship. Changes to one option never mutate a source shared by other options.
+- Automatic Group matching requires strong **actual mask intersection**, not just similar bounding boxes. Use the **+ beside Groups** in the right sidebar for a new Group. Desktop drag/drop can move options between Groups without adding a fifth option button.
+- For position/crop mismatches, click **Edit** beside Base, Master, a pending upload, or an option in Groups. A 20%-opacity image overlay and bounding box appear directly on canvas. On an **applied option**, its visible image and selection mask move/scale/rotate together, preserving the mask-to-image relationship. Changes to one option never mutate a source shared by other options.
 - Maximum import size defaults to 2400 pixels on the longest side to limit browser memory; hidden Base image can be imported at up to 4000 pixels.
-- All project data, including Premium archived snapshots and masks, is **in browser memory**, so refresh clears the session. Export the finished composition before leaving. No backend persistence or synchronization.
+- Live project data is kept **in browser memory** and refresh clears unsaved changes. Use **Save project** before leaving and **Open project** to restore it. No backend database/persistence or synchronization is required.
 - Final AI harmonization is done manually and can still reinterpret visual references.
 
 ## Run
@@ -42,7 +42,10 @@ The public GitHub repository `arieladhidevara/Mosaic` is connected to the Mosaic
 
 - `index.html`: editor UI
 - `styles.css`: visual styles and responsive layout
-- `app.js`: masks, region groups, selection modes, canvas drawing, ZIP export
+- `app.js`: masks, Groups, selection modes, canvas rendering and ZIP export
+- `premium.js`: Premium AI edits, local crops, regeneration and Master history
+- `project-file.js`: portable lossless Save/Open project serialization
+- `regions.js`: Group controls, names, hover and drag/drop
 - `vercel.json`: static hosting config
 
 MIT License.
@@ -53,9 +56,9 @@ Premium is a private, **single-account** feature (no public signup or billing). 
 
 1. Upload **Base**. Enter the first prompt below the Base card, with up to three optional visual reference images; Generate creates the first Master as a separate image. Alternatively upload Master manually. Base remains the camera/geometry reference.
 2. Draw a Lasso, Rectangle or Oval selection, click **Area**, and enter the instruction for that region. Each requested area receives a new colored contour and numbered label. Multiple areas can have different prompts.
-3. The browser sends the current accepted collage, original Base, exact *transparent edit mask*, a separate colored annotation image, and all active region comments to an authenticated Vercel function. The function sends them to OpenAI Images Edit using `gpt-image-2.5-sunburst`.
-4. The full-frame AI output is stored as the result of the corresponding region. **The original user mask is still used for pixel compositing**, so output outside that region is ignored. If a request fails, use the region's **Generate** button to retry or **Add result** to attach an external result.
-5. Click **Harmonize** to generate the new Master. The Regions panel retains the original Master, all material alternatives and Master 2/3/etc. versions within their respective Regions, newest first. Previous editable snapshots remain in memory for branching.
+3. **AI Edit** crops the selected mask's bounding box plus about 30% of its dimensions (minimum 72px on each side) for context. It sends only those aligned crops of the current collage and Base, together with the local mask, colored guide and prompt notes. The OpenAI Image Edit request uses **medium** quality and an output resolution proportional to this crop. It does **not** render the full architecture image for a local material variation.
+4. The returned **crop-only output** is resized to the original crop window and composited into the correct position on a transparent full-size working layer. The original selection mask limits the applied pixels; all pixels outside the selected area remain unchanged. Use **✦ Regen** on an option to retry or regenerate; this does not erase the approved option if generation fails.
+5. **Harmonize** sends the full approved collage and Base (no local crop) at **high** quality to produce a new full Master. The Groups panel retains prior alternatives, and Master 2/3/etc. appear in the Master Versions browser. Previous editable snapshots remain in memory for branching.
 
 API-generated images are not perfectly geometry-constrained; masking guarantees outside-region pixels are left untouched by regional edits, but a full-image Harmonize may still change geometry. Region guide overlays are only for reference and can be toggled off.
 
@@ -87,16 +90,23 @@ Click an existing region or variation in **Layers** to select it. Mosaic activat
 
 The original Base geometry is preserved separately from the working Master.
 
+## Portable project files (.mosaic)
+
+- Click **Save project** to download a versioned, lossless JSON-based `.mosaic` file. It includes Base, working Master, original uploads, source layers, Groups, Option names/prompts, saved selections, moved/skewed masks, current draft selection, Undo/Redo, queued image files, Master Versions and editable Harmonize history.
+- Click **Open project** to restore a previously saved file and resume editing. Imported images are decoded and validated before the current project is replaced. Files over **300 MB** are rejected; large multi-version projects may create correspondingly large files.
+- Save/Open is local and does not require an AI API request. **Premium passwords and OpenAI API keys are never written into project files**; the user signs in again to use AI.
+- Finished composite export remains separate from project save: use **Export package** for the approved flat images/ZIP, or **Save project** to continue editing later.
+
 ## UX notes (November 2026)
 
-The main toolbar is grouped into **Select**, **Edit / Move**, and **Selection Mode**, while the primary actions **AI Edit** and **Harmonize** remain at the right. Wand tolerance only appears while Wand is active; brush size only appears while Brush/Eraser is active. Manual **Apply** appears only for an imported variation or edited saved mask. A concise workflow appears in the right inspector, with the full AI prompt behind an expandable Advanced section. Selection cursors remain regular arrows; Pan has a grab cursor. The image is fitted with room around its edges so outside-image lasso outlines are visible. On small screens, selection tools scroll horizontally independently from the main AI buttons.
+The main toolbar is grouped into **Select**, **Edit / Move**, and **Selection Mode**, with **AI Edit** and **Harmonize** on the right. Wand tolerance and brush size appear only when their tools are active. Manual **Apply** appears for an imported variation or edited saved mask. The right inspector now contains **Groups**, and **Help** opens the workflow and advanced full prompt. Selection cursors remain regular arrows; Pan has a grab cursor. The image is fitted with room around its edges so outside-image lasso outlines are visible. On small screens, selection tools scroll horizontally independently from the main AI buttons.
 
-## Semantic region groups and spatial memory
+## Semantic Groups and spatial memory
 
-- The first completed lasso, rectangle, oval, or Magic Wand selection creates a reusable named Region. Regions can also be explicitly created using **+** before selecting any pixels. Their reusable union mask is stored separately from individual option masks.
+- The first completed lasso, rectangle, oval, or Magic Wand selection creates a reusable named Group. Groups can also be explicitly created using **+** before selecting any pixels. Their reusable union mask is stored separately from individual option masks.
 - With Premium login and a user-provided OpenAI API key, Mosaic automatically classifies the highlighted crop using the gpt-4.1-mini vision model through /api/ai/classify. This incurs separate API charges. No hidden calls are made while logged out.
 - Without a key, the default category is Region. It can be changed manually, inferred from a subsequent edit prompt, or identified explicitly with the ✦ button. Model categories are suggestions, not guaranteed object detection.
-- Group and option labels remain user-editable. Local parsing derives short material/color/lighting labels from prompts (e.g. \"Make it black\" -> \"Black\"). Premium optionally uses GPT-4.1 mini to infer a better 1–4 word option label. Manual names always take precedence.
+- Each Option has **Edit, Rename, Delete, and ✦ Regen** actions. Local parsing derives concise names (e.g. “Make it black” → “Black”), with optional Premium semantic naming. Manually edited names take precedence.
 - Clicking a group heading reuses the **active option's displayed selection**, including its move/skew, on the current image. An imported variation still requires explicit Apply to commit that mask.
 - On desktop, hovering a recognized Region shows a category tooltip and subtle violet boundary. None of these guides enter exported images.
-- Region memory and names remain browser-local. Create new Regions with the header +; drag options between Regions on desktop, or use the transfer button on any option. Previous Harmonize variants retain their masks.
+- Groups and spatial memory remain browser-local. Click the **+ beside Groups** in the right sidebar to add a Group. The old right-side Guide was replaced by a **Help** dialog containing workflow instructions and the advanced harmonization prompt. Desktop drag/drop still moves options between Groups.

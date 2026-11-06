@@ -130,25 +130,12 @@ function drawArchivePreview(context) {
   drawComposition(context, node.base, node.groups, node.patches, node.sources);
   return true;
 }
-function activePatchMarkup() {
-  // A result image is accepted as a full frame but immediately clipped by the saved original mask.
-  for (const patch of state.patches.values()) {
-    if (!patch.awaitingResult) continue;
-    const row = $('groupList').querySelector('.variant-row[data-action="choose"][data-patch="' + patch.id + '"]');
-    if (!row) continue;
-    row.classList.add('awaiting-ai');
-    const generate = document.createElement('button');
-    generate.type='button';generate.className='small-action';generate.dataset.aiAction='generate';
-    generate.dataset.patch=patch.id;generate.textContent=patch.generating?'Generating…':'↻ Generate';
-    generate.disabled=Boolean(patch.generating);row.appendChild(generate);
-    const b = document.createElement('button');
-    b.type = 'button';
-    b.className = 'small-action add-ai-result';
-    b.dataset.aiAction = 'upload';
-    b.dataset.patch = patch.id;
-    b.textContent = 'Add result';
-    b.title = 'Attach a generated image; Mosaic will apply the saved lasso mask automatically';
-    row.appendChild(b);
+function activePatchMarkup(){
+  // Keep the four option controls stable even when a generation is pending.
+  for(const patch of state.patches.values()){
+    if(!patch.awaitingResult&&!patch.generating)continue;
+    const row=$('groupList').querySelector('.variant-row[data-action="choose"][data-patch="'+patch.id+'"]');
+    row?.classList.add('awaiting-ai');
   }
 }
 function groupMarkup(group, node) {
@@ -322,6 +309,65 @@ function encodeRequest(prompt,patch=null,masterSource=null){
   }
   throw Error('Image is too large for the server. Try a smaller Base image.');
 }
+function regionalCropWindow(mask){
+  const bounds=maskBoundingBox(mask);
+  if(!bounds)throw Error('Select a visible part of the image before generating.');
+  const context=Math.max(72,Math.ceil(Math.max(bounds.w,bounds.h)*.30));
+  const x=Math.max(0,Math.floor(bounds.x-context));
+  const y=Math.max(0,Math.floor(bounds.y-context));
+  const right=Math.min(canvas.width,Math.ceil(bounds.x+bounds.w+context));
+  const bottom=Math.min(canvas.height,Math.ceil(bounds.y+bounds.h+context));
+  return {x,y,w:Math.max(1,right-x),h:Math.max(1,bottom-y)};
+}
+function cropFrame(source,window,w,h,mask=false){
+  const frame=makeCanvas(w,h),context=frame.getContext('2d');
+  if(mask){
+    context.fillStyle='#fff';context.fillRect(0,0,w,h);
+    context.globalCompositeOperation='destination-out';
+  }else{
+    context.fillStyle='#fff';context.fillRect(0,0,w,h);
+  }
+  // Base may be imported at 4K while Master is 2.4K: translate crop
+  // coordinates through the full canvas to keep camera geometry aligned.
+  const sx=window.x/canvas.width*source.width;
+  const sy=window.y/canvas.height*source.height;
+  const sw=window.w/canvas.width*source.width;
+  const sh=window.h/canvas.height*source.height;
+  context.drawImage(source,sx,sy,sw,sh,0,0,w,h);
+  return frame.toDataURL(mask?'image/png':'image/jpeg',mask?undefined:.78);
+}
+function encodeRegionalCrop(patch){
+  const visualMask=core.displayedPatchMask(patch);
+  const region=regionalCropWindow(visualMask);
+  const collage=currentComposite(),base=state.reference||premium.initialMaster||state.master;
+  const guide=cloneCanvas(collage);
+  paintGuides(guide.getContext('2d'));
+  for(const maxDimension of [1152,960,768]){
+    const scale=Math.min(1,maxDimension/Math.max(region.w,region.h));
+    const w=Math.max(128,Math.round(region.w*scale));
+    const h=Math.max(128,Math.round(region.h*scale));
+    const payload={
+      collage:cropFrame(collage,region,w,h),
+      base:cropFrame(base,region,w,h),
+      mask:cropFrame(visualMask,region,w,h,true),
+      guide:cropFrame(guide,region,w,h),
+      projectPrompt:premium.projectPrompt,
+      prompt:patch.prompt,
+      regions:annotationNotes(patch.id),
+      references:patch.referenceImages||[],
+      cropSize: (() => {
+        // GPT Image 2.5 supports custom sizes in multiples of 16.
+        // Keep local output proportional to this crop, not to the full canvas.
+        const factor=Math.max(1,512/Math.min(w,h));
+        const rw=Math.round(Math.min(1536,w*factor)/16)*16;
+        const rh=Math.round(Math.min(1536,h*factor)/16)*16;
+        return rw/rh>3||rh/rw>3?'auto':rw+'x'+rh;
+      })()
+    };
+    if(JSON.stringify(payload).length<3550000)return {payload,region,visibleMask:visualMask};
+  }
+  throw Error('Selection crop is too large. Try fewer reference images or a smaller Base.');
+}
 async function fromGeneratedJPEG(encoded,targetSize=null){
   const binary=atob(encoded),bytes=new Uint8Array(binary.length);
   for(let i=0;i<binary.length;i++)bytes[i]=binary.charCodeAt(i);
@@ -356,34 +402,68 @@ async function classifyArea(mask){
   return core.CATEGORIES.includes(answer.category)?answer.category:'Other';
 }
 
-async function generateRegion(patchId){
+async function generateRegion(patchId,regenerate=false){
   const patch=state.patches.get(patchId);
-  if(!patch||!patch.awaitingResult||patch.generating)return;
+  if(!patch||patch.generating||(!regenerate&&!patch.awaitingResult))return;
   patch.generating=true;renderGroups();
   const run=async()=>{
     try{
       if(!await window.MosaicAuth.ensure())throw Error('Premium login canceled.');
-      const request=encodeRequest(patch.prompt,patch);
-      message('Generating AI edit for region '+patch.regionNumber+'…');
-      const answer=await window.MosaicAuth.request('/api/ai/edit',request);
-      const image=await fromGeneratedJPEG(answer.image);
-      const existing=state.patches.get(patchId),source=state.sources.get(patch.sourceId);
-      if(!existing||!source)return;
-      source.canvas=image;source.name='AI region '+patch.regionNumber;
-      existing.awaitingResult=false;if(!existing.manualName&&!existing.semanticNamed)existing.name=core.optionNameFromPrompt(existing.prompt,'AI edit '+patch.regionNumber);
+      const {payload,region,visibleMask}=encodeRegionalCrop(patch);
+      const generationId=patch.sourceId;
+      message('Generating only the selected area with nearby architectural context…');
+      const answer=await window.MosaicAuth.request('/api/ai/edit',payload);
+      const image=await fromGeneratedJPEG(answer.image,{width:region.w,height:region.h});
+      const existing=state.patches.get(patchId);
+      if(!existing||!state.sources.has(generationId)||existing.sourceId!==generationId)return;
+      const result=makeCanvas(canvas.width,canvas.height);
+      result.getContext('2d').drawImage(image,region.x,region.y,region.w,region.h);
+      // Always fork on regeneration to preserve shared source images and older options.
+      if(regenerate){
+        const id=uid('ai_source');
+        state.sources.set(id,{id,name:'Regenerated '+existing.name,canvas:result});
+        existing.sourceId=id;
+      }else{
+        const source=state.sources.get(existing.sourceId);
+        source.canvas=result;source.name='AI region '+patch.regionNumber;
+      }
+      if(existing.corners?.length){
+        existing.mask=cloneCanvas(visibleMask);
+        existing.bbox=maskBoundingBox(existing.mask);
+        existing.corners=null;
+        core.invalidateDisplayedMask(existing);
+      }
+      existing.awaitingResult=false;
+      if(!existing.manualName&&!existing.semanticNamed)existing.name=core.optionNameFromPrompt(existing.prompt,'AI edit '+(patch.regionNumber||''));
       existing.generating=false;
-      state.selectedPatchId=patchId;core.selectTool('transform');renderGroups();render();
-      message('Region '+patch.regionNumber+' ready. All pixels outside the saved mask are untouched.');
-      toast('AI result automatically clipped to the original mask.');
+      const group=state.groups.find(g=>g.patchIds.includes(patchId));
+      if(group)core.refreshGroupFootprint(group);
+      state.selectedPatchId=patchId;core.selectTool('transform');
+      renderGroups();render();
+      message('Local edit complete. The rest of the composition was not regenerated.');
+      toast('Generated medium-quality crop; restored to its exact selected position.');
     }catch(error){
       patch.generating=false;renderGroups();
-      toast('Region '+patch.regionNumber+': '+error.message);
-      message('AI edit failed. Retry using Generate in the region list.');
+      toast('Local AI edit: '+error.message);
+      message('The current approved image was preserved. Retry from its option.');
     }
   };
   const job=premium.generationQueue.catch(()=>{}).then(run);
   premium.generationQueue=job;
   return job;
+}
+async function regenerateOption(patchId){
+  const patch=state.patches.get(patchId);
+  if(!patch||patch.generating||state.pendingSourceId||state.editingPatchId){
+    toast('Finish editing the active image first.');return;
+  }
+  if(!await window.MosaicAuth.ensure())return;
+  if(!patch.prompt){
+    const instruction=window.prompt('Describe the change to regenerate '+patch.name+':',patch.name||'Photorealistic architectural edit');
+    if(!instruction?.trim())return;
+    patch.prompt=instruction.trim();
+  }
+  void generateRegion(patchId,true);
 }
 
 async function openAreaPrompt() {
@@ -674,13 +754,48 @@ $('welcomeBasePromptForm').addEventListener('submit',event=>{
 $('generateMasterBtn').addEventListener('click',openMasterGenerate);
 $('masterGenerateForm').addEventListener('submit',event=>void generateMaster(event));
 
+function exportProjectState(){
+  return {
+    projectPrompt:premium.projectPrompt,
+    root:premium.root,
+    serial:premium.serial,
+    expanded:premium.expanded,
+    previewNode:premium.previewNode,
+    lastRequest:premium.lastRequest,
+    originalMaster:premium.originalMaster,
+    initialMaster:premium.initialMaster,
+    masterVersions:premium.masterVersions,
+    branchFrom:premium.branchFrom,
+    regionSerial:premium.regionSerial,
+    showGuides:premium.showGuides
+  };
+}
+function restoreProjectState(snapshot){
+  const data=snapshot||{};
+  premium.projectPrompt=String(data.projectPrompt||'');
+  premium.root=data.root||null;
+  premium.serial=Number(data.serial)||0;
+  premium.expanded=data.expanded instanceof Set?data.expanded:new Set();
+  premium.previewNode=data.previewNode||null;
+  premium.lastRequest=data.lastRequest||null;
+  premium.originalMaster=data.originalMaster||null;
+  premium.initialMaster=data.initialMaster||null;
+  premium.masterVersions=Array.isArray(data.masterVersions)?data.masterVersions:[];
+  premium.branchFrom=data.branchFrom||null;
+  premium.regionSerial=Number(data.regionSerial)||0;
+  premium.showGuides=Boolean(data.showGuides);
+  premium.regenerateFrom=null;premium.uploadPatch=null;
+  premium.generationQueue=Promise.resolve();
+  $('regionGuidesBtn').setAttribute('aria-pressed',String(premium.showGuides));
+  updateIntent();refreshMasterBrowser();
+}
 function onPatchApplied() {
   // A committed patch stays selected so its four corner handles are immediately available.
   if(state.selectedPatchId)core.selectTool('transform');
 }
 window.MosaicPremium = {
   projectPrompt: () => premium.projectPrompt,
-  onReferenceLoaded, onMasterLoaded, onBaseContinue, onSourcesAligned, onSourceEdited, onMasterReset, canSelectArea, onPatchApplied, generateSelection, decorateActive: activePatchMarkup, getReferenceFiles, clearReferenceFiles, getMasterVersions, regenerateMaster, initialMasterImage,
+  onReferenceLoaded, onMasterLoaded, onBaseContinue, onSourcesAligned, onSourceEdited, onMasterReset, canSelectArea, onPatchApplied, generateSelection, regenerateOption, decorateActive: activePatchMarkup, getReferenceFiles, clearReferenceFiles, getMasterVersions, regenerateMaster, initialMasterImage, exportProjectState, restoreProjectState,
   drawArchivePreview, isPreviewing, renderHistory, handleGroupEvent,
   originalImage, exportPrompt, drawRegionGuides, classifyArea
 };
