@@ -455,3 +455,8 @@ body:not(.premium-ready) .right-sidebar .inspector-bottom{display:none}
   .topbar #exportBtn{font-size:0;padding:6px}
   .topbar #exportBtn .icon{font-size:16px}
 }
+
+.help-prompt{margin:18px 0 3px;border-top:1px solid #454453;padding-top:12px}
+.help-prompt summary{cursor:pointer;color:#cfc6ff;font-weight:700}
+.help-prompt #promptPreview{max-height:190px;overflow:auto;white-space:pre-wrap;font-size:10px;line-height:1.5;word-break:break-word;color:#b6bbca}
+.help-prompt-actions{display:flex;gap:8px}
