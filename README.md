@@ -90,6 +90,14 @@ Click an existing region or variation in **Layers** to select it. Mosaic activat
 
 The original Base geometry is preserved separately from the working Master.
 
+## Paste or drag references into AI prompts
+
+- Every image-generation prompt accepts images by **Ctrl/Cmd+V** (copied screenshot or image), **drag-and-drop into the prompt text area**, or the normal **+ Reference images** file picker.
+- This includes Base-to-Master, masked AI Edit, floating quick prompt, inline per-Group prompt, and full Harmonize / Master regeneration.
+- Images appear as removable thumbnails next to the prompt and are submitted with that specific AI generation request, up to **3 JPG/PNG/WebP images** of **10 MB each**.
+- Plain-text paste and text editing still work normally. Dropping an image into a prompt does not import it as a new working image/variant.
+- Reference attachments are temporary to the prompt and are not automatically saved in the project file.
+
 ## Portable project files (.mosaic)
 
 - Click **Save project** to download a versioned, lossless JSON-based `.mosaic` file. It includes Base, working Master, original uploads, source layers, Groups, Option names/prompts, saved selections, moved/skewed masks, current draft selection, Undo/Redo, queued image files, Master Versions and editable Harmonize history.

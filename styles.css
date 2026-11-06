@@ -460,3 +460,17 @@ body:not(.premium-ready) .right-sidebar .inspector-bottom{display:none}
 .help-prompt summary{cursor:pointer;color:#cfc6ff;font-weight:700}
 .help-prompt #promptPreview{max-height:190px;overflow:auto;white-space:pre-wrap;font-size:10px;line-height:1.5;word-break:break-word;color:#b6bbca}
 .help-prompt-actions{display:flex;gap:8px}
+
+/* Paste (Ctrl/Cmd+V) or drag files directly into any AI prompt. */
+.reference-prompt-target{position:relative;transition:background .14s,border-color .14s,box-shadow .14s}
+.reference-prompt-target textarea,.reference-prompt-target input[type="text"]{transition:border-color .14s,box-shadow .14s}
+.reference-prompt-target.reference-drag-over{background-color:rgba(163,137,255,.09);box-shadow:inset 0 0 0 2px #a398ff;border-radius:10px}
+.reference-prompt-target.reference-drag-over textarea,
+.reference-prompt-target.reference-drag-over input[type="text"]{border-color:#cec0ff!important;box-shadow:0 0 0 2px #a68aff66!important}
+.reference-paste-hint{display:block;margin:5px 0 8px;font-size:10px;line-height:1.5;font-weight:500;color:#a99fd9;opacity:.92;white-space:normal}
+.welcome-base-prompt .reference-paste-hint{font-size:10px;text-align:left;margin:5px 0}
+.quick-area-prompt .reference-paste-hint{font-size:10px;margin:4px 0}
+.region-option-prompt .reference-paste-hint{flex:1 1 100%;margin:1px 2px 0}
+.harmonize-reference-row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:7px}
+.harmonize-reference-row .reference-upload-action{margin:0}
+.harmonize-reference-row .reference-previews{flex:1}
