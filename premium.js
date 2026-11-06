@@ -366,10 +366,10 @@ async function openAreaPrompt() {
   $('areaPromptInput').value = '';clearReferenceFiles('area');
   showDialog('areaPromptDialog');
 }
-function createRegionRequest(prompt,referenceImages=[]) {
-  const bbox = maskBoundingBox(state.selectionMask);
+function createRegionRequest(prompt,referenceImages=[],selectedMask=state.selectionMask) {
+  const bbox = maskBoundingBox(selectedMask);
   if (!bbox) {toast('Selection has no pixels.');return;}
-  const mask = cloneCanvas(state.selectionMask);
+  const mask = cloneCanvas(selectedMask);
   const base = currentComposite();
   const sourceId = uid('ai_source');
   const text = prompt.trim();
@@ -396,11 +396,12 @@ async function generateSelection(prompt,groupId=null,referenceFiles=[]){
   if(state.lasso.length>2)core.updateMaskWithLasso();
   const bbox=maskBoundingBox(state.selectionMask);
   if(!bbox){toast('Select a region before generating.');return}
-  if(groupId){const g=state.groups.find(g=>g.id===groupId);if(g)state.draftGroupId=g.id}
+  const savedMask=cloneCanvas(state.selectionMask),generation=state.selectionGeneration;
   try{
     const referenceImages=await prepareReferenceImages(referenceFiles);
-    if(!state.selectionMask||!maskBoundingBox(state.selectionMask)){toast('Select a region again before generating.');return}
-    const patchId=createRegionRequest(prompt,referenceImages);
+    if(generation!==state.selectionGeneration){toast('The project changed. Please select the region again.');return}
+    if(groupId){const g=state.groups.find(g=>g.id===groupId);if(g)state.draftGroupId=g.id}
+    const patchId=createRegionRequest(prompt,referenceImages,savedMask);
     if(patchId)void generateRegion(patchId);
   }catch(error){toast('Reference upload: '+error.message)}
 }
