@@ -89,3 +89,8 @@
  .mosaic-dialog form{padding:18px}
  .tool-row .btn-premium{flex:none;font-size:10px;padding:8px 8px}
 }
+
+/* Shape tools remain reachable on narrower screens. */
+.toolset{flex:none}
+.tool[data-tool="rect"],.tool[data-tool="ellipse"]{white-space:nowrap}
+@media(max-width:1100px){.tool-row{overflow-x:auto;scrollbar-width:thin}.tool-row .tool-spacer{min-width:4px}}
