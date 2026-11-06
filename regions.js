@@ -42,7 +42,7 @@ function decorate(){
       if(!patch)continue;
       const text=row.querySelector('.variant-text');
       if(text)text.textContent=patch.name;
-      row.draggable=true;row.title='Drag this option to another Group';
+      row.draggable=true;row.title='Drag to another Group, or right-click / long-press to move';
       // Exactly four primary actions are authored by app.js.
       // Drag/drop between Groups remains available without extra buttons.
     }
@@ -67,6 +67,26 @@ function inlineRename(container,current,onSave){
     else if(e.key==='Escape'){e.preventDefault();finish(false)}
   });
   input.addEventListener('blur',()=>finish(true));
+}
+function showMovePicker(row,group){
+  const patchId=row?.dataset.patch;
+  if(!patchId||state.groups.length<2){core.toast('Create another Group before moving an option.');return true}
+  row.querySelector('.region-move-picker')?.remove();
+  const select=document.createElement('select');select.className='region-move-picker';
+  select.setAttribute('aria-label','Move option to group');
+  select.append(new Option('Move to Group…',''));
+  for(const destination of state.groups){
+    if(destination.id===group.id)continue;
+    select.append(new Option(destination.name,destination.id));
+  }
+  row.append(select);select.focus({preventScroll:true});
+  select.addEventListener('click',event=>event.stopPropagation());
+  select.addEventListener('change',event=>{
+    event.stopPropagation();
+    if(select.value)core.moveOptionToGroup(patchId,select.value);
+    else select.remove();
+  });
+  return true;
 }
 function handleGroupEvent(e){
   if(e.target.closest('.region-rename-input,[data-region-category]'))return true;
@@ -111,25 +131,7 @@ function handleGroupEvent(e){
       inlineRename(section.querySelector('.group-name'),group.name,name=>{group.name=name;group.manualName=true});return true;
     }
     if(action.dataset.regionAction==='move-option'){
-      const patchId=action.closest('.variant-row')?.dataset.patch;
-      if(!patchId||state.groups.length<2){core.toast('Create another Group before moving an option.');return true}
-      const row=action.closest('.variant-row');
-      row.querySelector('.region-move-picker')?.remove();
-      const select=document.createElement('select');select.className='region-move-picker';
-      select.setAttribute('aria-label','Move option to region');
-      select.append(new Option('Move to Group…',''));
-      for(const destination of state.groups){
-        if(destination.id===group.id)continue;
-        select.append(new Option(destination.name,destination.id));
-      }
-      row.append(select);select.focus({preventScroll:true});
-      select.addEventListener('click',event=>event.stopPropagation());
-      select.addEventListener('change',event=>{
-        event.stopPropagation();
-        if(select.value)core.moveOptionToGroup(patchId,select.value);
-        else select.remove();
-      });
-      return true;
+      return showMovePicker(action.closest('.variant-row'),group);
     }
     if(action.dataset.regionAction==='regen-option'){
       const patchId=action.closest('.variant-row')?.dataset.patch;
@@ -170,6 +172,13 @@ function handleGroupEvent(e){
   if(e.target.closest('.group-head')){selectGroupMask(group);return true}
   return false;
 }
+list.addEventListener('contextmenu',event=>{
+  const row=event.target.closest('.variant-row[data-patch]'),section=row?.closest('.region-group[data-group]');
+  const group=section&&state.groups.find(g=>g.id===section.dataset.group);
+  if(!row||!group||!state.patches.has(row.dataset.patch))return;
+  event.preventDefault();
+  showMovePicker(row,group);
+});
 let draggedPatchId=null;
 list.addEventListener('dragstart',event=>{
   const row=event.target.closest('.variant-row[data-patch]');
