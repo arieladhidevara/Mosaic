@@ -167,7 +167,7 @@ function selectGroupMask(group){
   resetSelection();state.selectionMask.getContext('2d').drawImage(mask,0,0);
   state.draftGroupId=group.id;state.selectedPatchId=null;
   setMode('new');selectTool('select');updateSelectionOutline();updateApplyButton();renderGroups();
-  message('Selected '+group.name+'. '+(state.pendingSourceId?'Press Enter / Apply to keep the selected part of the new image.':'Click AI Edit, or refine with Add / Subtract.'));
+  message('Selected '+group.name+'. '+(state.pendingSourceId?'Click Apply to keep this area from the imported image.':'Click AI Edit, or refine with Add / Subtract.'));
   toast('Reused '+group.name+' mask.');
 }
 function optionNameFromPrompt(prompt,fallback='New option'){
@@ -386,7 +386,7 @@ function drawOverlay(){ox.clearRect(0,0,overlay.width,overlay.height);drawDraftP
 }
 function escapeHTML(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]))}
 function renderGroups(){
-  const list=$('groupList');$('groupCount').textContent=state.groups.length;
+  const list=$('groupList');$('groupCount').textContent=state.groups.length;updateSourceActions();
   $('pendingBanner').classList.toggle('hidden',!state.pendingSourceId);
   if(state.pendingSourceId){const source=state.sources.get(state.pendingSourceId);$('pendingName').textContent='● Editing: '+(source?.name||'New variation')}
   if(!state.groups.length){
@@ -405,7 +405,7 @@ function renderGroups(){
   }).join('');
   window.MosaicRegions?.decorate();window.MosaicPremium?.decorateActive?.();updateSourceActions();
 }
-function editExisting(pid){if(state.pendingSourceId){toast('Apply or discard your new image before editing saved variants.');return}const patch=state.patches.get(pid);if(!patch)return;state.editingPatchId=pid;state.selectedPatchId=pid;resetSelection();state.selectionMask.getContext('2d').drawImage(patch.mask,0,0);setMode('add');selectTool('lasso');updateSelectionOutline();updateApplyButton();message('Editing a saved mask. Draw New, Add or Subtract, then Enter to update.')}
+function editExisting(pid){if(state.pendingSourceId){toast('Apply or discard your new image before editing saved variants.');return}const patch=state.patches.get(pid);if(!patch)return;state.editingPatchId=pid;state.selectedPatchId=pid;resetSelection();state.selectionMask.getContext('2d').drawImage(patch.mask,0,0);setMode('add');selectTool('lasso');updateSelectionOutline();updateApplyButton();message('Editing a saved mask. Refine it, then click Update mask to commit changes.')}
 function groupEvent(e){if(window.MosaicRegions?.handleGroupEvent(e))return;if(window.MosaicPremium?.handleGroupEvent(e))return;const target=e.target.closest('[data-action]');if(!target)return;const action=target.dataset.action,group=state.groups.find(g=>g.id===target.dataset.group),pid=target.dataset.patch;
   if(action==='focus'&&group){if(group.active){state.editingPatchId=null;state.selectedPatchId=group.active;resetSelection();selectTool('transform');renderGroups();render()}return}
   if(action==='edit'){editExisting(pid);return}
