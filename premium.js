@@ -276,7 +276,7 @@ async function attachAIResult(file) {
   } catch (error) {toast('Could not attach result: ' + error.message);}
 }
 function openHarmonize() {
-  if (!state.master || !state.reference) {toast('Upload the original Revit image first.');return;}
+  if (!state.master || !state.reference) {toast('Upload Base first.');return;}
   if (state.pendingSourceId || state.editingPatchId) {toast('Apply or discard the current mask first.');return;}
   if (premium.previewNode) {toast('Close the archive preview or branch from it before harmonizing.');return;}
   if (state.groups.some(g => g.active && state.patches.get(g.active)?.awaitingResult)) {
@@ -286,7 +286,7 @@ function openHarmonize() {
   showDialog('harmonizeDialog');
 }
 function harmonizeLocally(prompt) {
-  // Provider slot: send original Revit + currentComposite() + prompt to a trusted
+  // Provider slot: send Base + currentComposite() + prompt to a trusted
   // backend once an AI endpoint and premium entitlements are actually configured.
   const flattened = currentComposite();
   const graph = copyGraph(state.groups, state.patches, state.sources);
@@ -301,7 +301,7 @@ function harmonizeLocally(prompt) {
   premium.expanded.add(node.id);
   premium.previewNode = null;
   premium.lastRequest = {
-    originalRevit: state.reference, collage: cloneCanvas(flattened),
+    originalBase: state.reference, collage: cloneCanvas(flattened),
     prompt, snapshotId: node.id
   };
   state.master = flattened;
