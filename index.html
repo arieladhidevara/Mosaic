@@ -17,37 +17,66 @@
 
     <div class="workspace">
       <aside class="left-sidebar">
-        <div class="panel-top"><div class="eyebrow">PROJECT</div><h2>Sources</h2></div>
+        <div class="panel-top"><div class="eyebrow">01 · IMAGE SOURCES</div><h2>Start with Base</h2><p>Keep the original view, then add a Master or AI variations.</p></div>
         <label class="upload-box reference-upload" id="referenceZone"><input id="referenceInput" type="file" accept="image/*" hidden/><span class="upload-icon">▦</span><span class="upload-copy"><strong id="referenceTitle">Base</strong><small id="referenceInfo">Original geometry &amp; view</small></span><span id="referenceStatus" class="upload-right">＋</span></label>
         <label class="upload-box" id="masterZone"><input id="masterInput" type="file" accept="image/*" hidden/><span class="upload-icon">◈</span><span class="upload-copy"><strong id="masterTitle">Master</strong><small id="masterInfo">Working canvas</small></span><span id="masterStatus" class="upload-right">＋</span></label>
         <div class="project-intent"><div><span class="eyebrow">PREMIUM · DESIGN INTENT</span><p id="projectPromptSummary">Add Base to set the prompt.</p></div><button id="editProjectPromptBtn" class="small-action" type="button">Edit</button></div>
         <div class="section-rule"></div>
-        <div class="section-heading"><div><div class="eyebrow">LAYERS</div><h2>Regions <span id="groupCount" class="count-tag">0</span></h2></div><button id="addImagesBtn" title="Add AI variations" class="icon-btn small">＋</button></div>
+        <div class="section-heading"><div><div class="eyebrow">02 · COMPOSITION</div><h2>Regions <span id="groupCount" class="count-tag">0</span></h2></div><button id="addImagesBtn" title="Add AI variations" class="icon-btn small">＋</button></div>
         <input id="variantInput" type="file" accept="image/*" multiple hidden/>
-        <div class="sidebar-hint">Mask a region · Enter to apply</div>
+        <div class="sidebar-hint">Select an area → <strong>AI Edit</strong> to generate, or <strong>Apply</strong> to keep a variation.</div>
         <div id="pendingBanner" class="pending-banner hidden" aria-live="polite"><span id="pendingName"></span><button id="discardPendingBtn" class="variant-action" title="Discard this uploaded image">✕</button></div><div class="section-heading history-heading"><div><div class="eyebrow">HISTORY</div><h2>Harmonized layers</h2></div></div><div id="groupList" class="group-list"><div class="empty-groups"><span>◌</span><strong>No patches yet</strong><p>Upload a variation to begin.</p></div></div>
         <div class="left-footer"><button id="newVariantBtn" class="btn btn-outline full"><span class="plus-circle">＋</span> Add AI variation</button></div>
       </aside>
 
       <main class="main-panel">
         <div class="canvas-header"><div class="canvas-title"><span class="status-mark"></span><span id="projectName">Untitled composition</span><span id="projectSize" class="dim-label"></span></div><div class="canvas-actions"><button id="beforeBtn" class="btn btn-quiet compact" title="Hold on desktop, tap on touch devices to compare">◫ Compare</button><span class="vert-line"></span><button id="zoomOut" class="icon-btn" aria-label="Zoom out">−</button><span id="zoomValue" class="zoom-label">Fit</span><button id="zoomIn" class="icon-btn" aria-label="Zoom in">＋</button><button id="zoomFit" class="btn btn-quiet compact">Fit</button></div></div>
-        <div class="tool-row" id="tools"><div class="toolset"><button class="tool active" data-tool="lasso" title="Lasso: drag freehand or click points; close at first point, double-click, or press Enter" aria-pressed="true">⌁ <span>Lasso</span></button><button class="tool" data-tool="rect" title="Rectangle selection: drag to select; Shift for a square" aria-pressed="false">▭ <span>Rect</span></button><button class="tool" data-tool="ellipse" title="Ellipse selection: drag to select; Shift for a circle" aria-pressed="false">◯ <span>Oval</span></button><button class="tool" data-tool="wand" title="Magic Wand: click contiguous pixels of similar color. Adjust tolerance to refine." aria-pressed="false">✧ <span>Wand</span></button><button class="tool" data-tool="transform" title="Move inside the selected layer, or drag its four corners to skew" aria-pressed="false">⤧ <span>Move / Skew</span></button><button class="tool" data-tool="brush" title="Brush: reveal layer pixels">◉ <span>Brush</span></button><button class="tool" data-tool="eraser" title="Eraser: hide layer pixels">◌ <span>Eraser</span></button><button class="tool" data-tool="pan" title="Pan / inspect">✥ <span>Pan</span></button></div><span class="vert-line"></span><div class="selection-modes" aria-label="Selection modes"><button class="mode active" data-mode="new" title="Replace selection">New</button><button class="mode" data-mode="add" title="Add to selection">＋ Add</button><button class="mode" data-mode="subtract" title="Subtract from selection">− Subtract</button></div><span class="vert-line"></span><label class="wand-options hidden" id="wandOptions" for="wandTolerance">Tolerance <input id="wandTolerance" type="range" min="0" max="100" value="22"/><output id="wandValue">22</output></label><label class="brush-size hidden" id="brushOptions" for="brushSize">Brush <input id="brushSize" type="range" min="5" max="160" value="36"/><span id="brushValue">36</span></label><span class="tool-spacer"></span><button id="undoBtn" class="icon-btn" title="Undo mask edit">↶</button><button id="redoBtn" class="icon-btn" title="Redo mask edit">↷</button><button id="projectPromptToolbarBtn" class="btn btn-quiet compact" type="button">Prompt</button><button id="regionGuidesBtn" class="btn btn-quiet compact" type="button" title="Show or hide colored prompt regions" aria-pressed="true">◉ Regions</button><button id="promptAreaBtn" class="btn btn-premium compact" type="button">✦ Area</button><button id="harmonizeBtn" class="btn btn-premium compact" type="button">✧ Harmonize</button><button id="commitBtn" class="btn btn-primary compact" disabled>✓ Apply <kbd>Enter</kbd></button><button id="clearSelectionBtn" class="btn btn-quiet compact">Clear</button><button id="resetTransformBtn" class="btn btn-quiet compact hidden" title="Restore the selected layer to its original mask position">Reset warp</button></div>
+
+        <div class="tool-row" id="tools" role="toolbar" aria-label="Mosaic editing tools">
+          <div class="toolbar-left">
+            <div class="toolbar-cluster" aria-label="Selection tools">
+              <span class="toolbar-caption">SELECT</span>
+              <div class="toolset"><button class="tool active" data-tool="lasso" title="Lasso: drag freehand or click points; close at first point, double-click, or press Enter" aria-pressed="true">⌁ <span>Lasso</span></button><button class="tool" data-tool="rect" title="Rectangle selection: drag to select; Shift for a square" aria-pressed="false">▭ <span>Rect</span></button><button class="tool" data-tool="ellipse" title="Ellipse selection: drag to select; Shift for a circle" aria-pressed="false">◯ <span>Oval</span></button><button class="tool" data-tool="wand" title="Magic Wand: click contiguous pixels of similar color. Adjust tolerance to refine." aria-pressed="false">✧ <span>Wand</span></button></div>
+            </div>
+            <span class="toolbar-divider" aria-hidden="true"></span>
+            <div class="toolbar-cluster" aria-label="Layer tools">
+              <span class="toolbar-caption">EDIT / MOVE</span>
+              <div class="toolset"><button class="tool" data-tool="brush" title="Brush: reveal layer pixels">◉ <span>Brush</span></button><button class="tool" data-tool="eraser" title="Eraser: hide layer pixels">◌ <span>Eraser</span></button><button class="tool" data-tool="transform" title="Move inside the selected layer, or drag its four corners to skew" aria-pressed="false">⤧ <span>Move / Skew</span></button><button class="tool" data-tool="pan" title="Pan / inspect">✥ <span>Pan</span></button></div>
+            </div>
+            <span class="toolbar-divider" aria-hidden="true"></span>
+            <div class="toolbar-cluster" aria-label="Selection operation">
+              <span class="toolbar-caption">SELECTION MODE</span>
+              <div class="selection-modes"><button class="mode active" data-mode="new" title="Replace selection">New</button><button class="mode" data-mode="add" title="Add to selection">＋ Add</button><button class="mode" data-mode="subtract" title="Subtract from selection">− Subtract</button></div>
+            </div>
+            <div class="toolbar-context"><label class="wand-options hidden" id="wandOptions" for="wandTolerance">Tolerance <input id="wandTolerance" type="range" min="0" max="100" value="22"/><output id="wandValue">22</output></label><label class="brush-size hidden" id="brushOptions" for="brushSize">Brush <input id="brushSize" type="range" min="5" max="160" value="36"/><span id="brushValue">36</span></label></div>
+          </div>
+          <div class="toolbar-right">
+            <div class="toolbar-utility"><button id="undoBtn" class="icon-btn" title="Undo mask edit">↶</button><button id="redoBtn" class="icon-btn" title="Redo mask edit">↷</button><button id="regionGuidesBtn" class="btn btn-quiet compact" type="button" title="Show or hide colored prompt regions" aria-pressed="true">◉</button><button id="projectPromptToolbarBtn" class="btn btn-quiet compact" type="button">Prompt</button><button id="clearSelectionBtn" class="btn btn-quiet compact">Clear</button><button id="resetTransformBtn" class="btn btn-quiet compact hidden" title="Restore the selected layer to its original mask position">Reset warp</button></div>
+            <div class="toolbar-primary"><button id="promptAreaBtn" class="btn btn-premium compact" type="button">✦ AI Edit</button><button id="harmonizeBtn" class="btn btn-premium compact" type="button">✧ Harmonize</button><button id="commitBtn" class="btn btn-primary compact" disabled>✓ Apply <kbd>Enter</kbd></button></div>
+          </div>
+        </div>
         <div class="canvas-viewport" id="viewport">
           <div id="welcome" class="welcome"><div class="welcome-graphic"><div class="mock-frame f1"></div><div class="mock-frame f2"></div><div class="mock-frame f3"></div><div class="welcome-center">◈</div></div><div class="welcome-label">MOSAIC</div><h1>One canvas.<br/><em>Every variation.</em></h1><p>Mask, move, compose.</p><div class="welcome-actions"><button class="btn btn-primary" id="welcomeStart">Upload Base <span>↗</span></button><button class="btn btn-outline" id="welcomeRevit">Add Master</button></div><div class="welcome-steps"><span>① Base</span><i></i><span>② Variations</span><i></i><span>③ Mask</span><i></i><span>④ Harmonize</span></div></div>
           <div id="canvasWrap" class="canvas-wrap hidden"><canvas id="compositeCanvas"></canvas><canvas id="overlayCanvas"></canvas><svg id="selectionDraft" class="selection-draft" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" preserveAspectRatio="none"><path id="selectionDraftPath" fill="none" stroke="#e4e2ff" stroke-width="2" stroke-dasharray="6 5" vector-effect="non-scaling-stroke" stroke-linejoin="round"/><g id="selectionDraftPoints"></g></svg></div>
           <div id="processing" class="processing hidden"><span class="spinner"></span><strong>Loading image…</strong><small>Preparing the next layer</small></div>
         </div>
-        <div class="canvas-foot"><span id="canvasMessage">Upload Base to begin.</span><span class="bottom-shortcut">Drag to mask · <kbd>Enter</kbd> apply · <kbd>⌘Z</kbd> undo</span></div>
+        <div class="canvas-foot"><span id="canvasMessage">Upload Base to begin.</span><span class="bottom-shortcut">Select → AI Edit · <kbd>Enter</kbd> close lasso · <kbd>⌘Z</kbd> undo</span></div>
       </main>
 
       <aside class="right-sidebar" id="inspectorPanel">
         <div class="inspector-bar"><span>GUIDE</span><button id="inspectorToggle" class="icon-btn small" type="button" aria-expanded="true" aria-label="Minimize guide" title="Minimize guide">−</button></div>
-        <div class="inspector-top"><h2>Controls</h2><p>Choose a layer to show its handles.</p></div>
-        <div class="setting-card"><strong>Move / Skew</strong><p>Drag inside to move. Drag any of the 4 corners to skew.</p></div>
-        <div class="setting-card"><strong>Mask</strong><p>Lasso, Rect, Oval · New / Add / Subtract · Enter to apply.</p></div>
+        <div class="inspector-top"><h2>Quick workflow</h2><p><strong>1.</strong> Select any area with Lasso, Rect, Oval or Wand.
+<strong>2.</strong> Click AI Edit to change it, or Apply to keep part of an imported variation.
+<strong>3.</strong> Harmonize when the composition is ready.</p></div>
+        <div class="setting-card"><strong>Move / Skew</strong><p>Choose a layer to move it or drag its four corners.</p></div>
+        <div class="setting-card"><strong>Selection tips</strong><p>Lasso can extend beyond the image. Wand selects connected, similar colors. New / Add / Subtract refine a mask.</p></div>
         <div class="section-rule"></div>
-        <div class="section-heading"><div><h2>AI prompt</h2></div><button id="copyPromptBtn" title="Copy prompt" class="icon-btn small">⧉</button></div>
-        <div class="prompt-preview"><p id="promptPreview"></p></div><button id="copyPromptSecondary" class="btn btn-outline full">⧉ Copy</button>
+        <details class="inspector-advanced">
+          <summary>Advanced · Full AI prompt</summary>
+          <div class="section-heading"><div><h2>Harmonize instructions</h2></div><button id="copyPromptBtn" title="Copy prompt" class="icon-btn small">⧉</button></div>
+          <div class="prompt-preview"><p id="promptPreview"></p></div>
+          <button id="copyPromptSecondary" class="btn btn-outline full">⧉ Copy prompt</button>
+        </details>
         <div class="inspector-bottom"><button class="btn btn-premium full" id="harmonizeSidebarBtn" type="button">✧ Harmonize</button></div>
       </aside>
     </div>

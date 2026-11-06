@@ -141,3 +141,63 @@
 .wand-options input{width:76px;accent-color:#a5a3ff}
 .wand-options output{min-width:19px;font-variant-numeric:tabular-nums}
 @media(max-width:730px){.wand-options{gap:3px}.wand-options input{width:52px}}
+
+/* V0.3 - simple, discoverable grouped tool bar */
+.tool-row{display:flex;align-items:center;gap:8px;min-height:64px;height:64px;padding:5px 11px;overflow:hidden}
+.toolbar-left{display:flex;align-items:center;gap:10px;min-width:0;flex:1;overflow-x:auto;scrollbar-width:thin;scrollbar-color:#343848 transparent}
+.toolbar-right{display:flex;align-items:center;gap:7px;flex:none;border-left:1px solid #3b3e4b;padding-left:8px}
+.toolbar-cluster{display:flex;flex-direction:column;justify-content:center;flex:none;gap:3px}
+.toolbar-caption{font-size:9px;font-weight:800;color:#777f91;letter-spacing:1.2px;line-height:1;padding-left:6px}
+.toolbar-divider{width:1px;height:28px;background:#333743;flex:none}
+.toolbar-utility,.toolbar-primary{display:flex;align-items:center;gap:3px;flex:none}
+.toolbar-primary{gap:5px}
+.toolbar-primary .btn-premium{white-space:nowrap}
+.toolbar-utility .icon-btn{width:29px;height:30px}
+.toolbar-utility #projectPromptToolbarBtn{display:none}
+.toolbar-utility #clearSelectionBtn{font-weight:500}
+.toolbar-context{display:flex;align-items:center;flex:none}
+.toolbar-cluster .toolset{gap:2px}
+.toolbar-cluster .tool{padding:6px 7px}
+.toolbar-cluster .mode{padding:6px 8px}
+.toolbar-cluster .selection-modes{padding:2px}
+.toolbar-primary #promptAreaBtn{background:#40395b;border-color:#7664b7;color:#eae4ff}
+.toolbar-primary #harmonizeBtn{background:#7d72d9;color:#131121;border-color:#a89df4}
+.toolbar-primary #harmonizeBtn:hover{background:#9d94ef}
+.inspector-top strong{color:#b4aaff}
+.right-sidebar .inspector-top p{line-height:1.75}
+.inspector-advanced{padding:3px 12px 12px;border-top:1px solid #2b2e36}
+.inspector-advanced summary{cursor:pointer;font-size:11px;color:#b5afee;font-weight:700;padding:11px 4px}
+.inspector-advanced[open] summary{color:#ddd9ff}
+.inspector-advanced .section-heading{padding:0 5px}
+.inspector-advanced .prompt-preview{margin:9px 0}
+.inspector-advanced #copyPromptSecondary{margin:0;width:100%}
+@media(max-width:1270px){
+ .tool-row{gap:5px}
+ .toolbar-left{gap:6px}
+ .toolbar-right{gap:3px}
+ .toolbar-cluster .tool{padding:6px}
+ .toolbar-primary .btn{padding:7px}
+ .toolbar-caption{font-size:8px}
+ .toolbar-utility #clearSelectionBtn{display:none}
+}
+@media(max-width:900px){
+ .toolbar-utility #regionGuidesBtn{display:none}
+ .toolbar-left{gap:4px}
+ .toolbar-right #undoBtn,.toolbar-right #redoBtn{display:none}
+}
+@media(max-width:730px){
+ .tool-row{height:53px;min-height:53px;padding:3px 5px;overflow:hidden;gap:4px}
+ .toolbar-left{gap:6px;overflow-x:auto;scrollbar-width:none}
+ .toolbar-cluster{gap:0}
+ .toolbar-caption,.toolbar-divider{display:none}
+ .toolbar-cluster .tool{padding:7px}
+ .toolbar-cluster .tool span{display:none}
+ .toolbar-cluster .mode{font-size:10px;padding:6px}
+ .toolbar-context .wand-options{font-size:10px}
+ .toolbar-right{padding-left:4px;gap:2px}
+ .toolbar-right #harmonizeBtn{padding:7px 6px;font-size:10px}
+ .toolbar-right #promptAreaBtn{padding:7px 6px;font-size:10px}
+ .toolbar-right #commitBtn{padding:7px 5px;font-size:10px}
+ .toolbar-utility{display:none}
+ .canvas-foot{padding:0 10px}
+}

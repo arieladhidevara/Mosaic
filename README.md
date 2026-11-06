@@ -7,7 +7,7 @@ Mosaic is a manual-first architectural AI collage editor with optional single-ac
 1. Upload a **Base image**. It becomes the initial visible canvas when no master has been chosen; enter the project design-intent prompt in the dialog.
 2. Optionally upload a separate **master render**, or keep working directly over the Base image.
 3. Upload one or more AI images. Each becomes a temporary top layer, one at a time.
-4. Make a selection with **Lasso**, **Rectangle**, or **Ellipse**. Drag Lasso freehand or click points to create straight polygon edges; close the polygon at the starting point, by double-clicking, or with Enter. Hold **Shift** while dragging Rectangle/Ellipse to constrain to a square/circle. Use **New**, **Add**, or **Subtract** for multiple regions; the dotted outline shows selected pixels.
+4. Choose **Lasso**, **Rect**, **Oval**, or **Magic Wand**. Lasso uses click-to-place polygon points or freehand dragging; close at the start, double-click, or press Enter. Start/draw outside the image if needed: the live outline stays visible in the surrounding viewport and the applied selection automatically clips to the image rectangle. Rect/Oval support Shift-constrained shapes. Magic Wand flood-selects connected, similar-colored pixels under the click, with an adjustable **Tolerance** slider. **New / Add / Subtract** work with every selection tool.
 5. Press **Enter** or **Apply** to keep only the selected region of the uploaded image. The unselected pixels are hidden non-destructively.
 6. Refine a patch later with **Edit**, **Brush**, or **Eraser**. Overlapping patches from the same region are automatically grouped as alternatives, with the newest active.
 7. Use **Compare master**: hold the button with a mouse to compare temporarily; on touch devices tap once to view master and again to return.
@@ -17,7 +17,7 @@ The prompt can also be copied directly from the interface. Manual image processi
 
 ## Important notes
 
-- **No automatic image difference detection**. The user decides what to select; grouping happens only *after* a mask has been applied.
+- **No automatic image difference detection**. The Magic Wand operates on connected pixels of similar color in the visible composition, not semantic objects. Region grouping still happens only *after* applying a mask.
 - Grouping is a heuristic based on patch bounding-box overlap and normalized center distance. Distinct objects that overlap heavily may need a future manual split/ungroup feature.
 - Variations should share camera position, aspect ratio, and crop. A different aspect ratio is drawn to fit the canvas and is not automatically geometry-aligned.
 - Maximum import size defaults to 2400 pixels on the longest side to limit browser memory; hidden Base image can be imported at up to 4000 pixels.
@@ -86,3 +86,7 @@ Click an existing region or variation in **Layers** to select it. Mosaic activat
 - Layer transforms are captured in exports, Harmonized snapshots, and restored history branches.
 
 The original Base geometry is preserved separately from the working Master.
+
+## UX notes (November 2026)
+
+The main toolbar is grouped into **Select**, **Edit / Move**, and **Selection Mode**, while the primary actions **AI Edit** and **Harmonize** remain at the right. Wand tolerance only appears while Wand is active; brush size only appears while Brush/Eraser is active. Manual **Apply** appears only for an imported variation or edited saved mask. A concise workflow appears in the right inspector, with the full AI prompt behind an expandable Advanced section. Selection cursors remain regular arrows; Pan has a grab cursor. On small screens, selection tools scroll horizontally independently from the main AI buttons.
