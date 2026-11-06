@@ -75,7 +75,7 @@ function newGroup(mask,category='Region'){
   state.groups.push(group);group.name=groupLabel(group);return group;
 }
 function updateGroupCategory(group,category,source='vision'){
-  if(!group||!CATEGORIES.includes(category)||category==='Region'||group.manualCategory)return;
+  if(!group||!CATEGORIES.includes(category)||category==='Region'||group.manualCategory||(source==='vision'&&group.classificationSource==='prompt'))return;
   group.category=category;group.classificationSource=source;
   if(!group.manualName)group.name=groupLabel(group);
   renderGroups();drawOverlay();
@@ -117,6 +117,7 @@ function prepareSelectionGroup(){
     if(!group){group=newGroup(state.selectionMask);identifyGroup(group,cloneMask(state.selectionMask))}
     state.draftGroupId=group.id;
   }
+  if(group&&!group.patchIds.length){group.footprint=cloneMask(state.selectionMask);group.area=maskBoundingBox(state.selectionMask)}
   renderGroups();
 }
 function assignGroup(patch){
@@ -315,7 +316,7 @@ function escapeHTML(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':
 function renderGroups(){const list=$('groupList');$('groupCount').textContent=state.groups.length;
   $('pendingBanner').classList.toggle('hidden',!state.pendingSourceId);if(state.pendingSourceId){const source=state.sources.get(state.pendingSourceId);$('pendingName').textContent=`● Editing: ${source?.name||'New variation'}`}
   if(!state.groups.length){list.innerHTML='<div class="empty-groups"><span>◌</span><strong>No active patches</strong><p>Lasso an area to prompt an AI edit, or import a variation.</p></div>';window.MosaicPremium?.renderHistory(list);return}
-  list.innerHTML=state.groups.map(g=>`<div class="region-group" data-group="${g.id}"><div class="group-head" data-action="focus" data-group="${g.id}"><span class="group-icon">▧</span><span class="group-name">${g.name}</span><span class="group-count">${g.patchIds.length} options</span></div><div class="group-options"><div class="variant-row ${g.active===null?'selected':''}" data-action="choose" data-group="${g.id}" data-patch="master"><span class="variant-dot"></span><span class="variant-text">Original master</span></div>${g.patchIds.map((pid,i)=>{const p=state.patches.get(pid);return p?`<div class="variant-row ${g.active===pid?'selected':''}" data-action="choose" data-group="${g.id}" data-patch="${pid}"><span class="variant-dot"></span><span class="variant-text">${escapeHTML(p.name)} <span style="color:#757a88">#${i+1}</span></span><button class="variant-action" title="Edit mask" data-action="edit" data-group="${g.id}" data-patch="${pid}">✎</button><button class="variant-action" title="Delete variant" data-action="delete" data-group="${g.id}" data-patch="${pid}">×</button></div>`:''}).join('')}</div></div>`).join('');window.MosaicPremium?.renderHistory(list);window.MosaicRegions?.decorate()}
+  list.innerHTML=state.groups.map(g=>`<div class="region-group" data-group="${g.id}"><div class="group-head" data-action="focus" data-group="${g.id}"><span class="group-icon">▧</span><span class="group-name">${escapeHTML(g.name)}</span><span class="group-count">${g.patchIds.length} options</span></div><div class="group-options"><div class="variant-row ${g.active===null?'selected':''}" data-action="choose" data-group="${g.id}" data-patch="master"><span class="variant-dot"></span><span class="variant-text">Original master</span></div>${g.patchIds.map((pid,i)=>{const p=state.patches.get(pid);return p?`<div class="variant-row ${g.active===pid?'selected':''}" data-action="choose" data-group="${g.id}" data-patch="${pid}"><span class="variant-dot"></span><span class="variant-text">${escapeHTML(p.name)} <span style="color:#757a88">#${i+1}</span></span><button class="variant-action" title="Edit mask" data-action="edit" data-group="${g.id}" data-patch="${pid}">✎</button><button class="variant-action" title="Delete variant" data-action="delete" data-group="${g.id}" data-patch="${pid}">×</button></div>`:''}).join('')}</div></div>`).join('');window.MosaicPremium?.renderHistory(list);window.MosaicRegions?.decorate()}
 function editExisting(pid){if(state.pendingSourceId){toast('Apply or discard your new image before editing saved variants.');return}const patch=state.patches.get(pid);if(!patch)return;state.editingPatchId=pid;state.selectedPatchId=pid;resetSelection();state.selectionMask.getContext('2d').drawImage(patch.mask,0,0);setMode('add');selectTool('lasso');updateSelectionOutline();updateApplyButton();message('Editing a saved mask. Draw New, Add or Subtract, then Enter to update.')}
 function groupEvent(e){if(window.MosaicRegions?.handleGroupEvent(e))return;if(window.MosaicPremium?.handleGroupEvent(e))return;const target=e.target.closest('[data-action]');if(!target)return;const action=target.dataset.action,group=state.groups.find(g=>g.id===target.dataset.group),pid=target.dataset.patch;
   if(action==='focus'&&group){if(group.active){state.editingPatchId=null;state.selectedPatchId=group.active;resetSelection();selectTool('transform');renderGroups();render()}return}
