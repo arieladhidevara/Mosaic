@@ -74,7 +74,17 @@ function onSourceEdited(kind,raster){
     // Editing Master 3 must not overwrite the immutable Original Master / Master 1 snapshot.
     if(premium.masterVersions.length<=1)premium.initialMaster=cloneCanvas(raster);
     const latest=premium.masterVersions.at(-1);
-    if(latest)latest.image=cloneCanvas(raster);
+    if(latest){
+      latest.image=cloneCanvas(raster);
+      // The active Master may also appear as shared per-region Master N options.
+      // Update only the matching latest version, not older Masters/material alternatives.
+      const updated=new Set();
+      for(const patch of state.patches.values()){
+        if(!patch.isMasterVersion||patch.masterVersion!==latest.number||updated.has(patch.sourceId))continue;
+        const source=state.sources.get(patch.sourceId);
+        if(source){source.canvas=cloneCanvas(raster);updated.add(patch.sourceId)}
+      }
+    }
     refreshMasterBrowser();
   }
   core.promptText();
