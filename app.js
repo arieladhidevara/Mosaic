@@ -25,7 +25,7 @@ function promptText(){const p=`Create one seamless photorealistic architectural 
 async function loadFileToCanvas(file,maxDimension=2400){if(!file||!file.type.startsWith('image/'))throw Error('Choose an image file.');let image;try{image=await createImageBitmap(file)}catch{image=await new Promise((resolve,reject)=>{const img=new Image(),url=URL.createObjectURL(file);img.onload=()=>{URL.revokeObjectURL(url);resolve(img)};img.onerror=()=>{URL.revokeObjectURL(url);reject(Error('Cannot open this image'))};img.src=url})}
   const scale=Math.min(1,maxDimension/Math.max(image.width,image.height)),c=makeCanvas(Math.round(image.width*scale),Math.round(image.height*scale));c.getContext('2d').drawImage(image,0,0,c.width,c.height);image.close?.();return c}
 async function importMaster(file){if(!file)return;if(state.rawMaster&&!state.masterIsBase){toast('Master is already uploaded. Open its preview or generate a new version.');return}
-  if(state.masterIsBase&&state.groups.length&&!window.confirm('Upload Master and replace the current Base-only draft and its Regions?'))return;
+  if(state.masterIsBase&&state.groups.length&&!window.confirm('Upload Master and replace the current Base-only draft and its Groups?'))return;
   try{const c=await loadFileToCanvas(file);setMaster(c,fileName(file));toast('Master ready. Add another image and select a region to keep.')}catch(e){toast(e.message)}}
 function setMaster(c,name){window.MosaicPremium?.onMasterReset();state.master=c;state.rawMaster=c;state.masterIsBase=false;state.alignmentTransforms=null;state.sources.clear();state.groups=[];state.patches.clear();state.pendingSourceId=null;state.queue=[];state.editingPatchId=null;state.selectedPatchId=null;state.undo=[];state.redo=[];state.selectionGeneration++;state.hoveredGroupId=null;state.queuedGroupId=null;
   canvas.width=overlay.width=c.width;canvas.height=overlay.height=c.height;setSourcePreview('masterPreview',c);window.MosaicPremium?.onMasterLoaded?.(c,name);$('selectionDraft').setAttribute('viewBox',`0 0 ${c.width} ${c.height}`);resetSelection();
@@ -130,7 +130,7 @@ function rememberMask(group,mask){
 }
 function groupLabel(group){
   const cat=group.category||'Region';
-  return cat==='Region'?'Region '+String(state.groups.indexOf(group)+1).padStart(2,'0'):
+  return cat==='Region'?'Group '+String(state.groups.indexOf(group)+1).padStart(2,'0'):
     cat+' · '+labelFromPosition(group.area||{x:0,y:0,w:canvas.width,h:canvas.height});
 }
 function newGroup(mask,category='Region'){
@@ -191,7 +191,7 @@ function identifyGroup(group,mask,login=false){
 function createBlankRegion(){
   if(!state.master){toast('Upload Master or continue with Base before creating Groups.');return}
   const group=newGroup(makeCanvas(canvas.width,canvas.height));
-  group.manualName=true;group.name='Region '+String(state.groups.length).padStart(2,'0');
+  group.manualName=true;group.name='Group '+String(state.groups.length).padStart(2,'0');
   resetSelection();state.draftGroupId=group.id;state.queuedGroupId=group.id;
   setMode('new');selectTool('lasso');renderGroups();
   message('New Group: '+group.name+'. Draw its area, then add an image or generate an option.');
@@ -586,7 +586,7 @@ function selectTool(tool){if(window.MosaicSourceEditor?.isEditing())return;clear
   $('wandOptions').classList.toggle('hidden',tool!=='wand');
   $('brushOptions').classList.toggle('hidden',tool!=='reveal'&&tool!=='erase');
   overlay.style.cursor='';
-  if(tool==='select')message('Select: click an existing region to choose it or generate a new option.');
+  if(tool==='select')message('Select: click an existing Group to choose it or generate a new option.');
   else if(tool==='wand')message('Magic Wand: click a connected color area. Adjust tolerance; New / Add / Subtract also work.');
   else if(tool==='lasso')message('Lasso: click corners or drag. You can trace outside the image; Mosaic clips the final mask to its edges.');
   else if(tool==='pan')message('Pan: drag to move around the canvas.');
@@ -780,7 +780,7 @@ function pointerDown(e){if(!state.master||state.busy||state.before||e.button!==0
   if(state.tool==='select'){
     const region=findRegionAt(canvasPoint(e));
     if(region){selectGroupMask(region);showQuickPrompt(state.lastCanvasPointer);message('Selected '+region.name+'. '+(state.pendingSourceId?'Press Enter to keep this area.':'Generate an option or refine the selection.'))}
-    else{hideQuickPrompt();message('Click a saved region, or draw one using Lasso / Rect / Oval / Wand.')}
+    else{hideQuickPrompt();message('Click a saved Group, or draw one using Lasso / Rect / Oval / Wand.')}
     return;
   }
   if(state.tool==='reveal'||state.tool==='erase'){
