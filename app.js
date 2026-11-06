@@ -24,12 +24,12 @@ function labelFromPosition(b){let x=(b.x+b.w/2)/canvas.width,y=(b.y+b.h/2)/canva
 function promptText(){const p=`Create one seamless photorealistic architectural rendering using the two attached images.\n\nIMAGE 1 — BASE. Preserve its camera perspective, architectural geometry, spatial proportions and original structure where no deliberate change has been made.\n\nIMAGE 2 — MOSAIC COLLAGE. This is the primary source for approved material finishes, furniture, ornaments, lighting fixtures, and intentional geometry changes.\n\nINSTRUCTIONS:\n- Preserve the appearance and deliberate object changes selected in Image 2, even if they differ from Image 1.\n- Preserve Image 1's geometry in unchanged regions.\n- Harmonize collage seams, material transitions, shadows, reflections and color grading.\n- Do not add unrequested objects, change the camera, alter mullion spacing, or reinterpret approved design elements.\n- Prioritize design fidelity and architectural accuracy over artistic reinterpretation.\n\nOUTPUT: One cohesive professional architectural visualization. These images are references, not pixel-locked constraints.\n\nPROJECT DESIGN INTENT:\n${window.MosaicPremium?.projectPrompt() || 'Preserve the approved original design.'}`;$('promptPreview').textContent=p;return p}
 async function loadFileToCanvas(file,maxDimension=2400){if(!file||!file.type.startsWith('image/'))throw Error('Choose an image file.');let image;try{image=await createImageBitmap(file)}catch{image=await new Promise((resolve,reject)=>{const img=new Image(),url=URL.createObjectURL(file);img.onload=()=>{URL.revokeObjectURL(url);resolve(img)};img.onerror=()=>{URL.revokeObjectURL(url);reject(Error('Cannot open this image'))};img.src=url})}
   const scale=Math.min(1,maxDimension/Math.max(image.width,image.height)),c=makeCanvas(Math.round(image.width*scale),Math.round(image.height*scale));c.getContext('2d').drawImage(image,0,0,c.width,c.height);image.close?.();return c}
-async function importMaster(file){if(!file)return;try{const c=await loadFileToCanvas(file);setMaster(c,fileName(file));toast('Master ready. Add another image and select a region to keep.')}catch(e){toast(e.message)}}
+async function importMaster(file){if(!file)return;if(state.rawMaster){toast('Master is already uploaded. Open its preview or generate a new version.');return}try{const c=await loadFileToCanvas(file);setMaster(c,fileName(file));toast('Master ready. Add another image and select a region to keep.')}catch(e){toast(e.message)}}
 function setMaster(c,name){window.MosaicPremium?.onMasterReset();state.master=c;state.rawMaster=c;state.masterIsBase=false;state.alignmentTransforms=null;state.sources.clear();state.groups=[];state.patches.clear();state.pendingSourceId=null;state.queue=[];state.editingPatchId=null;state.selectedPatchId=null;state.undo=[];state.redo=[];state.selectionGeneration++;state.hoveredGroupId=null;state.queuedGroupId=null;
   canvas.width=overlay.width=c.width;canvas.height=overlay.height=c.height;setSourcePreview('masterPreview',c);window.MosaicPremium?.onMasterLoaded?.(c);$('selectionDraft').setAttribute('viewBox',`0 0 ${c.width} ${c.height}`);resetSelection();
   $('welcome').classList.add('hidden');$('canvasWrap').classList.remove('hidden');$('projectName').textContent=name;$('projectSize').textContent=`${c.width} × ${c.height}`;
-  $('masterTitle').textContent='Master';$('masterInfo').textContent=`${name} · ${c.width} × ${c.height}`;$('masterStatus').textContent='✓';$('masterZone').classList.add('ready');updateZoomFit();renderGroups();render();updateSourceActions();message('Upload a new image, draw a lasso and press Enter to keep the selection.')}
-async function importReference(file){if(!file)return;try{state.reference=await loadFileToCanvas(file,4000);state.rawBase=state.reference;state.alignmentTransforms=null;setSourcePreview('basePreview',state.reference);$('referenceTitle').textContent='Base';$('referenceInfo').textContent=`${fileName(file)} · ${state.reference.width} × ${state.reference.height}`;$('referenceStatus').textContent='✓';$('referenceZone').classList.add('ready');toast('Base image saved locally.');window.MosaicPremium?.onReferenceLoaded(file);updateSourceActions()}catch(e){toast(e.message)}}
+  $('masterTitle').textContent='Master';$('masterInfo').textContent=`${name} · ${c.width} × ${c.height}`;$('masterStatus').textContent='✓';$('masterZone').classList.add('ready');updateZoomFit();renderGroups();render();updateSourceActions();message('Upload a variation, select the area you want, then click Apply.')}
+async function importReference(file){if(!file)return;if(state.reference){toast('Base is locked. Click Base to preview it.');return}try{state.reference=await loadFileToCanvas(file,4000);state.rawBase=state.reference;state.alignmentTransforms=null;setSourcePreview('basePreview',state.reference);$('referenceTitle').textContent='Base';$('referenceInfo').textContent=`${fileName(file)} · ${state.reference.width} × ${state.reference.height}`;$('referenceStatus').textContent='✓';$('referenceZone').classList.add('ready');toast('Base image saved locally.');window.MosaicPremium?.onReferenceLoaded(file);updateSourceActions()}catch(e){toast(e.message)}}
 function showProcessing(on){state.busy=on;$('processing').classList.toggle('hidden',!on)}
 function clearDraft(){state.lasso=[];state.hoverPoint=null;state.pointerStart=null;state.dragFreehand=false;state.shapeStart=null;state.shapeEnd=null;state.drawing=false}
 function clearHover(){window.MosaicRegions?.clearHover()}
@@ -54,10 +54,15 @@ function updateSourceActions(){
   $('alignSourcesBtn').title=$('alignSourcesBtn').disabled?'Align Base and Master before adding regions or pending variations.':'Drag Base or Master to align images.';
 }
 function resetSelection(){state.selectionMask=state.master?makeCanvas(canvas.width,canvas.height):null;state.boundaryCanvas=null;state.draftGroupId=null;state.pendingRevealOnly=false;hideQuickPrompt();clearDraft();updateApplyButton();clearHover()}
-function updateApplyButton(){const pending=Boolean(state.pendingSourceId),editing=Boolean(state.editingPatchId),btn=$('commitBtn');btn.disabled=!(pending||editing);btn.classList.toggle('hidden',!(pending||editing));btn.innerHTML=`✓ ${editing?'Update mask':'Apply'} <kbd>Enter</kbd>`}
+function updateApplyButton(){
+  const pending=Boolean(state.pendingSourceId),editing=Boolean(state.editingPatchId),btn=$('commitBtn');
+  btn.disabled=!(pending||editing)||!Boolean(state.selectionMask&&maskBoundingBox(state.selectionMask));
+  btn.classList.toggle('hidden',!(pending||editing));
+  btn.textContent=editing?'✓ Update mask':'✓ Apply';
+}
 function setMode(mode){if(state.selectionMode!==mode)clearDraft();state.selectionMode=mode;document.querySelectorAll('.mode').forEach(b=>{b.classList.toggle('active',b.dataset.mode===mode);b.setAttribute('aria-pressed',String(b.dataset.mode===mode))});drawOverlay();message(`${mode==='new'?'Replace':mode==='add'?'Add to':'Subtract from'} the selection. Draw with Lasso, Rect, Oval or click with Wand.`)}
 async function importVariants(files){if(!state.master){toast('Upload a master image first.');return}const arr=Array.from(files||[]).filter(f=>f.type.startsWith('image/'));state.queue.push(...arr);if(arr.length>0&&state.pendingSourceId)toast(`${arr.length} variation${arr.length>1?'s':''} queued. Apply the current selection first.`);await loadNextVariant()}
-async function loadNextVariant(){if(state.pendingSourceId||state.busy||!state.queue.length||!state.master)return;showProcessing(true);try{const file=state.queue.shift(),img=await loadFileToCanvas(file),c=makeCanvas(canvas.width,canvas.height);c.getContext('2d').drawImage(img,0,0,c.width,c.height);if(Math.abs(img.width/img.height-c.width/c.height)>.012)toast('Aspect ratios differ. Check image alignment before masking.');const id=uid('source');state.sources.set(id,{id,name:fileName(file),canvas:c});state.pendingSourceId=id;state.pendingRevealOnly=false;state.editingPatchId=null;state.selectedPatchId=null;state.before=false;resetSelection();setMode('new');selectTool('lasso');message(`Select the area to keep from ${fileName(file)}. Press Enter to keep your selection.`)}catch(e){toast('Import failed: '+e.message)}finally{showProcessing(false);const queued=state.groups.find(g=>g.id===state.queuedGroupId);state.queuedGroupId=null;if(queued&&state.pendingSourceId)selectGroupMask(queued);renderGroups();render()}}
+async function loadNextVariant(){if(state.pendingSourceId||state.busy||!state.queue.length||!state.master)return;showProcessing(true);try{const file=state.queue.shift(),img=await loadFileToCanvas(file),c=makeCanvas(canvas.width,canvas.height);c.getContext('2d').drawImage(img,0,0,c.width,c.height);if(Math.abs(img.width/img.height-c.width/c.height)>.012)toast('Aspect ratios differ. Check image alignment before masking.');const id=uid('source');state.sources.set(id,{id,name:fileName(file),canvas:c});state.pendingSourceId=id;state.pendingRevealOnly=false;state.editingPatchId=null;state.selectedPatchId=null;state.before=false;resetSelection();setMode('new');selectTool('lasso');message(`Select the area to keep from ${fileName(file)}, then click Apply to commit it.`)}catch(e){toast('Import failed: '+e.message)}finally{showProcessing(false);const queued=state.groups.find(g=>g.id===state.queuedGroupId);state.queuedGroupId=null;if(queued&&state.pendingSourceId)selectGroupMask(queued);renderGroups();render()}}
 function discardPending(){if(!state.pendingSourceId)return;state.sources.delete(state.pendingSourceId);state.pendingSourceId=null;resetSelection();renderGroups();render();toast('Unapplied image discarded.');loadNextVariant()}
 function bboxIoU(a,b){const w=Math.max(0,Math.min(a.x+a.w,b.x+b.w)-Math.max(a.x,b.x)),h=Math.max(0,Math.min(a.y+a.h,b.y+b.h)-Math.max(a.y,b.y)),area=w*h,union=a.w*a.h+b.w*b.h-area;return union>0?area/union:0}
 
@@ -130,6 +135,11 @@ function identifyGroup(group,mask,login=false){
 }
 function prepareSelectionGroup(){
   if(!state.selectionMask||state.editingPatchId)return;
+  // Imported-image masks are drafts: do not create a permanent group before Apply.
+  if(state.pendingSourceId){
+    state.draftGroupId=matchingGroup(state.selectionMask)?.id||null;
+    renderGroups();return;
+  }
   if(!maskBoundingBox(state.selectionMask))return;
   let group=state.groups.find(g=>g.id===state.draftGroupId);
   if(!group){
@@ -319,17 +329,42 @@ function resetPatchTransform(){
   patch.corners=null;render();toast('Layer transform reset.');
 }
 
-function render(){if(!state.master)return;ctx.clearRect(0,0,canvas.width,canvas.height);ctx.drawImage(state.before?(window.MosaicPremium?.originalImage()||state.master):state.master,0,0);
-  if(!state.before){if(window.MosaicPremium?.drawArchivePreview(ctx)){drawOverlay();return}for(const group of state.groups){if(!group.active)continue;const patch=state.patches.get(group.active),source=patch&&state.sources.get(patch.sourceId);if(!patch||!source)continue;drawPatch(ctx,patch,source)}
-    const pending=state.sources.get(state.pendingSourceId);
-    if(pending){
-      if(state.pendingRevealOnly&&state.selectionMask){
-        const temp=makeCanvas(canvas.width,canvas.height),tc=temp.getContext('2d');
-        tc.drawImage(pending.canvas,0,0);tc.globalCompositeOperation='destination-in';tc.drawImage(state.selectionMask,0,0);
-        ctx.drawImage(temp,0,0);
-      }else{ctx.save();ctx.globalAlpha=.84;ctx.drawImage(pending.canvas,0,0);ctx.restore()}
-    }}
-  drawOverlay()}
+// Approved output: latest Master first, then exactly one active patch per region.
+function drawApprovedComposition(target){
+  if(!state.master)return;
+  target.clearRect(0,0,canvas.width,canvas.height);
+  target.drawImage(state.master,0,0,canvas.width,canvas.height);
+  for(const group of state.groups){
+    if(!group.active)continue;
+    const patch=state.patches.get(group.active),source=patch&&state.sources.get(patch.sourceId);
+    if(patch&&source&&!patch.awaitingResult)drawPatch(target,patch,source);
+  }
+}
+function composeApprovedCanvas(){
+  if(!state.master)return null;
+  const output=makeCanvas(canvas.width,canvas.height);
+  drawApprovedComposition(output.getContext('2d'));
+  return output;
+}
+function render(){
+  if(!state.master)return;
+  if(state.before){
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    ctx.drawImage(window.MosaicPremium?.originalImage()||state.reference||state.master,0,0,canvas.width,canvas.height);
+    drawOverlay();return;
+  }
+  if(window.MosaicPremium?.drawArchivePreview(ctx)){drawOverlay();return}
+  drawApprovedComposition(ctx);
+  const pending=state.sources.get(state.pendingSourceId);
+  if(pending){
+    if(state.pendingRevealOnly&&state.selectionMask){
+      const temp=makeCanvas(canvas.width,canvas.height),tc=temp.getContext('2d');
+      tc.drawImage(pending.canvas,0,0);tc.globalCompositeOperation='destination-in';
+      tc.drawImage(state.selectionMask,0,0);ctx.drawImage(temp,0,0);
+    }else{ctx.save();ctx.globalAlpha=.84;ctx.drawImage(pending.canvas,0,0);ctx.restore()}
+  }
+  drawOverlay();
+}
 function boundaryFromMask(){if(!state.selectionMask)return null;const w=Math.min(540,canvas.width),h=Math.max(1,Math.round(canvas.height/canvas.width*w)),t=makeCanvas(w,h),tc=t.getContext('2d',{willReadFrequently:true});tc.drawImage(state.selectionMask,0,0,w,h);const px=tc.getImageData(0,0,w,h).data;const outline=makeCanvas(w,h),oc=outline.getContext('2d',{willReadFrequently:true}),out=oc.createImageData(w,h);
   for(let y=0;y<h;y++)for(let x=0;x<w;x++){const i=y*w+x,filled=px[i*4+3]>110;if(!filled)continue;const left=x===0||px[(i-1)*4+3]<110,right=x===w-1||px[(i+1)*4+3]<110,up=y===0||px[(i-w)*4+3]<110,down=y===h-1||px[(i+w)*4+3]<110;if(!(left||right||up||down))continue;const j=i*4,light=(Math.floor((x+y)/3)%2)===0;out.data[j]=light?255:22;out.data[j+1]=light?255:22;out.data[j+2]=light?255:24;out.data[j+3]=255}oc.putImageData(out,0,0);return outline}
 function updateSelectionOutline(){state.boundaryCanvas=boundaryFromMask();drawOverlay()}
@@ -355,7 +390,7 @@ function renderGroups(){
   $('pendingBanner').classList.toggle('hidden',!state.pendingSourceId);
   if(state.pendingSourceId){const source=state.sources.get(state.pendingSourceId);$('pendingName').textContent='● Editing: '+(source?.name||'New variation')}
   if(!state.groups.length){
-    list.innerHTML='<div class="empty-groups"><span>◌</span><strong>No regions yet</strong><p>Import an image, select an area, then press Enter to keep it.</p></div>';
+    list.innerHTML='<div class="empty-groups"><span>◌</span><strong>No regions yet</strong><p>Import a variation, select an area, then click Apply to keep it.</p></div>';
     return;
   }
   list.innerHTML=state.groups.map(g=>{
@@ -458,7 +493,7 @@ function applyMagicWand(p){
   mc.imageSmoothingEnabled=false;
   mc.drawImage(region,0,0,canvas.width,canvas.height);
   mc.restore();
-  state.pendingRevealOnly=Boolean(state.pendingSourceId);updateSelectionOutline();prepareSelectionGroup();render();showQuickPrompt();
+  state.pendingRevealOnly=Boolean(state.pendingSourceId);updateSelectionOutline();prepareSelectionGroup();updateApplyButton();render();showQuickPrompt();
   message('Magic Wand selected '+Math.round(count/(w*h)*100)+'% of image. Change tolerance or use Add/Subtract to refine.');
 }
 function snapshotSelection(){if(!state.selectionMask)return;state.undo.push({type:'selection',image:state.selectionMask.getContext('2d').getImageData(0,0,canvas.width,canvas.height)});if(state.undo.length>12)state.undo.shift();state.redo=[]}
@@ -466,7 +501,7 @@ function snapshotPatch(p){state.undo.push({type:'patch',patchId:p.id,image:p.mas
 function commitMaskPath(trace){if(!state.selectionMask)return;const m=state.selectionMask.getContext('2d');snapshotSelection();m.save();
   if(state.selectionMode==='new')m.clearRect(0,0,canvas.width,canvas.height);
   m.globalCompositeOperation=state.selectionMode==='subtract'?'destination-out':'source-over';m.fillStyle='#ffffff';m.beginPath();trace(m);m.closePath();m.fill();m.restore();
-  state.pendingRevealOnly=Boolean(state.pendingSourceId);updateSelectionOutline();prepareSelectionGroup();render();message(state.pendingSourceId?'Press Enter to keep the selected part of the new image.':window.MosaicAuth?.isReady()?'Selection ready. Describe a Premium edit.':'Selection ready. Add an image to apply this region.');showQuickPrompt()}
+  state.pendingRevealOnly=Boolean(state.pendingSourceId);updateSelectionOutline();prepareSelectionGroup();updateApplyButton();render();message(state.pendingSourceId?'Click Apply to keep the selected part of the new image.':window.MosaicAuth?.isReady()?'Selection ready. Describe a Premium edit.':'Selection ready. Add an image to apply this region.');showQuickPrompt()}
 function updateMaskWithLasso(){const points=state.lasso.filter((p,i,a)=>i===0||Math.hypot(p.x-a[i-1].x,p.y-a[i-1].y)>.01);
   if(points.length<3||!state.selectionMask)return false;
   commitMaskPath(m=>points.forEach((p,i)=>i?m.lineTo(p.x,p.y):m.moveTo(p.x,p.y)));
@@ -507,7 +542,7 @@ function paint(e,first){const point=canvasPoint(e),r=+$('brushSize').value;
   const mask=state.pendingSourceId||state.editingPatchId?state.selectionMask:state.patches.get(state.brushTargetId||state.selectedPatchId)?.mask;
   if(!mask){if(first)toast('Upload a variation or select a saved region first.');return}
   const mc=mask.getContext('2d');mc.save();mc.globalCompositeOperation=state.tool==='erase'?'destination-out':'source-over';mc.fillStyle='#fff';mc.strokeStyle='#fff';mc.lineWidth=r;mc.lineCap='round';mc.lineJoin='round';if(first||!state.lastPoint){mc.beginPath();mc.arc(point.x,point.y,r/2,0,Math.PI*2);mc.fill()}else{mc.beginPath();mc.moveTo(state.lastPoint.x,state.lastPoint.y);mc.lineTo(point.x,point.y);mc.stroke()}mc.restore();state.lastPoint=point;
-  if(mask===state.selectionMask){state.boundaryCanvas=null;state.pendingRevealOnly=true;render()}else{const patch=state.patches.get(state.brushTargetId||state.selectedPatchId);patch.bbox=maskBoundingBox(mask)||patch.bbox;patchTextures.delete(patch);render()}}
+  if(mask===state.selectionMask){state.boundaryCanvas=null;state.pendingRevealOnly=true;updateApplyButton();render()}else{const patch=state.patches.get(state.brushTargetId||state.selectedPatchId);patch.bbox=maskBoundingBox(mask)||patch.bbox;patchTextures.delete(patch);render()}}
 function historyStep(from,to){const entry=from.pop();if(!entry)return;if(entry.type==='transform'){const p=state.patches.get(entry.patchId);if(!p)return;to.push({type:'transform',patchId:p.id,corners:copyCorners(p.corners)});p.corners=copyCorners(entry.corners);render();return}const mask=entry.type==='selection'?state.selectionMask:state.patches.get(entry.patchId)?.mask;if(!mask)return;to.push({...entry,image:mask.getContext('2d').getImageData(0,0,canvas.width,canvas.height)});mask.getContext('2d').putImageData(entry.image,0,0);if(entry.type==='selection')updateSelectionOutline();else{const p=state.patches.get(entry.patchId);p.bbox=maskBoundingBox(mask)||p.bbox;patchTextures.delete(p);render()}}
 function updateZoomFit(){if(!state.master)return;const v=$('viewport'),margin=window.innerWidth<=730?72:124;state.fitZoom=Math.max(.08,Math.min((v.clientWidth-margin)/canvas.width,(v.clientHeight-margin)/canvas.height,1));setZoom(state.fitZoom)}
 function setZoom(z){state.zoom=clamp(z,.08,4);$('canvasWrap').style.width=Math.round(canvas.width*state.zoom)+'px';$('canvasWrap').style.height=Math.round(canvas.height*state.zoom)+'px';canvas.style.width=overlay.style.width='100%';canvas.style.height=overlay.style.height='100%';$('zoomValue').textContent=Math.round(state.zoom*100)+'%'}
@@ -569,8 +604,9 @@ function pointerCancel(){if(state.tool==='transform'){endTransform();return}if(s
   if(state.drawing){state.drawing=false;state.lastPoint=null;state.pointerStart=null;state.shapeStart=null;state.shapeEnd=null;if(state.dragFreehand)state.lasso=[];state.dragFreehand=false;drawOverlay()}}
 function onKeys(e){if(e.target.matches('input,textarea')||e.repeat&&e.key==='Enter')return;
   if(e.key==='Enter'){
-    if(state.lasso.length>=3){e.preventDefault();const completed=updateMaskWithLasso();if(completed&&state.pendingSourceId&&!window.MosaicAuth?.isReady())applySelection();return}
-    if(state.pendingSourceId||state.editingPatchId){e.preventDefault();applySelection();return}
+    if(state.lasso.length>=3){e.preventDefault();updateMaskWithLasso();return}
+    // Enter closes a draft shape; only clicking Apply commits an imported image.
+    if(state.pendingSourceId||state.editingPatchId){e.preventDefault();message('Selection ready. Click Apply to commit the patch.');return}
     if(window.MosaicAuth?.isReady()&&maskBoundingBox(state.selectionMask||makeCanvas(1,1))){e.preventDefault();showQuickPrompt()}
   }
   else if(e.key==='Escape'){e.preventDefault();if(state.lasso.length||state.shapeStart){clearDraft();drawOverlay();message('Unfinished shape canceled.')}else{resetSelection();render();message('Selection cleared.')}}
@@ -642,5 +678,5 @@ $('viewport').addEventListener('dblclick',e=>{if(state.tool==='lasso'&&state.las
 window.addEventListener('keydown',onKeys);window.addEventListener('resize',()=>state.master&&updateZoomFit());
 for(const id of ['copyPromptBtn','copyPromptSecondary'])$(id).addEventListener('click',async()=>{try{await navigator.clipboard.writeText(promptText());toast('Prompt copied.')}catch{toast('Clipboard unavailable. Select prompt from the panel.')}});
 const viewport=$('viewport');viewport.addEventListener('pointerleave',()=>window.MosaicRegions?.clearHover());viewport.addEventListener('dragover',e=>{e.preventDefault();viewport.classList.add('dropping')});viewport.addEventListener('dragleave',()=>viewport.classList.remove('dropping'));viewport.addEventListener('drop',async e=>{e.preventDefault();viewport.classList.remove('dropping');const files=[...e.dataTransfer.files].filter(f=>f.type.startsWith('image/'));if(!state.master){if(files[0])await importReference(files[0]);if(files.length>1)await importVariants(files.slice(1))}else await importVariants(files)});
-window.MosaicCore = {state,canvas,overlay,ctx,makeCanvas,uid,toast,message,promptText,loadFileToCanvas,setMaster,setSourcePreview,updateSourceActions,render,renderGroups,drawPatch,selectTool,maskBoundingBox,assignGroup,resetSelection,updateMaskWithLasso,updateZoomFit,escapeHTML,categoryFromText,updateGroupCategory,optionNameFromPrompt,prepareSelectionGroup,groupMask,selectGroupMask,CATEGORIES,showQuickPrompt,hideQuickPrompt};
+window.MosaicCore = {state,canvas,overlay,ctx,makeCanvas,uid,toast,message,promptText,loadFileToCanvas,setMaster,setSourcePreview,updateSourceActions,render,composeApprovedCanvas,renderGroups,drawPatch,selectTool,maskBoundingBox,assignGroup,resetSelection,updateMaskWithLasso,updateZoomFit,escapeHTML,categoryFromText,updateGroupCategory,optionNameFromPrompt,prepareSelectionGroup,groupMask,selectGroupMask,CATEGORIES,showQuickPrompt,hideQuickPrompt};
 promptText();
