@@ -65,7 +65,10 @@ function onReferenceLoaded() {
   }
   $('projectPromptInput').value = premium.projectPrompt;
   // Base-only onboarding exposes Generate Master; a separate first-prompt popup is unnecessary.
-  if(state.masterIsBase)message('Base ready. Use Generate Master to create an AI render, or import variations manually.');
+  if(state.masterIsBase){
+    message('Base ready. Add a first prompt and reference images to generate Master, or import variations manually.');
+    if(window.MosaicAuth?.isReady())void openMasterGenerate();
+  }
 }
 function onMasterLoaded(image){premium.initialMaster=cloneCanvas(image)}
 function onSourcesAligned(base,master){
