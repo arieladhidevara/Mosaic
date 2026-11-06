@@ -740,13 +740,48 @@ $('welcomeBasePromptForm').addEventListener('submit',event=>{
 $('generateMasterBtn').addEventListener('click',openMasterGenerate);
 $('masterGenerateForm').addEventListener('submit',event=>void generateMaster(event));
 
+function exportProjectState(){
+  return {
+    projectPrompt:premium.projectPrompt,
+    root:premium.root,
+    serial:premium.serial,
+    expanded:premium.expanded,
+    previewNode:premium.previewNode,
+    lastRequest:premium.lastRequest,
+    originalMaster:premium.originalMaster,
+    initialMaster:premium.initialMaster,
+    masterVersions:premium.masterVersions,
+    branchFrom:premium.branchFrom,
+    regionSerial:premium.regionSerial,
+    showGuides:premium.showGuides
+  };
+}
+function restoreProjectState(snapshot){
+  const data=snapshot||{};
+  premium.projectPrompt=String(data.projectPrompt||'');
+  premium.root=data.root||null;
+  premium.serial=Number(data.serial)||0;
+  premium.expanded=data.expanded instanceof Set?data.expanded:new Set();
+  premium.previewNode=data.previewNode||null;
+  premium.lastRequest=data.lastRequest||null;
+  premium.originalMaster=data.originalMaster||null;
+  premium.initialMaster=data.initialMaster||null;
+  premium.masterVersions=Array.isArray(data.masterVersions)?data.masterVersions:[];
+  premium.branchFrom=data.branchFrom||null;
+  premium.regionSerial=Number(data.regionSerial)||0;
+  premium.showGuides=Boolean(data.showGuides);
+  premium.regenerateFrom=null;premium.uploadPatch=null;
+  premium.generationQueue=Promise.resolve();
+  $('regionGuidesBtn').setAttribute('aria-pressed',String(premium.showGuides));
+  updateIntent();refreshMasterBrowser();
+}
 function onPatchApplied() {
   // A committed patch stays selected so its four corner handles are immediately available.
   if(state.selectedPatchId)core.selectTool('transform');
 }
 window.MosaicPremium = {
   projectPrompt: () => premium.projectPrompt,
-  onReferenceLoaded, onMasterLoaded, onBaseContinue, onSourcesAligned, onSourceEdited, onMasterReset, canSelectArea, onPatchApplied, generateSelection, regenerateOption, decorateActive: activePatchMarkup, getReferenceFiles, clearReferenceFiles, getMasterVersions, regenerateMaster, initialMasterImage,
+  onReferenceLoaded, onMasterLoaded, onBaseContinue, onSourcesAligned, onSourceEdited, onMasterReset, canSelectArea, onPatchApplied, generateSelection, regenerateOption, decorateActive: activePatchMarkup, getReferenceFiles, clearReferenceFiles, getMasterVersions, regenerateMaster, initialMasterImage, exportProjectState, restoreProjectState,
   drawArchivePreview, isPreviewing, renderHistory, handleGroupEvent,
   originalImage, exportPrompt, drawRegionGuides, classifyArea
 };
