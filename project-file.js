@@ -114,6 +114,7 @@ async function saveProject(){
   if(fileBusy)return;
   if(!state.reference&&!state.master){toast('Upload an image before saving a project.');return}
   if(window.MosaicSourceEditor?.isEditing()){toast('Apply or cancel the image transform before saving.');return}
+  if([...state.patches.values()].some(p=>p.generating)){toast('Finish the active AI generation before saving the project.');return}
   fileBusy=true;const button=$('saveProjectBtn'),old=button.innerHTML;
   button.disabled=true;button.textContent='Saving…';
   try{
@@ -181,6 +182,8 @@ function restoreUI(saved,ui){
 async function loadProjectFile(file){
   if(fileBusy||!file)return;
   if(file.size>300000000){toast('Project exceeds the 300 MB file limit.');return}
+  if(window.MosaicSourceEditor?.isEditing()){toast('Apply or cancel the current transform before opening a project.');return}
+  if([...state.patches.values()].some(p=>p.generating)){toast('Complete the current AI request before opening another project.');return}
   if((state.master||state.reference)&&!window.confirm('Open this project and replace the current unsaved project?'))return;
   fileBusy=true;const button=$('openProjectBtn'),old=button.innerHTML;
   button.disabled=true;button.textContent='Opening…';
