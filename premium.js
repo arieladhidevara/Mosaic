@@ -71,7 +71,8 @@ function onMasterLoaded(image,name='Master'){
 function onSourceEdited(kind,raster){
   if(kind==='base')premium.originalMaster=cloneCanvas(raster);
   if(kind==='master'){
-    premium.initialMaster=cloneCanvas(raster);
+    // Editing Master 3 must not overwrite the immutable Original Master / Master 1 snapshot.
+    if(premium.masterVersions.length<=1)premium.initialMaster=cloneCanvas(raster);
     const latest=premium.masterVersions.at(-1);
     if(latest)latest.image=cloneCanvas(raster);
     refreshMasterBrowser();
