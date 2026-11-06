@@ -468,7 +468,7 @@ async function harmonizeWithAI(prompt,sourceVersion=null) {
   const flattened = currentComposite();
   let finalImage;
   try{
-    message('Generating harmonized architecture image with OpenAI…');
+    message(sourceVersion?'Regenerating from Master '+sourceVersion.number+'…':'Generating harmonized architecture image with OpenAI…');
     const answer=await window.MosaicAuth.request('/api/ai/harmonize',encodeRequest(prompt,null,sourceVersion?.image));
     finalImage=await fromGeneratedJPEG(answer.image);
   }catch(error){toast('Harmonize failed: '+error.message);message('Your original collage is unchanged. Please retry.');return}
@@ -541,7 +541,7 @@ function exportPrompt() {
   return premium.lastRequest?.prompt || null;
 }
 function originalImage() {
-  return premium.originalMaster;
+  return premium.originalMaster||premium.initialMaster;
 }
 /* Per-request visual references: optional, capped, compressed, and never persisted in browser storage. */
 const referenceState={master:[],area:[],quick:[]};
