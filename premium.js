@@ -343,7 +343,7 @@ window.MosaicPremium = {
   drawArchivePreview, isPreviewing, renderHistory, handleGroupEvent,
   originalImage, exportPrompt
 };
-$('editProjectPromptBtn').addEventListener('click', () => {
+for (const id of ['editProjectPromptBtn', 'projectPromptToolbarBtn']) $(id).addEventListener('click', () => {
   $('projectPromptInput').value = premium.projectPrompt;
   showDialog('projectPromptDialog');
 });
