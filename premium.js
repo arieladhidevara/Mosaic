@@ -64,6 +64,11 @@ function onMasterLoaded(image){
   premium.initialMaster=cloneCanvas(image);
   if(state.reference)premium.originalMaster=cloneCanvas(state.reference);
 }
+function onSourceEdited(kind,raster){
+  if(kind==='base')premium.originalMaster=cloneCanvas(raster);
+  if(kind==='master')premium.initialMaster=cloneCanvas(raster);
+  core.promptText();
+}
 function onSourcesAligned(base,master){
   premium.initialMaster=cloneCanvas(master);
   premium.originalMaster=cloneCanvas(base);
@@ -358,6 +363,20 @@ async function openAreaPrompt() {
   $('areaPromptInput').value = '';clearReferenceFiles('area');
   showDialog('areaPromptDialog');
 }
+async function suggestSemanticName(patchId,prompt){
+  if(!window.MosaicAuth?.isReady())return;
+  try{
+    const result=await window.MosaicAuth.request('/api/ai/option-name',{
+      prompt,category:core.categoryFromText(prompt)||'Region'
+    });
+    const patch=state.patches.get(patchId);
+    if(!patch||patch.manualName||!result.name)return;
+    const label=String(result.name).trim().slice(0,50);
+    if(label&&label.split(/\s+/).length<=5&&!/^(?:make it|change it|apply it)\b/i.test(label)){
+      patch.name=label;renderGroups();
+    }
+  }catch(error){/* Local semantic naming remains active if the optional model is offline. */}
+}
 function createRegionRequest(prompt,referenceImages=[],selectedMask=state.selectionMask) {
   const bbox = maskBoundingBox(selectedMask);
   if (!bbox) {toast('Selection has no pixels.');return;}
@@ -373,6 +392,7 @@ function createRegionRequest(prompt,referenceImages=[],selectedMask=state.select
     request: {baseImage: base, reference: state.reference, mask, prompt: text}};
   state.sources.set(sourceId, source);
   const group = assignGroup(patch);
+  void suggestSemanticName(patch.id,text);
   state.selectedPatchId = null;
   state.editingPatchId = null;
   resetSelection();
@@ -611,7 +631,7 @@ function onPatchApplied() {
 }
 window.MosaicPremium = {
   projectPrompt: () => premium.projectPrompt,
-  onReferenceLoaded, onMasterLoaded, onSourcesAligned, onMasterReset, canSelectArea, onPatchApplied, generateSelection, decorateActive: activePatchMarkup, getReferenceFiles, clearReferenceFiles,
+  onReferenceLoaded, onMasterLoaded, onSourcesAligned, onSourceEdited, onMasterReset, canSelectArea, onPatchApplied, generateSelection, decorateActive: activePatchMarkup, getReferenceFiles, clearReferenceFiles,
   drawArchivePreview, isPreviewing, renderHistory, handleGroupEvent,
   originalImage, exportPrompt, drawRegionGuides, classifyArea
 };
