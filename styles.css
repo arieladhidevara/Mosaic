@@ -94,3 +94,25 @@
 .toolset{flex:none}
 .tool[data-tool="rect"],.tool[data-tool="ellipse"]{white-space:nowrap}
 @media(max-width:1100px){.tool-row{overflow-x:auto;scrollbar-width:thin}.tool-row .tool-spacer{min-width:4px}}
+
+
+/* Compact inspector + direct canvas layer transforms */
+.inspector-bar{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:13px 16px 5px;color:#9294b1;font-size:10px;font-weight:800;letter-spacing:1.2px;flex:none}
+.inspector-bar .icon-btn{width:28px;height:28px;font-size:17px}
+.right-sidebar .inspector-top{padding:6px 16px 5px}
+.right-sidebar .inspector-top h2{font-size:15px;margin:5px 0}
+.right-sidebar .inspector-top p{font-size:11px;line-height:1.5}
+.right-sidebar .setting-card{margin:6px 12px;padding:11px 12px}
+.right-sidebar .setting-card p{font-size:11px;line-height:1.5;margin:5px 0 0}
+.right-sidebar .prompt-preview{max-height:160px;overflow:auto}
+.right-sidebar #copyPromptSecondary{width:calc(100% - 24px);margin:8px 12px}
+.right-sidebar .inspector-bottom{margin-top:auto}
+.canvas-wrap.transform #overlayCanvas{cursor:move}
+#resetTransformBtn{white-space:nowrap}
+.workspace.inspector-collapsed{grid-template-columns:272px minmax(360px,1fr) 44px}
+.right-sidebar.is-collapsed{overflow:hidden;align-items:center}
+.right-sidebar.is-collapsed > :not(.inspector-bar){display:none!important}
+.right-sidebar.is-collapsed .inspector-bar{height:100%;width:100%;padding:10px 0;justify-content:flex-end;flex-direction:column-reverse;gap:12px}
+.right-sidebar.is-collapsed .inspector-bar span{writing-mode:vertical-rl;letter-spacing:2px}
+@media(max-width:1120px){.workspace.inspector-collapsed{grid-template-columns:240px minmax(360px,1fr)}}
+@media(max-width:730px){.workspace.inspector-collapsed{grid-template-columns:minmax(0,1fr)}.tool[data-tool="transform"]{flex:none}}

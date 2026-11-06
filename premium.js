@@ -20,7 +20,7 @@ const cloneCanvas = input => {
 function copyGraph(groups, patches, sources) {
   return {
     groups: groups.map(g => ({...g, patchIds: [...g.patchIds]})),
-    patches: new Map([...patches].map(([id,p]) => [id, {...p, mask: cloneCanvas(p.mask)}])),
+    patches: new Map([...patches].map(([id,p]) => [id, {...p, mask: cloneCanvas(p.mask), corners: p.corners?.map(q=>({...q}))||null}])),
     sources: new Map([...sources].map(([id,s]) => [id, {...s, canvas: cloneCanvas(s.canvas)}]))
   };
 }
@@ -32,12 +32,7 @@ function drawComposition(context, base, groups, patches, sources) {
     const patch = patches.get(group.active);
     const source = patch && sources.get(patch.sourceId);
     if (!patch || !source) continue;
-    const temp = makeCanvas(canvas.width, canvas.height);
-    const t = temp.getContext('2d');
-    t.drawImage(source.canvas, 0, 0, canvas.width, canvas.height);
-    t.globalCompositeOperation = 'destination-in';
-    t.drawImage(patch.mask, 0, 0, canvas.width, canvas.height);
-    context.drawImage(temp, 0, 0);
+    core.drawPatch(context, patch, source);
   }
 }
 function currentComposite() {
@@ -63,7 +58,7 @@ function setReferenceAsBase() {
   const scale = Math.min(1, 2400 / Math.max(ref.width, ref.height));
   const base = makeCanvas(Math.round(ref.width * scale), Math.round(ref.height * scale));
   base.getContext('2d').drawImage(ref, 0, 0, base.width, base.height);
-  core.setMaster(base, 'Revit · Original');
+  core.setMaster(base, 'Base · Original');
 }
 function onReferenceLoaded() {
   setReferenceAsBase();
@@ -273,14 +268,15 @@ async function attachAIResult(file) {
     patch.name = '✦ ' + patch.prompt.slice(0, 34);
     const group = state.groups.find(g => g.patchIds.includes(patch.id));
     if (group) group.active = patch.id;
-    state.selectedPatchId = null;
+    state.selectedPatchId = patch.id;
+    core.selectTool('transform');
     renderGroups();
     render();
     toast('Generated result masked automatically and added to its region group.');
   } catch (error) {toast('Could not attach result: ' + error.message);}
 }
 function openHarmonize() {
-  if (!state.master || !state.reference) {toast('Upload the original Revit image first.');return;}
+  if (!state.master || !state.reference) {toast('Upload Base first.');return;}
   if (state.pendingSourceId || state.editingPatchId) {toast('Apply or discard the current mask first.');return;}
   if (premium.previewNode) {toast('Close the archive preview or branch from it before harmonizing.');return;}
   if (state.groups.some(g => g.active && state.patches.get(g.active)?.awaitingResult)) {
@@ -290,7 +286,7 @@ function openHarmonize() {
   showDialog('harmonizeDialog');
 }
 function harmonizeLocally(prompt) {
-  // Provider slot: send original Revit + currentComposite() + prompt to a trusted
+  // Provider slot: send Base + currentComposite() + prompt to a trusted
   // backend once an AI endpoint and premium entitlements are actually configured.
   const flattened = currentComposite();
   const graph = copyGraph(state.groups, state.patches, state.sources);
@@ -305,7 +301,7 @@ function harmonizeLocally(prompt) {
   premium.expanded.add(node.id);
   premium.previewNode = null;
   premium.lastRequest = {
-    originalRevit: state.reference, collage: cloneCanvas(flattened),
+    originalBase: state.reference, collage: cloneCanvas(flattened),
     prompt, snapshotId: node.id
   };
   state.master = flattened;
@@ -334,8 +330,8 @@ function originalImage() {
   return premium.originalMaster;
 }
 function onPatchApplied() {
-  // New freehand selections should create new regions, not silently edit the last patch.
-  state.selectedPatchId = null;
+  // A committed patch stays selected so its four corner handles are immediately available.
+  if(state.selectedPatchId)core.selectTool('transform');
 }
 window.MosaicPremium = {
   projectPrompt: () => premium.projectPrompt,
