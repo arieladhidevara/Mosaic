@@ -207,20 +207,35 @@ function selectGroupMask(group){
 }
 function optionNameFromPrompt(prompt,fallback='New option'){
   let value=String(prompt||'').trim().replace(/\s+/g,' ');
-  const apply=value.match(/^apply\s+(.+?)\s+to\s+(?:the|this|that)\s+\w+(?:\s+\w+)*$/i);
-  if(apply)value=apply[1];
-  const color=value.match(/\b((?:(?:matte|glossy|light|dark|warm|cool)\s+)?(?:black|white|gray|grey|beige|blue|red|green|yellow|bronze|gold|silver|brown))\b(?:\s+(?:finish|paint))?[.!?]*$/i);
-  if(color)value=color[1];
   if(!value)return fallback;
-  // Display an object/material/finish, not the instruction that produced it.
-  value=value.replace(/^(?:please\s+)?(?:make|paint|turn|change|convert|render|replace|set|apply|use|add|give|create|show|make it|change it|switch)\s+(?:the\s+|this\s+|that\s+|it\s+|them\s+|into\s+|to\s+|with\s+|as\s+)*?/i,'');
-  const target=value.match(/\b(?:into|to|with|as|using)\s+(.+?)(?:[.!?;,]|\s+(?:while|without|but|and keep|keeping)\b|$)/i);
-  if(target)value=target[1];
-  value=value.replace(/^(?:(?:it|this|that|the|a|an|some|material|finish|color|colour)\s+)+/i,'');
-  value=value.replace(/^(?:wall|ceiling|floor|door|window|glazing|sofa|chair|table|millwork|cabinet|furniture|roof|screen|facade|façade)\s+/i,'');
-  value=value.split(/\s+(?:while|without|keeping|but|and preserve|and keep)\b/i)[0];
-  value=value.replace(/[.!?;,]+$/,'').trim().slice(0,42);
-  return value?value[0].toUpperCase()+value.slice(1):fallback;
+  value=value.replace(/^(?:please\s+|can you\s+|could you\s+|i want you to\s+|i would like to\s+)+/i,'');
+  value=value.split(/(?:[.!?;]|\s+(?:while|without changing|but keep|and keep|keeping the|preserving the|do not change|don't change)\b)/i)[0].trim();
+  const finish=(text)=>{
+    const result=String(text||'').trim().replace(/[.,;:!?]+$/,'').split(/\s+/).slice(0,5).join(' ').slice(0,44);
+    return result?result[0].toUpperCase()+result.slice(1):fallback;
+  };
+  const remove=value.match(/\b(?:remove|delete|erase|eliminate|hide|get rid of)\s+(?:all\s+|the\s+)?([a-z][\w\s-]{1,50})/i);
+  if(remove)return finish('No '+remove[1].replace(/\s+(?:from|on|in|at|behind|outside|inside|next to)\b.*$/i,''));
+  const apply=value.match(/\b(?:apply|put|use)\s+(.+?)\s+(?:to|on|for)\s+(?:the|this|that)\s+(?:wall|ceiling|floor|facade|roof|doors?|windows?|panels?|area|surface|room|furniture)\b/i);
+  let candidate=apply?apply[1]:value;
+  if(!apply){
+    const transformed=value.match(/\b(?:change|replace|convert|switch|turn|swap|transform|paint|make|set)\b[^.!?;]{0,70}?\b(?:with|into|to|as)\s+([^.!?;,]{1,65})/i);
+    if(transformed)candidate=transformed[1];
+  }
+  candidate=candidate.replace(/^(?:please\s+)?(?:make|paint|turn|change|convert|render|replace|set|apply|use|add|give|create|show|switch|update|put|have|increase|enhance|improve)\s+/i,'');
+  candidate=candidate.replace(/^(?:this|that|it|the|a|an|some|all|my|our|its|them)\s+/i,'');
+  candidate=candidate.replace(/^(?:wall|floor|ceiling|door|window|roof|facade|furniture|sofa|chair|cabinet|millwork|image|render|material)s?\s+(?:to\s+|into\s+|with\s+|in\s+|be\s+)?/i,'');
+  candidate=candidate.replace(/^it\s+/i,'').replace(/\s+(?:and|plus)\s+keep\b.*$/i,'');
+  const material=candidate.match(/\b((?:(?:warm|cool|light|dark|natural|white|black|grey|gray|beige|blue|red|green|yellow|brown|brushed|polished|matte|glossy|textured|pale|rich|perforated|subtle)\s+){0,3}(?:walnut|oak|ash|pine|wood|terrazzo|concrete|marble|stone|limestone|granite|glass|glazing|aluminum|aluminium|metal|steel|bronze|copper|brick|carpet|tile|plaster|fabric|leather|veneer|louvers?|baffles?)(?:\s+(?:wood\s+)?(?:veneer|panels?|tiles?|slats?|cladding|flooring|ceiling|finish|baffles?|louvers?|siding|fabric))?)\b/i);
+  if(material)return finish(material[1]);
+  const color=candidate.match(/\b((?:(?:matte|glossy|light|dark|warm|cool|soft|pale|deep)\s+)?(?:black|white|gray|grey|beige|blue|red|green|yellow|bronze|gold|silver|brown|orange|pink|purple))\b(?:\s+(?:sofa|chairs?|panels?|baffles?|walls?|floor|ceiling|doors?))?/i);
+  if(color)return finish(color[0]);
+  const lighting=candidate.match(/\b((?:soft|warm|cool|bright|natural|diffused|indirect|linear|recessed|ambient)\s+(?:daylight|lighting|lights?|downlights?|cove lighting))\b/i);
+  if(lighting)return finish(lighting[1]);
+  if(/\b(?:increase|enhance|brighten)\b.*\b(?:daylight|lighting|light)\b/i.test(value))return 'Brighter lighting';
+  if(/\b(?:photorealistic|ultra-realistic|realistic)\b/i.test(candidate))return 'Photorealistic';
+  candidate=candidate.replace(/\s+(?:to|for|from|under|behind|outside|inside)\s+(?:the|this|that)\s+(?:image|scene|room|region|area|wall|ceiling|floor)\b.*$/i,'');
+  return finish(candidate);
 }
 
 // Non-destructive four-corner warp. The source pixels and original mask stay intact.
