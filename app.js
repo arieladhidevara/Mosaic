@@ -24,7 +24,7 @@ function labelFromPosition(b){let x=(b.x+b.w/2)/canvas.width,y=(b.y+b.h/2)/canva
 function promptText(){const p=`Create one seamless photorealistic architectural rendering using the two attached images.\n\nIMAGE 1 — BASE. Preserve its camera perspective, architectural geometry, spatial proportions and original structure where no deliberate change has been made.\n\nIMAGE 2 — MOSAIC COLLAGE. This is the primary source for approved material finishes, furniture, ornaments, lighting fixtures, and intentional geometry changes.\n\nINSTRUCTIONS:\n- Preserve the appearance and deliberate object changes selected in Image 2, even if they differ from Image 1.\n- Preserve Image 1's geometry in unchanged regions.\n- Harmonize collage seams, material transitions, shadows, reflections and color grading.\n- Do not add unrequested objects, change the camera, alter mullion spacing, or reinterpret approved design elements.\n- Prioritize design fidelity and architectural accuracy over artistic reinterpretation.\n\nOUTPUT: One cohesive professional architectural visualization. These images are references, not pixel-locked constraints.\n\nPROJECT DESIGN INTENT:\n${window.MosaicPremium?.projectPrompt() || 'Preserve the approved original design.'}`;$('promptPreview').textContent=p;return p}
 async function loadFileToCanvas(file,maxDimension=2400){if(!file||!file.type.startsWith('image/'))throw Error('Choose an image file.');let image;try{image=await createImageBitmap(file)}catch{image=await new Promise((resolve,reject)=>{const img=new Image(),url=URL.createObjectURL(file);img.onload=()=>{URL.revokeObjectURL(url);resolve(img)};img.onerror=()=>{URL.revokeObjectURL(url);reject(Error('Cannot open this image'))};img.src=url})}
   const scale=Math.min(1,maxDimension/Math.max(image.width,image.height)),c=makeCanvas(Math.round(image.width*scale),Math.round(image.height*scale));c.getContext('2d').drawImage(image,0,0,c.width,c.height);image.close?.();return c}
-async function importMaster(file){if(!file)return;try{const c=await loadFileToCanvas(file);setMaster(c,fileName(file));toast('Master ready. Add an AI variation and lasso your favorite region.')}catch(e){toast(e.message)}}
+async function importMaster(file){if(!file)return;try{const c=await loadFileToCanvas(file);setMaster(c,fileName(file));toast('Master ready. Add another image and select a region to keep.')}catch(e){toast(e.message)}}
 function setMaster(c,name){window.MosaicPremium?.onMasterReset();state.master=c;state.sources.clear();state.groups=[];state.patches.clear();state.pendingSourceId=null;state.queue=[];state.editingPatchId=null;state.selectedPatchId=null;state.undo=[];state.redo=[];state.selectionGeneration++;state.hoveredGroupId=null;state.queuedGroupId=null;
   canvas.width=overlay.width=c.width;canvas.height=overlay.height=c.height;setSourcePreview('masterPreview',c);window.MosaicPremium?.onMasterLoaded?.(c);$('selectionDraft').setAttribute('viewBox',`0 0 ${c.width} ${c.height}`);resetSelection();
   $('welcome').classList.add('hidden');$('canvasWrap').classList.remove('hidden');$('projectName').textContent=name;$('projectSize').textContent=`${c.width} × ${c.height}`;
@@ -346,7 +346,7 @@ function renderGroups(){
   $('pendingBanner').classList.toggle('hidden',!state.pendingSourceId);
   if(state.pendingSourceId){const source=state.sources.get(state.pendingSourceId);$('pendingName').textContent='● Editing: '+(source?.name||'New variation')}
   if(!state.groups.length){
-    list.innerHTML='<div class="empty-groups"><span>◌</span><strong>No regions yet</strong><p>Select an area, then describe the change.</p></div>';
+    list.innerHTML='<div class="empty-groups"><span>◌</span><strong>No regions yet</strong><p>Import an image, select an area, then press Enter to keep it.</p></div>';
     return;
   }
   list.innerHTML=state.groups.map(g=>{
@@ -457,7 +457,7 @@ function snapshotPatch(p){state.undo.push({type:'patch',patchId:p.id,image:p.mas
 function commitMaskPath(trace){if(!state.selectionMask)return;const m=state.selectionMask.getContext('2d');snapshotSelection();m.save();
   if(state.selectionMode==='new')m.clearRect(0,0,canvas.width,canvas.height);
   m.globalCompositeOperation=state.selectionMode==='subtract'?'destination-out':'source-over';m.fillStyle='#ffffff';m.beginPath();trace(m);m.closePath();m.fill();m.restore();
-  state.pendingRevealOnly=Boolean(state.pendingSourceId);updateSelectionOutline();prepareSelectionGroup();render();message('Selection ready. Use Generate to edit this area, or refine with Add/Subtract.');showQuickPrompt()}
+  state.pendingRevealOnly=Boolean(state.pendingSourceId);updateSelectionOutline();prepareSelectionGroup();render();message(state.pendingSourceId?'Press Enter to keep the selected part of the new image.':window.MosaicAuth?.isReady()?'Selection ready. Describe a Premium edit.':'Selection ready. Add an image to apply this region.');showQuickPrompt()}
 function updateMaskWithLasso(){const points=state.lasso.filter((p,i,a)=>i===0||Math.hypot(p.x-a[i-1].x,p.y-a[i-1].y)>.01);
   if(points.length<3||!state.selectionMask)return false;
   commitMaskPath(m=>points.forEach((p,i)=>i?m.lineTo(p.x,p.y):m.moveTo(p.x,p.y)));
@@ -514,6 +514,7 @@ function pointerDown(e){if(!state.master||state.busy||state.before||e.button!==0
     return;
   }
   if(state.tool==='reveal'||state.tool==='erase'){
+    if(state.pendingSourceId&&state.tool==='erase'&&!maskBoundingBox(state.selectionMask)){const mc=state.selectionMask.getContext('2d');mc.fillStyle='#fff';mc.fillRect(0,0,canvas.width,canvas.height)}
     if(!state.pendingSourceId&&!state.editingPatchId){
       const picked=nearestBrushPatch(canvasPoint(e),state.tool==='erase');
       if(!picked){toast('No editable image near this brush. Upload an image or choose a variant.');return}
