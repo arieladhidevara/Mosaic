@@ -337,6 +337,41 @@ function bilinear(quad,u,v){
   return {x:tl.x*(1-u)*(1-v)+tr.x*u*(1-v)+br.x*u*v+bl.x*(1-u)*v,
     y:tl.y*(1-u)*(1-v)+tr.y*u*(1-v)+br.y*u*v+bl.y*(1-u)*v};
 }
+function unwarpPatchSelection(selection,patch){
+  if(!patch.corners?.length)return selection;
+  const output=makeCanvas(canvas.width,canvas.height),target=output.getContext('2d');
+  const quad=patchCorners(patch),b=patch.bbox,steps=8;
+  const original=(u,v)=>({x:b.x+u*b.w,y:b.y+v*b.h});
+  for(let y=0;y<steps;y++)for(let x=0;x<steps;x++){
+    const u=x/steps,v=y/steps,nu=(x+1)/steps,nv=(y+1)/steps;
+    const a=bilinear(quad,u,v),bb=bilinear(quad,nu,v),c=bilinear(quad,nu,nv),d=bilinear(quad,u,nv);
+    const A=original(u,v),B=original(nu,v),C=original(nu,nv),D=original(u,nv);
+    affineTriangle(target,selection,a,bb,c,A,B,C);
+    affineTriangle(target,selection,a,c,d,A,C,D);
+  }
+  return output;
+}
+function pointToOriginalMask(point,patch){
+  if(!patch?.corners?.length)return point;
+  const q=patchCorners(patch),b=patch.bbox;
+  // Solve the inverse bilinear four-corner mapping using Newton iterations.
+  const ext=patchDisplayBounds(patch);
+  let u=clamp((point.x-ext.x)/Math.max(1,ext.w),0,1);
+  let v=clamp((point.y-ext.y)/Math.max(1,ext.h),0,1);
+  for(let i=0;i<14;i++){
+    const at=bilinear(q,u,v),fx=at.x-point.x,fy=at.y-point.y;
+    const dux=(q[1].x-q[0].x)*(1-v)+(q[2].x-q[3].x)*v;
+    const duy=(q[1].y-q[0].y)*(1-v)+(q[2].y-q[3].y)*v;
+    const dvx=(q[3].x-q[0].x)*(1-u)+(q[2].x-q[1].x)*u;
+    const dvy=(q[3].y-q[0].y)*(1-u)+(q[2].y-q[1].y)*u;
+    const det=dux*dvy-duy*dvx;
+    if(Math.abs(det)<1e-6)break;
+    const stepU=(fx*dvy-fy*dvx)/det,stepV=(fy*dux-fx*duy)/det;
+    u-=stepU;v-=stepV;
+    if(Math.max(Math.abs(stepU),Math.abs(stepV))<1e-5)break;
+  }
+  return {x:b.x+u*b.w,y:b.y+v*b.h};
+}
 function affineTriangle(target,texture,s0,s1,s2,d0,d1,d2){
   const sx1=s1.x-s0.x,sy1=s1.y-s0.y,sx2=s2.x-s0.x,sy2=s2.y-s0.y;
   const det=sx1*sy2-sx2*sy1;if(Math.abs(det)<1e-8)return;
@@ -528,7 +563,7 @@ function renderGroups(){
   }).join('');
   window.MosaicRegions?.decorate();window.MosaicPremium?.decorateActive?.();updateSourceActions();
 }
-function editExisting(pid){if(state.pendingSourceId){toast('Apply or discard your new image before editing saved variants.');return}const patch=state.patches.get(pid);if(!patch)return;state.editingPatchId=pid;state.selectedPatchId=pid;resetSelection();state.selectionMask.getContext('2d').drawImage(patch.mask,0,0);setMode('add');selectTool('lasso');updateSelectionOutline();updateApplyButton();message('Editing a saved mask. Refine it, then click Update mask to commit changes.')}
+function editExisting(pid){if(state.pendingSourceId){toast('Apply or discard your new image before editing saved variants.');return}const patch=state.patches.get(pid);if(!patch)return;state.editingPatchId=pid;state.selectedPatchId=pid;resetSelection();state.selectionMask.getContext('2d').drawImage(displayedPatchMask(patch),0,0);setMode('add');selectTool('lasso');updateSelectionOutline();updateApplyButton();message('Editing a saved mask. Refine it, then click Update mask to commit changes.')}
 function groupEvent(e){if(window.MosaicRegions?.handleGroupEvent(e))return;if(window.MosaicPremium?.handleGroupEvent(e))return;const target=e.target.closest('[data-action]');if(!target)return;const action=target.dataset.action,group=state.groups.find(g=>g.id===target.dataset.group),pid=target.dataset.patch;
   if(action==='focus'&&group){if(group.active){state.editingPatchId=null;state.selectedPatchId=group.active;resetSelection();selectTool('transform');renderGroups();render()}return}
   if(action==='edit-image'){window.MosaicSourceEditor?.openOption(pid);return}
@@ -640,7 +675,20 @@ function updateMaskWithShape(start,end,tool,constrain){const bounds=shapeBounds(
 function maskBoundingBox(mask){const w=Math.min(250,mask.width),h=Math.max(1,Math.round(w*mask.height/mask.width)),t=makeCanvas(w,h),tx=t.getContext('2d',{willReadFrequently:true});tx.drawImage(mask,0,0,w,h);const d=tx.getImageData(0,0,w,h).data;let minX=w,minY=h,maxX=-1,maxY=-1;for(let i=0;i<w*h;i++)if(d[i*4+3]>80){const x=i%w,y=Math.floor(i/w);minX=Math.min(minX,x);minY=Math.min(minY,y);maxX=Math.max(maxX,x);maxY=Math.max(maxY,y)}return maxX<0?null:{x:minX/w*canvas.width,y:minY/h*canvas.height,w:(maxX-minX+1)/w*canvas.width,h:(maxY-minY+1)/h*canvas.height}}
 function applySelection(){if(state.lasso.length){if(!updateMaskWithLasso()){toast('Add at least three lasso points, then click the first point or double-click to close.');return}}if(!state.selectionMask)return;const bbox=maskBoundingBox(state.selectionMask);if(!bbox){toast('Draw or brush a selection first.');return}
   if(state.pendingSourceId){const src=state.sources.get(state.pendingSourceId),mask=makeCanvas(canvas.width,canvas.height);mask.getContext('2d').drawImage(state.selectionMask,0,0);const patch={id:uid('patch'),sourceId:src.id,mask,bbox,name:optionNameFromPrompt(src.name,src.name),manualName:false},group=assignGroup(patch);state.pendingSourceId=null;state.editingPatchId=null;resetSelection();state.undo=[];state.redo=[];toast(`Saved as ${group.name}. Similar masks become alternatives.`);message('Selection saved. Upload another image or switch variants on the left.');renderGroups();render();window.MosaicPremium?.onPatchApplied();loadNextVariant();return}
-  if(state.editingPatchId){const patch=state.patches.get(state.editingPatchId);if(!patch)return;snapshotPatch(patch);const t=patch.mask.getContext('2d');t.clearRect(0,0,canvas.width,canvas.height);t.drawImage(state.selectionMask,0,0);patch.bbox=bbox;const region=state.groups.find(g=>g.patchIds.includes(patch.id));if(region)rememberMask(region,patch.mask);patchTextures.delete(patch);state.editingPatchId=null;state.selectedPatchId=patch.id;resetSelection();toast('Mask updated. Other layers were not changed.');renderGroups();render()}}
+  if(state.editingPatchId){
+    const patch=state.patches.get(state.editingPatchId);if(!patch)return;
+    snapshotPatch(patch);
+    const sourceMask=unwarpPatchSelection(state.selectionMask,patch);
+    const t=patch.mask.getContext('2d');t.clearRect(0,0,canvas.width,canvas.height);
+    t.drawImage(sourceMask,0,0);
+    // Keep the source rectangle fixed while corners define the visible warp.
+    if(!patch.corners)patch.bbox=bbox;
+    invalidateDisplayedMask(patch);
+    const region=state.groups.find(g=>g.patchIds.includes(patch.id));
+    if(region)refreshGroupFootprint(region);
+    state.editingPatchId=null;state.selectedPatchId=patch.id;resetSelection();
+    toast('Selection updated at its current position.');renderGroups();render();
+  }}
 function findRegionAt(point){
   if(!state.master||!pointInImage(point))return null;
   for(const group of state.groups.slice().reverse()){
@@ -653,7 +701,7 @@ function nearestBrushPatch(point,erase=false){
   const candidates=state.groups.map(group=>state.patches.get(group.active)).filter(p=>p&&state.sources.has(p.sourceId)&&!p.awaitingResult);
   for(const p of candidates.slice().reverse()){
     const x=clamp(Math.floor(point.x),0,canvas.width-1),y=clamp(Math.floor(point.y),0,canvas.height-1);
-    if(p.mask.getContext('2d',{willReadFrequently:true}).getImageData(x,y,1,1).data[3]>100)return p;
+    if(displayedPatchMask(p).getContext('2d',{willReadFrequently:true}).getImageData(x,y,1,1).data[3]>100)return p;
   }
   if(erase)return null;
   return candidates.map(p=>{
