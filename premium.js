@@ -293,13 +293,13 @@ function transparentEditMask(source,w,h){
 function annotationNotes(targetId){
   return activeAIRegions().map(p=>({color:p.color,prompt:p.prompt,active:p.id===targetId}));
 }
-function encodeRequest(prompt,patch=null,masterSource=null){
+function encodeRequest(prompt,patch=null,masterSource=null,extraReferences=[]){
   const collage=masterSource||currentComposite();
   for(const maxSize of [1350,1120,900]){
     const scale=Math.min(1,maxSize/Math.max(canvas.width,canvas.height));
     const w=Math.max(128,Math.round(canvas.width*scale)),h=Math.max(128,Math.round(canvas.height*scale));
     const payload={collage:resizedFrame(collage,w,h),base:resizedFrame(state.reference||premium.initialMaster||state.master,w,h),
-      projectPrompt:premium.projectPrompt,prompt,regions:annotationNotes(patch?.id),references:patch?.referenceImages||[]};
+      projectPrompt:premium.projectPrompt,prompt,regions:annotationNotes(patch?.id),references:patch?.referenceImages||extraReferences};
     if(patch){
       payload.mask=transparentEditMask(patch.mask,w,h);
       const guide=cloneCanvas(collage);paintGuides(guide.getContext('2d'));
@@ -561,6 +561,7 @@ async function openHarmonize() {
     toast('An active masked AI request is still waiting for its result image.');return;
   }
   if(!await window.MosaicAuth.ensure())return;
+  clearReferenceFiles('harmonize');
   $('harmonizePromptInput').value = core.promptText();
   $('harmonizeDialog').querySelector('h2').textContent='Flatten & harmonize';
   showDialog('harmonizeDialog');
@@ -574,10 +575,12 @@ async function harmonizeWithAI(prompt,sourceVersion=null) {
   let finalImage;
   try{
     message(sourceVersion?'Regenerating from Master '+sourceVersion.number+'…':'Generating harmonized architecture image with OpenAI…');
-    const answer=await window.MosaicAuth.request('/api/ai/harmonize',encodeRequest(prompt,null,sourceVersion?.image));
+    const references=await prepareReferenceImages(getReferenceFiles('harmonize'));
+    const answer=await window.MosaicAuth.request('/api/ai/harmonize',encodeRequest(prompt,null,sourceVersion?.image,references));
     finalImage=await fromGeneratedJPEG(answer.image);
   }catch(error){toast('Harmonize failed: '+error.message);message('Your original collage is unchanged. Please retry.');return}
   finally{a.disabled=false;b.disabled=false}
+  clearReferenceFiles('harmonize');
   const graph = copyGraph(state.groups, state.patches, state.sources);
   const number = ++premium.serial;
   const masterVersion=addMasterVersion(finalImage,sourceVersion?'Regenerated':'Harmonized',prompt,sourceVersion?.number||null);
@@ -638,6 +641,7 @@ async function regenerateMaster(number){
   if(state.groups.some(g=>g.active&&state.patches.get(g.active)?.awaitingResult)){toast('Complete the pending AI region first.');return}
   if(!await window.MosaicAuth.ensure())return;
   premium.regenerateFrom=version;
+  clearReferenceFiles('harmonize');
   $('harmonizePromptInput').value=version.prompt||'Regenerate Master '+version.number+' into a refined architectural rendering. Preserve the camera, geometry, approved design, and material intent.';
   $('harmonizeDialog').querySelector('h2').textContent='Regenerate Master '+version.number+' → new Master';
   showDialog('harmonizeDialog');
