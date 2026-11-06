@@ -130,25 +130,12 @@ function drawArchivePreview(context) {
   drawComposition(context, node.base, node.groups, node.patches, node.sources);
   return true;
 }
-function activePatchMarkup() {
-  // A result image is accepted as a full frame but immediately clipped by the saved original mask.
-  for (const patch of state.patches.values()) {
-    if (!patch.awaitingResult) continue;
-    const row = $('groupList').querySelector('.variant-row[data-action="choose"][data-patch="' + patch.id + '"]');
-    if (!row) continue;
-    row.classList.add('awaiting-ai');
-    const generate = document.createElement('button');
-    generate.type='button';generate.className='small-action';generate.dataset.aiAction='generate';
-    generate.dataset.patch=patch.id;generate.textContent=patch.generating?'Generating…':'↻ Generate';
-    generate.disabled=Boolean(patch.generating);row.appendChild(generate);
-    const b = document.createElement('button');
-    b.type = 'button';
-    b.className = 'small-action add-ai-result';
-    b.dataset.aiAction = 'upload';
-    b.dataset.patch = patch.id;
-    b.textContent = 'Add result';
-    b.title = 'Attach a generated image; Mosaic will apply the saved lasso mask automatically';
-    row.appendChild(b);
+function activePatchMarkup(){
+  // Keep the four option controls stable even when a generation is pending.
+  for(const patch of state.patches.values()){
+    if(!patch.awaitingResult&&!patch.generating)continue;
+    const row=$('groupList').querySelector('.variant-row[data-action="choose"][data-patch="'+patch.id+'"]');
+    row?.classList.add('awaiting-ai');
   }
 }
 function groupMarkup(group, node) {
