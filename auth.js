@@ -2,7 +2,7 @@
 const $=id=>document.getElementById(id);
 const dialog=$('premiumLoginDialog'),form=$('premiumLoginForm'),button=$('premiumStatusBtn');
 let signedIn=false,key='',pending=null,finishPending=null;
-function updateButton(){button.textContent=signedIn?'✦ Premium account':'✦ Premium login';button.classList.toggle('premium-active',signedIn)}
+function updateButton(){button.textContent=signedIn?'✦ Premium account':'✦ Premium login';button.classList.toggle('premium-active',signedIn);document.body.classList.toggle('premium-ready',signedIn&&Boolean(key))}
 async function status(){
   try {const res=await fetch('/api/session',{credentials:'same-origin',cache:'no-store'});const data=await res.json();signedIn=Boolean(data.authenticated)}
   catch{signedIn=false}
