@@ -116,3 +116,13 @@
 .right-sidebar.is-collapsed .inspector-bar span{writing-mode:vertical-rl;letter-spacing:2px}
 @media(max-width:1120px){.workspace.inspector-collapsed{grid-template-columns:240px minmax(360px,1fr)}}
 @media(max-width:730px){.workspace.inspector-collapsed{grid-template-columns:minmax(0,1fr)}.tool[data-tool="transform"]{flex:none}}
+
+/* Private Premium login and region guide controls */
+#premiumLoginDialog input{width:100%;box-sizing:border-box;margin:7px 0 15px;background:#191d26;color:#f4f1ff;border:1px solid #495065;border-radius:8px;padding:12px 13px;font:inherit}
+#premiumLoginDialog input:focus{outline:2px solid #9c89ed;outline-offset:2px}
+#premiumLoginDialog label{display:block;font-weight:650;font-size:12px;margin-top:6px}
+#premiumLoginDialog .private-key-note{font-size:11px;color:#9da3b0;line-height:1.55}
+#premiumLoginDialog .premium-login-error{color:#ff9c91;font-size:12px;min-height:18px}
+#premiumStatusBtn.premium-active{color:#b4a5ff}
+#regionGuidesBtn[aria-pressed="true"]{color:#c3b6ff;background:rgba(152,121,240,.12)}
+#premiumLoginDialog .dialog-actions{flex-wrap:wrap}

@@ -196,6 +196,7 @@ function boundaryFromMask(){if(!state.selectionMask)return null;const w=Math.min
   for(let y=0;y<h;y++)for(let x=0;x<w;x++){const i=y*w+x,filled=px[i*4+3]>110;if(!filled)continue;const left=x===0||px[(i-1)*4+3]<110,right=x===w-1||px[(i+1)*4+3]<110,up=y===0||px[(i-w)*4+3]<110,down=y===h-1||px[(i+w)*4+3]<110;if(!(left||right||up||down))continue;const j=i*4,light=(Math.floor((x+y)/3)%2)===0;out.data[j]=light?255:22;out.data[j+1]=light?255:22;out.data[j+2]=light?255:24;out.data[j+3]=255}oc.putImageData(out,0,0);return outline}
 function updateSelectionOutline(){state.boundaryCanvas=boundaryFromMask();drawOverlay()}
 function drawOverlay(){ox.clearRect(0,0,overlay.width,overlay.height);if(state.before||window.MosaicPremium?.isPreviewing())return;
+  window.MosaicPremium?.drawRegionGuides(ox);
   if(state.selectionMask){ox.save();ox.globalAlpha=.16;ox.drawImage(state.selectionMask,0,0);ox.restore();if(state.boundaryCanvas){ox.save();ox.imageSmoothingEnabled=false;ox.drawImage(state.boundaryCanvas,0,0,overlay.width,overlay.height);ox.restore()}}
   const chosen=state.tool==='transform' && !state.pendingSourceId && !state.editingPatchId && activeTransformPatch();
   if(chosen){
