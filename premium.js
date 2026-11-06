@@ -7,7 +7,7 @@ const esc = core.escapeHTML;
 const premium = {
   projectPrompt: '', root: null, serial: 0, expanded: new Set(),
   previewNode: null, uploadPatch: null, lastRequest: null,
-  originalMaster: null, branchFrom: null, regionSerial: 0, showGuides: true, generationQueue: Promise.resolve()
+  originalMaster: null, initialMaster: null, branchFrom: null, regionSerial: 0, showGuides: false, generationQueue: Promise.resolve()
 };
 const cloneCanvas = input => {
   const output = makeCanvas(input.width, input.height);
@@ -64,8 +64,10 @@ function onReferenceLoaded() {
     premium.originalMaster.getContext('2d').drawImage(state.reference, 0, 0, canvas.width, canvas.height);
   }
   $('projectPromptInput').value = premium.projectPrompt;
-  showDialog('projectPromptDialog');
+  if(window.MosaicAuth?.isReady())showDialog('projectPromptDialog');
 }
+function onMasterLoaded(image){premium.initialMaster=cloneCanvas(image)}
+
 function onMasterReset() {
   premium.root = null;
   premium.serial = 0;
@@ -74,6 +76,7 @@ function onMasterReset() {
   premium.uploadPatch = null;
   premium.lastRequest = null;
   premium.originalMaster = null;
+  premium.initialMaster = null;
   premium.branchFrom = null;
   premium.regionSerial = 0;
 }
@@ -147,13 +150,7 @@ function nodeMarkup(node, depth = 0) {
   }
   return html + '</section>';
 }
-function renderHistory(list) {
-  activePatchMarkup();
-  if (!premium.root) return;
-  list.insertAdjacentHTML('beforeend',
-    '<div class="history-section-label">HARMONIZED HISTORY <span>Editable archive</span></div>' +
-    nodeMarkup(premium.root));
-}
+function renderHistory(list) { activePatchMarkup(); /* Versions now live inside their Regions. */ }
 function workFromNode(node, useFlattened) {
   if (state.pendingSourceId || state.editingPatchId) {toast('Finish or discard your current mask first.');return;}
   if (state.groups.length && !window.confirm('Switch working version? Your current unharmonized patches will be replaced. Harmonized snapshots remain in history.')) return;
@@ -380,6 +377,16 @@ function createRegionRequest(prompt) {
   toast('AI region '+regionNumber+' queued.');
   return patch.id;
 }
+function generateSelection(prompt,groupId=null){
+  if(!window.MosaicAuth?.isReady()){toast('Sign in to Premium to generate an AI edit.');return}
+  if(!canSelectArea()){toast('Finish the current imported layer before generating.');return}
+  if(state.lasso.length>2)core.updateMaskWithLasso();
+  const bbox=maskBoundingBox(state.selectionMask);
+  if(!bbox){toast('Select a region before generating.');return}
+  if(groupId){const g=state.groups.find(g=>g.id===groupId);if(g)state.draftGroupId=g.id}
+  const patchId=createRegionRequest(prompt);
+  if(patchId)void generateRegion(patchId);
+}
 async function attachAIResult(file) {
   const patch = state.patches.get(premium.uploadPatch);
   premium.uploadPatch = null;
@@ -441,10 +448,22 @@ async function harmonizeWithAI(prompt) {
     originalBase: state.reference, collage: cloneCanvas(flattened),
     prompt, snapshotId: node.id
   };
+  // Preserve all region groups and their material alternatives across Harmonize.
+  const original = premium.initialMaster || cloneCanvas(state.master);
+  const savedRegionMasks = state.groups.map(g=>({group:g,mask:cloneCanvas(core.groupMask(g))}));
   state.master = finalImage;
-  state.groups = [];
-  state.patches = new Map();
-  state.sources = new Map();
+  for(const {group,mask} of savedRegionMasks){
+    if(!group.patchIds.some(id=>state.patches.get(id)?.isOriginalMaster)){
+      const initialId=uid('original_master'),initialSource=uid('original_source');
+      state.sources.set(initialSource,{id:initialSource,name:'Original Master',canvas:cloneCanvas(original)});
+      state.patches.set(initialId,{id:initialId,sourceId:initialSource,mask:cloneCanvas(mask),bbox:maskBoundingBox(mask),name:'Original Master',manualName:true,isOriginalMaster:true,groupId:group.id});
+      group.patchIds.unshift(initialId);
+    }
+    const nextId=uid('master_version'),sourceId=uid('master_source');
+    state.sources.set(sourceId,{id:sourceId,name:'Master '+(number+1),canvas:cloneCanvas(finalImage)});
+    state.patches.set(nextId,{id:nextId,sourceId,mask:cloneCanvas(mask),bbox:maskBoundingBox(mask),name:'Master '+(number+1),manualName:true,isMasterVersion:true,masterVersion:number+1,groupId:group.id});
+    group.patchIds.push(nextId);group.active=nextId;group.hasHarmonizedMaster=true;
+  }
   state.pendingSourceId = null;
   state.editingPatchId = null;
   state.selectedPatchId = null;
@@ -452,13 +471,13 @@ async function harmonizeWithAI(prompt) {
   state.redo = [];
   premium.branchFrom = node.id;
   resetSelection();
-  $('masterTitle').textContent = 'Harmonized ' + number + ' · AI';
-  $('masterInfo').textContent = canvas.width + ' × ' + canvas.height + ' · working image';
+  $('masterTitle').textContent = 'Master ' + (number+1) + ' · AI';
+  $('masterInfo').textContent = canvas.width + ' × ' + canvas.height + ' · working image';document.getElementById('masterPreview').src=finalImage.toDataURL('image/jpeg',.78);
   $('projectName').textContent = 'Harmonized ' + number + ' · AI render';
   renderGroups();
   render();
-  message('Flattened working image created. Expand Harmonized ' + number + ' to access previous layers.');
-  toast('Harmonization saved, with previous editable layers archived.');
+  message('Master '+(number+1)+' is now active. Previous materials and Original Master stay inside each Region.');
+  toast('Harmonization saved. All previous region options are preserved.');
 }
 function exportPrompt() {
   return premium.lastRequest?.prompt || null;
@@ -472,7 +491,7 @@ function onPatchApplied() {
 }
 window.MosaicPremium = {
   projectPrompt: () => premium.projectPrompt,
-  onReferenceLoaded, onMasterReset, canSelectArea, onPatchApplied,
+  onReferenceLoaded, onMasterLoaded, onMasterReset, canSelectArea, onPatchApplied, generateSelection,
   drawArchivePreview, isPreviewing, renderHistory, handleGroupEvent,
   originalImage, exportPrompt, drawRegionGuides, classifyArea
 };
@@ -493,8 +512,7 @@ $('areaPromptForm').addEventListener('submit', e => {
   const text = $('areaPromptInput').value.trim();
   if (!text) return;
   $('areaPromptDialog').close();
-  const patchId=createRegionRequest(text);
-  if(patchId)void generateRegion(patchId);
+  generateSelection(text);
 });
 for (const id of ['harmonizeBtn', 'harmonizeSidebarBtn'])
   $(id).addEventListener('click', openHarmonize);
