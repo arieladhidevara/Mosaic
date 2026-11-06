@@ -113,6 +113,8 @@ function start(kind,patchId=null){
   editing={kind,patchId,sourceId,image:original,label,
     wasBaseOnly,transform:{x:0,y:0,scale:1,rotation:0,opacity:.20}};
   inspector.classList.add('source-editor-active');
+  document.querySelector('.workspace').classList.add('source-editor-in-progress');
+  $('inspectorHeading').textContent='IMAGE EDIT';
   panel.classList.remove('hidden');
   $('sourceEditTitle').textContent='Edit '+label;
   stage.classList.add('active');
@@ -123,7 +125,9 @@ function openOption(id){if(!state.patches.has(id)){toast('Option not found.');re
 function reset(){if(!editing)return;editing.transform={x:0,y:0,scale:1,rotation:0,opacity:.20};syncControls();redraw()}
 function finish(){
   stage.classList.remove('active');paint.clearRect(0,0,stage.width,stage.height);
-  panel.classList.add('hidden');inspector.classList.remove('source-editor-active');editing=null;drag=null;
+  panel.classList.add('hidden');inspector.classList.remove('source-editor-active');
+  document.querySelector('.workspace').classList.remove('source-editor-in-progress');
+  $('inspectorHeading').textContent='GUIDE';editing=null;drag=null;
   if(!state.master){$('welcome').classList.remove('hidden');$('canvasWrap').classList.add('hidden');ctx.clearRect(0,0,canvas.width,canvas.height)}
   else{render();updateSourceActions()}
 }
