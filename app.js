@@ -105,10 +105,18 @@ function categoryFromText(value){
 }
 function cloneMask(mask){const c=makeCanvas(canvas.width,canvas.height);c.getContext('2d').drawImage(mask,0,0);return c}
 function groupMask(group){
+  // A region reuses the *visible, transformed* mask of its active option.
+  // Do not reuse an original mask left behind after moving/skewing an option.
+  const active=state.patches.get(group.active);
+  if(active)return displayedPatchMask(active);
   if(group.footprint)return group.footprint;
-  const c=makeCanvas(canvas.width,canvas.height),g=c.getContext('2d');
-  for(const id of group.patchIds){const p=state.patches.get(id);if(p)g.drawImage(p.mask,0,0)}
-  group.footprint=c;return c;
+  const result=makeCanvas(canvas.width,canvas.height),c=result.getContext('2d');
+  for(const id of group.patchIds){
+    const patch=state.patches.get(id);
+    if(patch)c.drawImage(displayedPatchMask(patch),0,0);
+  }
+  group.footprint=result;
+  return result;
 }
 function rememberMask(group,mask){
   if(!group.footprint)group.footprint=cloneMask(mask);
@@ -214,14 +222,14 @@ function assignGroup(patch){
   if(category)updateGroupCategory(group,category,'prompt');
   rememberMask(group,patch.mask);
   state.patches.set(patch.id,patch);group.patchIds.push(patch.id);group.active=patch.id;if(state.queuedGroupId===group.id)state.queuedGroupId=null;
-  patch.groupId=group.id;state.selectedPatchId=patch.id;return group;
+  patch.groupId=group.id;state.selectedPatchId=patch.id;refreshGroupFootprint(group);return group;
 }
 function refreshGroupFootprint(group){
-  const layers=group.patchIds.map(id=>state.patches.get(id)).filter(Boolean);
-  if(!layers.length){group.footprint=group.footprint||makeCanvas(canvas.width,canvas.height);group.area=maskBoundingBox(group.footprint);return}
-  const mask=makeCanvas(canvas.width,canvas.height),c=mask.getContext('2d');
-  for(const p of layers)c.drawImage(p.mask,0,0);
-  group.footprint=mask;group.area=maskBoundingBox(mask);
+  const patches=group.patchIds.map(id=>state.patches.get(id)).filter(Boolean);
+  const union=makeCanvas(canvas.width,canvas.height),c=union.getContext('2d');
+  for(const patch of patches)c.drawImage(displayedPatchMask(patch),0,0);
+  group.footprint=union;
+  group.area=maskBoundingBox(groupMask(group));
 }
 function moveOptionToGroup(patchId,targetGroupId){
   const patch=state.patches.get(patchId),to=state.groups.find(g=>g.id===targetGroupId),from=state.groups.find(g=>g.patchIds.includes(patchId));
@@ -280,6 +288,25 @@ function optionNameFromPrompt(prompt,fallback='New option'){
 
 // Non-destructive four-corner warp. The source pixels and original mask stay intact.
 const patchTextures = new WeakMap();
+const visibleMaskCache = new WeakMap();
+function invalidateDisplayedMask(patch){
+  visibleMaskCache.delete(patch);
+  patchTextures.delete(patch);
+}
+function displayedPatchMask(patch){
+  if(!patch.corners?.length)return patch.mask;
+  const signature=[patch.bbox.x,patch.bbox.y,patch.bbox.w,patch.bbox.h,
+    ...patch.corners.flatMap(p=>[p.x,p.y])].join('/');
+  const cached=visibleMaskCache.get(patch);
+  if(cached&&cached.mask===patch.mask&&cached.signature===signature)return cached.canvas;
+  const result=makeCanvas(canvas.width,canvas.height);
+  // Use the SAME affine / four-corner mesh as the visible option. The stored
+  // source mask remains non-destructive and can always be reset or undone.
+  const surrogate={bbox:patch.bbox,mask:patch.mask,corners:patch.corners};
+  drawPatch(result.getContext('2d'),surrogate,{canvas:patch.mask});
+  visibleMaskCache.set(patch,{mask:patch.mask,signature,canvas:result});
+  return result;
+}
 const copyCorners = points => points?.map(p => ({x:p.x,y:p.y})) || null;
 function patchDisplayBounds(patch){
   const q=patchCorners(patch),xs=q.map(p=>p.x),ys=q.map(p=>p.y);
@@ -409,14 +436,20 @@ function moveTransform(p){
 }
 function endTransform(){
   const drag=state.transformDrag;state.transformDrag=null;overlay.style.cursor='';
-  if(drag?.moved){message('Layer moved. Drag corners to skew; Undo to revert.');}
+  if(drag?.moved){
+    const patch=state.patches.get(drag.patchId),group=state.groups.find(g=>g.patchIds.includes(drag.patchId));
+    if(patch)invalidateDisplayedMask(patch);
+    if(group)refreshGroupFootprint(group);
+    message('Layer and selection moved together. Drag corners to skew; Undo to revert.');
+    renderGroups();
+  }
   drawOverlay();
 }
 function resetPatchTransform(){
   const patch=activeTransformPatch();if(!patch||!patch.corners||window.MosaicPremium?.isPreviewing())return;
   state.undo.push({type:'transform',patchId:patch.id,corners:copyCorners(patch.corners)});
   if(state.undo.length>12)state.undo.shift();state.redo=[];
-  patch.corners=null;render();toast('Layer transform reset.');
+  patch.corners=null;invalidateDisplayedMask(patch);const group=state.groups.find(g=>g.patchIds.includes(patch.id));if(group)refreshGroupFootprint(group);renderGroups();render();toast('Layer and selection transform reset.');
 }
 
 // Approved output: latest Master first, then exactly one active patch per region.
