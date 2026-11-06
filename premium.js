@@ -16,7 +16,7 @@ const cloneCanvas = input => {
 };
 function copyGraph(groups, patches, sources) {
   return {
-    groups: groups.map(g => ({...g, patchIds: [...g.patchIds]})),
+    groups: groups.map(g => ({...g, patchIds: [...g.patchIds],footprint: g.footprint?cloneCanvas(g.footprint):null})),
     patches: new Map([...patches].map(([id,p]) => [id, {...p, mask: cloneCanvas(p.mask), corners: p.corners?.map(q=>({...q}))||null}])),
     sources: new Map([...sources].map(([id,s]) => [id, {...s, canvas: cloneCanvas(s.canvas)}]))
   };
@@ -294,6 +294,29 @@ async function fromGeneratedJPEG(encoded){
   out.getContext('2d').drawImage(input,0,0,canvas.width,canvas.height);
   return out;
 }
+/* Lightweight category classification; image understanding is separate from rendering. */
+async function classifyArea(mask){
+  if(!maskBoundingBox(mask))return 'Region';
+  if(!window.MosaicAuth?.isReady())throw Error('Connect Premium and your OpenAI API key to identify objects.');
+  const bounds=maskBoundingBox(mask);
+  const margin=Math.max(18,Math.min(bounds.w,bounds.h)*.22);
+  const x=Math.max(0,Math.floor(bounds.x-margin)),y=Math.max(0,Math.floor(bounds.y-margin));
+  const x2=Math.min(canvas.width,Math.ceil(bounds.x+bounds.w+margin)),y2=Math.min(canvas.height,Math.ceil(bounds.y+bounds.h+margin));
+  const w=Math.max(1,x2-x),h=Math.max(1,y2-y),scale=Math.min(1,560/Math.max(w,h));
+  const width=Math.max(1,Math.round(w*scale)),height=Math.max(1,Math.round(h*scale));
+  const src=currentComposite();
+  if(state.pendingSourceId){const pending=state.sources.get(state.pendingSourceId);if(pending)src.getContext('2d').drawImage(pending.canvas,0,0)}
+  const crop=makeCanvas(width,height),c=crop.getContext('2d');
+  c.drawImage(src,x,y,w,h,0,0,width,height);
+  const tint=makeCanvas(width,height),t=tint.getContext('2d');
+  t.fillStyle='rgba(255,50,130,0.55)';t.fillRect(0,0,width,height);
+  t.globalCompositeOperation='destination-in';
+  t.drawImage(mask,x,y,w,h,0,0,width,height);
+  c.drawImage(tint,0,0);
+  const answer=await window.MosaicAuth.request('/api/ai/classify',{image:crop.toDataURL('image/jpeg',.7)});
+  return core.CATEGORIES.includes(answer.category)?answer.category:'Other';
+}
+
 async function generateRegion(patchId){
   const patch=state.patches.get(patchId);
   if(!patch||!patch.awaitingResult||patch.generating)return;
@@ -308,7 +331,7 @@ async function generateRegion(patchId){
       const existing=state.patches.get(patchId),source=state.sources.get(patch.sourceId);
       if(!existing||!source)return;
       source.canvas=image;source.name='AI region '+patch.regionNumber;
-      existing.awaitingResult=false;existing.name='✦ R'+patch.regionNumber+' · '+existing.prompt.slice(0,32);
+      existing.awaitingResult=false;if(!existing.manualName)existing.name=core.optionNameFromPrompt(existing.prompt,'AI edit '+patch.regionNumber);
       existing.generating=false;
       state.selectedPatchId=patchId;core.selectTool('transform');renderGroups();render();
       message('Region '+patch.regionNumber+' ready. All pixels outside the saved mask are untouched.');
@@ -343,7 +366,7 @@ function createRegionRequest(prompt) {
   const source = {id: sourceId, name: 'AI request', canvas: base};
   const regionNumber=++premium.regionSerial,color=REGION_COLORS[(regionNumber-1)%REGION_COLORS.length];
   const patch = {id: uid('ai_patch'), sourceId, mask, bbox, regionNumber, color,
-    name: '✦ R'+regionNumber+' · '+text.slice(0,32), prompt: text, awaitingResult: true,
+    name: core.optionNameFromPrompt(text,'AI edit '+regionNumber), manualName:false, prompt: text, awaitingResult: true,
     projectPrompt: premium.projectPrompt,
     request: {baseImage: base, reference: state.reference, mask, prompt: text}};
   state.sources.set(sourceId, source);
@@ -370,7 +393,7 @@ async function attachAIResult(file) {
     source.canvas = c;
     source.name = file.name;
     patch.awaitingResult = false;
-    patch.name = '✦ ' + patch.prompt.slice(0, 34);
+    if(!patch.manualName)patch.name = core.optionNameFromPrompt(patch.prompt,file.name.replace(/\.[^.]+$/,''));
     const group = state.groups.find(g => g.patchIds.includes(patch.id));
     if (group) group.active = patch.id;
     state.selectedPatchId = patch.id;
@@ -451,7 +474,7 @@ window.MosaicPremium = {
   projectPrompt: () => premium.projectPrompt,
   onReferenceLoaded, onMasterReset, canSelectArea, onPatchApplied,
   drawArchivePreview, isPreviewing, renderHistory, handleGroupEvent,
-  originalImage, exportPrompt, drawRegionGuides
+  originalImage, exportPrompt, drawRegionGuides, classifyArea
 };
 for (const id of ['editProjectPromptBtn', 'projectPromptToolbarBtn']) $(id).addEventListener('click', () => {
   $('projectPromptInput').value = premium.projectPrompt;

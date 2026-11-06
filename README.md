@@ -90,3 +90,13 @@ The original Base geometry is preserved separately from the working Master.
 ## UX notes (November 2026)
 
 The main toolbar is grouped into **Select**, **Edit / Move**, and **Selection Mode**, while the primary actions **AI Edit** and **Harmonize** remain at the right. Wand tolerance only appears while Wand is active; brush size only appears while Brush/Eraser is active. Manual **Apply** appears only for an imported variation or edited saved mask. A concise workflow appears in the right inspector, with the full AI prompt behind an expandable Advanced section. Selection cursors remain regular arrows; Pan has a grab cursor. The image is fitted with room around its edges so outside-image lasso outlines are visible. On small screens, selection tools scroll horizontally independently from the main AI buttons.
+
+## Semantic region groups and spatial memory
+
+- The first completed lasso, rectangle, oval, or Magic Wand selection creates a reusable named region (even before an option is applied). Its cumulative union mask is stored separately from option masks.
+- With Premium login and a user-provided OpenAI API key, Mosaic automatically classifies the highlighted crop using the gpt-4.1-mini vision model through /api/ai/classify. This incurs separate API charges. No hidden calls are made while logged out.
+- Without a key, the default category is Region. It can be changed manually, inferred from a subsequent edit prompt, or identified explicitly with the ✦ button. Model categories are suggestions, not guaranteed object detection.
+- Group and option names can be edited using pencil controls. Manually renamed labels survive later AI actions. Prompts generate default option names; imported images use their filenames.
+- Clicking a group heading copies the cumulative union selection onto the currently displayed canvas, including while a newly imported image is pending. Enter/Apply uses that mask for the new image.
+- On desktop, hovering a recognized region shows a category tooltip beside the pointer and a 5% opacity ghost mask. Neither enters exported images.
+- Region memory and names remain browser-local. Editable Harmonized history retains their masks.
