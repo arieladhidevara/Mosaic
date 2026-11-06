@@ -189,13 +189,13 @@ function identifyGroup(group,mask,login=false){
   })();
 }
 function createBlankRegion(){
-  if(!state.master){toast('Upload Master before creating Regions.');return}
+  if(!state.master){toast('Upload Master or continue with Base before creating Groups.');return}
   const group=newGroup(makeCanvas(canvas.width,canvas.height));
   group.manualName=true;group.name='Region '+String(state.groups.length).padStart(2,'0');
   resetSelection();state.draftGroupId=group.id;state.queuedGroupId=group.id;
   setMode('new');selectTool('lasso');renderGroups();
-  message('New '+group.name+'. Draw its area, then add an image or generate an option.');
-  toast('New Region created.');
+  message('New Group: '+group.name+'. Draw its area, then add an image or generate an option.');
+  toast('New Group created.');
 }
 function prepareSelectionGroup(){
   if(!state.selectionMask||state.editingPatchId)return;
@@ -559,7 +559,7 @@ function renderGroups(){
   $('pendingBanner').classList.toggle('hidden',!state.pendingSourceId);
   if(state.pendingSourceId){const source=state.sources.get(state.pendingSourceId);$('pendingName').textContent='● Editing: '+(source?.name||'New variation')}
   if(!state.groups.length){
-    list.innerHTML='<div class="empty-groups"><span>◌</span><strong>No regions yet</strong><p>Import a variation, select an area, then click Apply to keep it.</p></div>';
+    list.innerHTML='<div class="empty-groups"><span>◌</span><strong>No groups yet</strong><p>Select an area or press + to create a group.</p></div>';
     return;
   }
   list.innerHTML=state.groups.map(g=>{
@@ -567,7 +567,7 @@ function renderGroups(){
     const optionRow=(pid)=>{
       const p=state.patches.get(pid);if(!p)return '';
       const isMaster=p.isMasterVersion||p.isOriginalMaster;
-      return `<div class="variant-row ${g.active===pid?'selected':''}" data-action="choose" data-group="${g.id}" data-patch="${pid}" ${isMaster?'data-master-version="true"':''}><span class="variant-dot"></span><span class="variant-text">${escapeHTML(p.name)}</span><button class="variant-action" title="Edit image position and size" data-action="edit-image" data-group="${g.id}" data-patch="${pid}">▧</button><button class="variant-action" title="Edit mask" data-action="edit" data-group="${g.id}" data-patch="${pid}">✎</button><button class="variant-action" title="Delete option" data-action="delete" data-group="${g.id}" data-patch="${pid}">×</button></div>`;
+      return `<div class="variant-row ${g.active===pid?'selected':''}" data-action="choose" data-group="${g.id}" data-patch="${pid}" ${isMaster?'data-master-version="true"':''}><span class="variant-dot"></span><span class="variant-text">${escapeHTML(p.name)}</span><button type="button" class="variant-action" title="Edit image and placement" data-action="edit-image" data-group="${g.id}" data-patch="${pid}">Edit</button><button type="button" class="variant-action" title="Rename option" data-region-action="rename-option" data-group="${g.id}" data-patch="${pid}">Rename</button><button type="button" class="variant-action" title="Delete option" data-action="delete" data-group="${g.id}" data-patch="${pid}">Delete</button><button type="button" class="variant-action" title="Regenerate this option (Premium)" data-region-action="regen-option" data-group="${g.id}" data-patch="${pid}">${p.generating?'Generating…':'✦ Regen'}</button></div>`;
     };
     const originalRow=g.hasHarmonizedMaster?'':`<div class="variant-row ${g.active===null?'selected':''}" data-action="choose" data-group="${g.id}" data-patch="master"><span class="variant-dot"></span><span class="variant-text">Original Master</span></div>`;
     return `<div class="region-group" data-group="${g.id}"><div class="group-head" data-action="focus" data-group="${g.id}"><span class="group-icon">▧</span><span class="group-name">${escapeHTML(g.name)}</span><span class="group-count">${g.patchIds.length} options</span><button type="button" class="variant-action group-add-option" data-region-action="add-option" title="Add an option to this region" aria-label="Add region option">＋</button></div><div class="group-options">${order.map(optionRow).join('')}${originalRow}</div></div>`;
