@@ -164,6 +164,7 @@ function optionNameFromPrompt(prompt,fallback='New option'){
   const target=value.match(/\b(?:into|to|with|as|using)\s+(.+?)(?:[.!?;,]|\s+(?:while|without|but|and keep|keeping)\b|$)/i);
   if(target)value=target[1];
   value=value.replace(/^(?:(?:it|this|that|the|a|an|some|material|finish|color|colour)\s+)+/i,'');
+  value=value.replace(/^(?:wall|ceiling|floor|door|window|glazing|sofa|chair|table|millwork|cabinet|furniture|roof|screen|facade|façade)\s+/i,'');
   value=value.split(/\s+(?:while|without|keeping|but|and preserve|and keep)\b/i)[0];
   value=value.replace(/[.!?;,]+$/,'').trim().slice(0,42);
   return value?value[0].toUpperCase()+value.slice(1):fallback;
