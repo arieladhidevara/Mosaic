@@ -327,7 +327,13 @@ function cropFrame(source,window,w,h,mask=false){
   }else{
     context.fillStyle='#fff';context.fillRect(0,0,w,h);
   }
-  context.drawImage(source,window.x,window.y,window.w,window.h,0,0,w,h);
+  // Base may be imported at 4K while Master is 2.4K: translate crop
+  // coordinates through the full canvas to keep camera geometry aligned.
+  const sx=window.x/canvas.width*source.width;
+  const sy=window.y/canvas.height*source.height;
+  const sw=window.w/canvas.width*source.width;
+  const sh=window.h/canvas.height*source.height;
+  context.drawImage(source,sx,sy,sw,sh,0,0,w,h);
   return frame.toDataURL(mask?'image/png':'image/jpeg',mask?undefined:.78);
 }
 function encodeRegionalCrop(patch){
