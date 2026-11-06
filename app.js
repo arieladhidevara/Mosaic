@@ -166,7 +166,7 @@ function selectGroupMask(group){
   if(!maskBoundingBox(mask)){toast('No saved selection for this group.');return}
   resetSelection();state.selectionMask.getContext('2d').drawImage(mask,0,0);
   state.draftGroupId=group.id;state.selectedPatchId=null;
-  setMode('new');selectTool('select');updateSelectionOutline();updateApplyButton();renderGroups();
+  setMode('new');selectTool('select');state.pendingRevealOnly=Boolean(state.pendingSourceId);updateSelectionOutline();updateApplyButton();renderGroups();render();
   message('Selected '+group.name+'. '+(state.pendingSourceId?'Click Apply to keep this area from the imported image.':'Click AI Edit, or refine with Add / Subtract.'));
   toast('Reused '+group.name+' mask.');
 }
