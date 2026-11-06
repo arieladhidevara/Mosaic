@@ -75,10 +75,10 @@ for(const [zoneId,inputId,kind] of [['referenceZone','referenceInput','base'],['
   });
 }
 $('quickMasterBtn').addEventListener('click',event=>{
-  if(state.master&&!state.masterIsBase){event.preventDefault();previewSource('master')}
+  if(state.master&&!state.masterIsBase){event.preventDefault();event.stopImmediatePropagation();previewSource('master')}
 },true);
 $('quickRevitBtn').addEventListener('click',event=>{
-  if(state.reference){event.preventDefault();previewSource('base')}
+  if(state.reference){event.preventDefault();event.stopImmediatePropagation();previewSource('base')}
 },true);
 $('masterVersionsList').addEventListener('click',event=>{
   const button=event.target.closest('[data-master-action]'),row=button?.closest('[data-version]');
