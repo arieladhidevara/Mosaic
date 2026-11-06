@@ -71,6 +71,10 @@ function updateSourceActions(){
   $('generateMasterBtn').classList.toggle('hidden',!needsRealMaster);
   $('welcomeBasePromptForm').classList.toggle('hidden',!firstImageOnly);
   $('welcomeContinueBtn').classList.toggle('hidden',!firstImageOnly);
+  $('welcomeTitle').textContent=firstImageOnly?'Base uploaded. What next?':'Start with an image.';
+  $('welcomeDescription').textContent=firstImageOnly
+    ?'Upload Master on the right, generate one with a prompt, or Continue using Base only.'
+    :'Upload or drag an image into Base or Master.';
   $('editBaseBtn').classList.toggle('hidden',!state.reference);
   $('editMasterBtn').classList.toggle('hidden',!state.master);
   $('editPendingBtn').disabled=!state.pendingSourceId;
