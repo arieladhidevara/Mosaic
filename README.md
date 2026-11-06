@@ -31,9 +31,9 @@ Then open `http://localhost:8000`.
 
 ## Deploy to Vercel
 
-1. Create a new GitHub repository named `mosaic` and push the contents of this folder to the repository root.
-2. In Vercel, choose **Add New → Project → Import Git Repository**.
-3. Framework preset: **Other**, build command: **None**, output directory: **.** (root).
+1. In Vercel, connect your GitHub account and select the `arieladhidevara/Mosaic` repository.
+2. Choose **Add New → Project → Import Git Repository**.
+3. Framework preset: **Other**, build command: **None**, output directory: **.** (root), production branch: **main**.
 4. Deploy.
 
 No environment variables, database, AI API, or server code required.
