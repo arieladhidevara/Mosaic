@@ -7,7 +7,7 @@ Mosaic is a manual-first, zero-API architectural AI collage editor. Choose exact
 1. Upload a **Revit reference** (stored locally in the browser and hidden from the canvas).
 2. Upload a **master render** to display under all other images.
 3. Upload one or more AI images. Each becomes a temporary top layer, one at a time.
-4. Draw a freehand **Lasso**. Switch to **New**, **Add**, or **Subtract** for as many selection strokes as needed. The dotted outline shows selected pixels.
+4. Make a selection with **Lasso**, **Rectangle**, or **Ellipse**. Lasso supports both freehand dragging and click-to-place straight polygon edges. Close a polygon by clicking its first point, double-clicking, or pressing Enter. Hold **Shift** while dragging Rectangle/Ellipse for a perfect square/circle. Use **New**, **Add**, or **Subtract** for multiple regions; the dotted outline shows selected pixels.
 5. Press **Enter** or **Apply** to keep only the selected region of the uploaded image. The unselected pixels are hidden non-destructively.
 6. Refine a patch later with **Edit**, **Brush**, or **Eraser**. Overlapping patches from the same region are automatically grouped as alternatives, with the newest active.
 7. Use **Compare master**: hold the button with a mouse to compare temporarily; on touch devices tap once to view master and again to return.
