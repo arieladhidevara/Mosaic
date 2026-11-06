@@ -393,3 +393,65 @@ body:not(.premium-ready) .right-sidebar .inspector-bottom{display:none}
 .welcome-continue{display:block;width:100%;justify-content:center;border:1px solid #7b70a9;background:rgba(128,109,211,.11);color:#e5d9ff;font-weight:700;margin-top:2px;min-height:36px}
 .welcome-continue:hover{background:rgba(128,109,211,.23);border-color:#a89ae8}
 .welcome-continue.hidden{display:none}
+
+/* v0.7: Groups inspector replaces Guide, with explicit Help. */
+.right-sidebar{min-width:0;display:flex;flex-direction:column}
+.right-sidebar .inspector-bar{flex:none;gap:8px}
+.right-sidebar .inspector-bar>span{flex:1}
+.right-sidebar #helpBtn{font-size:11px;padding:5px 9px}
+.groups-panel{display:flex;min-height:0;flex:1;flex-direction:column;overflow:hidden;padding-top:10px}
+.groups-panel .section-heading{padding:4px 14px 6px}
+.groups-panel .section-heading h2{font-size:16px}
+.groups-panel .sidebar-hint{padding:7px 14px}
+.groups-panel .group-list{flex:1;min-height:90px;overflow-y:auto;overflow-x:hidden;padding:8px 10px}
+.groups-panel .group-name{min-width:0;overflow:hidden;text-overflow:ellipsis}
+.groups-panel .variant-row{display:flex;gap:5px;row-gap:7px;flex-wrap:wrap;cursor:pointer}
+.groups-panel .variant-text{flex:1 1 calc(100% - 30px);width:0;min-width:55px;font-weight:650}
+.groups-panel .variant-action{background:#2c2d39;border:1px solid #424350;padding:5px 6px;border-radius:6px;font-size:10px;white-space:nowrap}
+.groups-panel .variant-action:hover{background:#49425d;border-color:#8571bf}
+.groups-panel .group-add-option{background:#38334a}
+.groups-panel .left-footer{flex:none;padding:9px 12px 12px;border-top:1px solid #343541}
+.right-sidebar .inspector-bottom{flex:none;margin-top:0;padding:9px 12px 14px}
+.right-sidebar.source-editor-active #groupsPanel{display:none!important}
+.right-sidebar.source-editor-active #helpBtn{display:none}
+.right-sidebar.source-editor-active .inspector-bottom{display:none!important}
+.help-dialog{max-width:min(560px,93vw)}
+.help-content{max-height:55vh;overflow:auto;padding:12px 23px;color:#c4c8d2;font-size:12px;line-height:1.75}
+.help-content p{margin:7px 0 13px}
+.help-content strong{color:#d9d2ff}
+@media (max-width:1120px) and (min-width:731px){
+  .workspace{grid-template-columns:185px minmax(275px,1fr) 250px}
+  .right-sidebar{display:flex}
+  .left-sidebar .source-row{gap:2px;margin-right:5px}
+  .left-sidebar .source-edit-button{padding:4px;font-size:9px}
+  .left-sidebar .upload-box{padding:9px 5px;margin-left:7px}
+  .tool-row{overflow-x:auto}
+  .tool-row .toolset{flex:none}
+  .topbar-actions{gap:5px}
+  #saveProjectBtn span,#openProjectBtn span{display:none}
+  #saveProjectBtn,#openProjectBtn{font-size:15px}
+}
+@media(max-width:730px){
+  .workspace{grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(390px,1fr) 255px;min-height:590px}
+  .main-panel{grid-row:1;grid-column:1}
+  .left-sidebar{display:none}
+  .right-sidebar{display:flex!important;grid-row:2;grid-column:1;border-left:0;border-top:1px solid #414151;overflow:hidden}
+  .right-sidebar .inspector-bar{height:34px;padding:0 11px}
+  .groups-panel{padding-top:3px}
+  .groups-panel .section-heading{padding:3px 12px}
+  .groups-panel .sidebar-hint{display:none}
+  .groups-panel .group-list{display:flex;flex-direction:row;overflow-x:auto;overflow-y:auto;min-height:95px;gap:7px;padding:5px 12px}
+  .groups-panel .region-group{flex:0 0 226px;max-width:260px;min-width:205px;margin:0}
+  .groups-panel .left-footer{display:flex;padding:5px 12px}
+  .groups-panel .left-footer .btn{width:100%}
+  .right-sidebar .inspector-bottom{display:none}
+  .right-sidebar.source-editor-active .source-editor-panel{overflow-y:auto}
+  .topbar-actions{gap:2px}
+  #saveProjectBtn span,#openProjectBtn span{display:none}
+  #saveProjectBtn,#openProjectBtn{font-size:17px;padding:6px 5px!important}
+  .topbar .brand-name{font-size:17px}
+  .topbar .btn{font-size:9px;padding:6px 5px}
+  .topbar .premium-pill{display:none}
+  .topbar #exportBtn{font-size:0;padding:6px}
+  .topbar #exportBtn .icon{font-size:16px}
+}
