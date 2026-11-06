@@ -618,8 +618,28 @@ const u16=(d,v,o)=>d.setUint16(o,v,true),u32=(d,v,o)=>d.setUint32(o,v>>>0,true);
 function makeZip(files){const enc=new TextEncoder(),locals=[],dirs=[];let offset=0;for(const file of files){const name=enc.encode(file.name),data=file.bytes,crc=crc32(data),local=new Uint8Array(30+name.length),v=new DataView(local.buffer);u32(v,0x04034b50,0);u16(v,20,4);u16(v,0,6);u16(v,0,8);u16(v,0,10);u16(v,0,12);u32(v,crc,14);u32(v,data.length,18);u32(v,data.length,22);u16(v,name.length,26);u16(v,0,28);local.set(name,30);locals.push(local,data);
  const dir=new Uint8Array(46+name.length),d=new DataView(dir.buffer);u32(d,0x02014b50,0);u16(d,20,4);u16(d,20,6);u16(d,0,8);u16(d,0,10);u16(d,0,12);u16(d,0,14);u32(d,crc,16);u32(d,data.length,20);u32(d,data.length,24);u16(d,name.length,28);u16(d,0,30);u16(d,0,32);u16(d,0,34);u16(d,0,36);u32(d,0,38);u32(d,offset,42);dir.set(name,46);dirs.push(dir);offset+=local.length+data.length}const dirLen=dirs.reduce((s,x)=>s+x.length,0),end=new Uint8Array(22),e=new DataView(end.buffer);u32(e,0x06054b50,0);u16(e,0,4);u16(e,0,6);u16(e,files.length,8);u16(e,files.length,10);u32(e,dirLen,12);u32(e,offset,16);return new Blob([...locals,...dirs,end],{type:'application/zip'})}
 const asBlob=c=>new Promise((res,rej)=>c.toBlob(blob=>blob?res(blob):rej(Error('PNG export failed')),'image/png'));
-async function exportZip(){if(!state.master){toast('Upload a master image first.');return}if(state.pendingSourceId||state.editingPatchId){toast('Apply or discard the current selection before exporting.');return}
- const btn=$('exportBtn');btn.disabled=true;btn.textContent='Preparing ZIP…';try{const ref=await asBlob(state.reference||state.master),wasBefore=state.before;state.before=false;render();const comp=await asBlob(canvas);state.before=wasBefore;render();const files=[{name:'01_Base.png',bytes:new Uint8Array(await ref.arrayBuffer())},{name:'02_Final_Collage.png',bytes:new Uint8Array(await comp.arrayBuffer())},{name:'03_Harmonization_Prompt.txt',bytes:new TextEncoder().encode(window.MosaicPremium?.exportPrompt() || promptText())}],blob=makeZip(files),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='Mosaic_Harmonization_Package.zip';document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1500);toast('Exported Base + collage + prompt.')}catch(e){toast('Export failed: '+e.message)}finally{btn.disabled=false;btn.innerHTML='<span class="icon">↧</span> Export package'}}
+async function exportZip(){
+  if(!state.master){toast('Upload a master image first.');return}
+  if(state.pendingSourceId||state.editingPatchId){toast('Apply or discard the unfinished patch before exporting.');return}
+  const btn=$('exportBtn');btn.disabled=true;btn.textContent='Preparing ZIP…';
+  try{
+    // Export the actual layer graph. Compare and history preview never affect this output.
+    const base=await asBlob(state.reference||window.MosaicPremium?.initialMasterImage?.()||state.master);
+    const master=await asBlob(state.master);
+    const approved=composeApprovedCanvas(),collage=await asBlob(approved);
+    const files=[
+      {name:'01_Base.png',bytes:new Uint8Array(await base.arrayBuffer())},
+      {name:'02_Final_Collage.png',bytes:new Uint8Array(await collage.arrayBuffer())},
+      {name:'03_Latest_Master.png',bytes:new Uint8Array(await master.arrayBuffer())},
+      {name:'04_Harmonization_Prompt.txt',bytes:new TextEncoder().encode(window.MosaicPremium?.exportPrompt()||promptText())}
+    ];
+    const blob=makeZip(files),url=URL.createObjectURL(blob),a=document.createElement('a');
+    a.href=url;a.download='Mosaic_Approved_Collage.zip';document.body.appendChild(a);a.click();a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url),1500);
+    toast('Exported approved collage on the latest Master, plus Base and prompt.');
+  }catch(e){toast('Export failed: '+e.message)}
+  finally{btn.disabled=false;btn.innerHTML='<span class="icon">↧</span> Export package'}
+}
 // File inputs and editing controls.
 $('referenceInput').addEventListener('change',async e=>{await importReference(e.target.files[0]);e.target.value=''});
 $('masterInput').addEventListener('change',async e=>{await importMaster(e.target.files[0]);e.target.value=''});
