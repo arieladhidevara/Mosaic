@@ -40,7 +40,7 @@ async function loadNextVariant(){if(state.pendingSourceId||state.busy||!state.qu
 function discardPending(){if(!state.pendingSourceId)return;state.sources.delete(state.pendingSourceId);state.pendingSourceId=null;resetSelection();renderGroups();render();toast('Unapplied image discarded.');loadNextVariant()}
 function bboxIoU(a,b){const w=Math.max(0,Math.min(a.x+a.w,b.x+b.w)-Math.max(a.x,b.x)),h=Math.max(0,Math.min(a.y+a.h,b.y+b.h)-Math.max(a.y,b.y)),area=w*h,union=a.w*a.h+b.w*b.h-area;return union>0?area/union:0}
 function assignGroup(patch){let best=null,bestScore=0;
-  for(const group of state.groups){for(const pid of group.patchIds){const other=state.patches.get(pid);if(!other)continue;const a=patch.bbox,b=other.bbox,ca=center(a),cb=center(b),iou=bboxIoU(a,b),dist=Math.hypot((ca.x-cb.x)/canvas.width,(ca.y-cb.y)/canvas.height),aArea=a.w*a.h,bArea=b.w*b.h,areaRatio=Math.min(aArea,bArea)/Math.max(aArea,bArea);
+  for(const group of state.groups){for(const pid of group.patchIds){const other=state.patches.get(pid);if(!other)continue;const a=patchDisplayBounds(patch),b=patchDisplayBounds(other),ca=center(a),cb=center(b),iou=bboxIoU(a,b),dist=Math.hypot((ca.x-cb.x)/canvas.width,(ca.y-cb.y)/canvas.height),aArea=a.w*a.h,bArea=b.w*b.h,areaRatio=Math.min(aArea,bArea)/Math.max(aArea,bArea);
     // Similar region, not merely any touching overlap. Different objects remain separate.
     const score=iou+.10*Math.max(0,1-dist/.17);if((iou>.24||(iou>.13&&dist<.07&&areaRatio>.35))&&score>bestScore){best=group;bestScore=score}
   }}
@@ -50,6 +50,11 @@ function assignGroup(patch){let best=null,bestScore=0;
 // Non-destructive four-corner warp. The source pixels and original mask stay intact.
 const patchTextures = new WeakMap();
 const copyCorners = points => points?.map(p => ({x:p.x,y:p.y})) || null;
+function patchDisplayBounds(patch){
+  const q=patchCorners(patch),xs=q.map(p=>p.x),ys=q.map(p=>p.y);
+  const x=Math.min(...xs),y=Math.min(...ys);
+  return {x,y,w:Math.max(...xs)-x,h:Math.max(...ys)-y};
+}
 function patchCorners(patch) {
   if(patch.corners?.length===4)return patch.corners;
   const {x,y,w,h}=patch.bbox;
@@ -59,8 +64,9 @@ function patchTexture(patch, source) {
   const b=patch.bbox, key=[b.x,b.y,b.w,b.h].join('/');
   const cached=patchTextures.get(patch);
   if(cached && cached.source===source.canvas && cached.mask===patch.mask && cached.key===key)return cached;
-  const x=Math.max(0,Math.floor(b.x)-3),y=Math.max(0,Math.floor(b.y)-3);
-  const right=Math.min(canvas.width,Math.ceil(b.x+b.w)+3),bottom=Math.min(canvas.height,Math.ceil(b.y+b.h)+3);
+  const pad=Math.max(4,Math.ceil(canvas.width/250)+2);
+  const x=Math.max(0,Math.floor(b.x)-pad),y=Math.max(0,Math.floor(b.y)-pad);
+  const right=Math.min(canvas.width,Math.ceil(b.x+b.w)+pad),bottom=Math.min(canvas.height,Math.ceil(b.y+b.h)+pad);
   const image=makeCanvas(Math.max(1,right-x),Math.max(1,bottom-y)),tc=image.getContext('2d');
   tc.drawImage(source.canvas,-x,-y);
   tc.globalCompositeOperation='destination-in';
@@ -216,7 +222,7 @@ function renderGroups(){const list=$('groupList');$('groupCount').textContent=st
   list.innerHTML=state.groups.map(g=>`<div class="region-group" data-group="${g.id}"><div class="group-head" data-action="focus" data-group="${g.id}"><span class="group-icon">▧</span><span class="group-name">${g.name}</span><span class="group-count">${g.patchIds.length} options</span></div><div class="group-options"><div class="variant-row ${g.active===null?'selected':''}" data-action="choose" data-group="${g.id}" data-patch="master"><span class="variant-dot"></span><span class="variant-text">Original master</span></div>${g.patchIds.map((pid,i)=>{const p=state.patches.get(pid);return p?`<div class="variant-row ${g.active===pid?'selected':''}" data-action="choose" data-group="${g.id}" data-patch="${pid}"><span class="variant-dot"></span><span class="variant-text">${escapeHTML(p.name)} <span style="color:#757a88">#${i+1}</span></span><button class="variant-action" title="Edit mask" data-action="edit" data-group="${g.id}" data-patch="${pid}">✎</button><button class="variant-action" title="Delete variant" data-action="delete" data-group="${g.id}" data-patch="${pid}">×</button></div>`:''}).join('')}</div></div>`).join('');window.MosaicPremium?.renderHistory(list)}
 function editExisting(pid){if(state.pendingSourceId){toast('Apply or discard your new image before editing saved variants.');return}const patch=state.patches.get(pid);if(!patch)return;state.editingPatchId=pid;state.selectedPatchId=pid;resetSelection();state.selectionMask.getContext('2d').drawImage(patch.mask,0,0);setMode('add');selectTool('lasso');updateSelectionOutline();updateApplyButton();message('Editing a saved mask. Draw New, Add or Subtract, then Enter to update.')}
 function groupEvent(e){if(window.MosaicPremium?.handleGroupEvent(e))return;const target=e.target.closest('[data-action]');if(!target)return;const action=target.dataset.action,group=state.groups.find(g=>g.id===target.dataset.group),pid=target.dataset.patch;
-  if(action==='focus'&&group){if(group.active)editExisting(group.active);return}
+  if(action==='focus'&&group){if(group.active){state.editingPatchId=null;state.selectedPatchId=group.active;resetSelection();selectTool('transform');renderGroups();render()}return}
   if(action==='edit'){editExisting(pid);return}
   if(action==='choose'&&group){if(state.pendingSourceId){toast('Apply or discard the new image first.');return}state.editingPatchId=null;resetSelection();group.active=pid==='master'?null:pid;state.selectedPatchId=group.active;if(group.active)selectTool('transform');renderGroups();render();return}
   if(action==='delete'&&group){if(state.pendingSourceId){toast('Finish the new image before removing variants.');return}group.patchIds=group.patchIds.filter(x=>x!==pid);state.patches.delete(pid);if(group.active===pid)group.active=group.patchIds.at(-1)||null;if(state.editingPatchId===pid)state.editingPatchId=null;if(state.selectedPatchId===pid)state.selectedPatchId=null;if(!group.patchIds.length)state.groups=state.groups.filter(g=>g.id!==group.id);resetSelection();renderGroups();render();toast('Variant removed.')}}
