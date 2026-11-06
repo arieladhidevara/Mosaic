@@ -491,7 +491,7 @@ function onPatchApplied() {
 }
 window.MosaicPremium = {
   projectPrompt: () => premium.projectPrompt,
-  onReferenceLoaded, onMasterLoaded, onMasterReset, canSelectArea, onPatchApplied, generateSelection,
+  onReferenceLoaded, onMasterLoaded, onMasterReset, canSelectArea, onPatchApplied, generateSelection, decorateActive: activePatchMarkup,
   drawArchivePreview, isPreviewing, renderHistory, handleGroupEvent,
   originalImage, exportPrompt, drawRegionGuides, classifyArea
 };
