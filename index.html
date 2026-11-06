@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#0e1014" />
+  <meta name="description" content="Mosaic — a smarter workspace for curating AI image variations. Detect changes, group regions, and compose your favorite details." />
+  <title>Mosaic — Compose the best of every image</title>
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <div id="app">
+    <header class="topbar">
+      <div class="brand" aria-label="Mosaic home"><span class="brand-mark"><span></span><span></span><span></span><span></span></span><span class="brand-name">mosaic<span class="brand-dot">.</span></span><span class="brand-divider"></span><span class="brand-subtitle">AI collage workspace</span></div>
+      <div class="topbar-actions"><span class="local-tag"><span class="local-led"></span> Private · Local processing</span><button id="demoBtn" class="btn btn-quiet">Load demo</button><button id="exportBtn" class="btn btn-primary"><span class="icon">↧</span> Export package</button></div>
+    </header>
+
+    <div class="workspace">
+      <aside class="left-sidebar">
+        <div class="panel-top"><div class="eyebrow">01 · PROJECT SETUP</div><h2>Your sources</h2><p>Upload a reference to guide the final AI harmonization, then choose a master for your collage.</p></div>
+        <label class="upload-box reference-upload" id="referenceZone"><input id="referenceInput" type="file" accept="image/*" hidden/><span class="upload-icon">▦</span><span class="upload-copy"><strong id="referenceTitle">Revit reference</strong><small id="referenceInfo">Hidden from canvas · Click to upload</small></span><span id="referenceStatus" class="upload-right">＋</span></label>
+        <label class="upload-box" id="masterZone"><input id="masterInput" type="file" accept="image/*" hidden/><span class="upload-icon">◈</span><span class="upload-copy"><strong id="masterTitle">Master image</strong><small id="masterInfo">Visible base of your collage</small></span><span id="masterStatus" class="upload-right">＋</span></label>
+        <div class="section-rule"></div>
+        <div class="section-heading"><div><div class="eyebrow">02 · DESIGN VARIANTS</div><h2>Region groups <span id="groupCount" class="count-tag">0</span></h2></div><button id="addImagesBtn" title="Add AI variations" class="icon-btn small">＋</button></div>
+        <input id="variantInput" type="file" accept="image/*" multiple hidden/>
+        <div class="sidebar-hint">Similar changes are grouped by location. Select one variant per region.</div>
+        <div id="groupList" class="group-list"><div class="empty-groups"><span>◌</span><strong>No regions yet</strong><p>Upload an AI variation to automatically detect design changes.</p></div></div>
+        <div class="left-footer"><button id="newVariantBtn" class="btn btn-outline full"><span class="plus-circle">＋</span> Add AI variation</button><p class="microcopy">Best results: same camera angle, crop and resolution.</p></div>
+      </aside>
+
+      <main class="main-panel">
+        <div class="canvas-header"><div class="canvas-title"><span class="status-mark"></span><span id="projectName">Untitled composition</span><span id="projectSize" class="dim-label"></span></div><div class="canvas-actions"><button id="beforeBtn" class="btn btn-quiet compact" title="Hold to compare with master">◫ Compare master</button><span class="vert-line"></span><button id="zoomOut" class="icon-btn" aria-label="Zoom out">−</button><span id="zoomValue" class="zoom-label">Fit</span><button id="zoomIn" class="icon-btn" aria-label="Zoom in">＋</button><button id="zoomFit" class="btn btn-quiet compact">Fit</button></div></div>
+        <div class="tool-row" id="tools"><div class="toolset"><button class="tool active" data-tool="lasso" title="Lasso: draw region, press Enter">⌁ <span>Lasso</span></button><button class="tool" data-tool="brush" title="Brush: reveal layer pixels">◉ <span>Brush</span></button><button class="tool" data-tool="eraser" title="Eraser: hide layer pixels">◌ <span>Eraser</span></button><button class="tool" data-tool="pan" title="Pan / inspect">✥ <span>Pan</span></button></div><span class="vert-line"></span><label class="brush-size" for="brushSize">Size <input id="brushSize" type="range" min="5" max="160" value="36"/><span id="brushValue">36</span></label><span class="tool-spacer"></span><button id="undoBtn" class="icon-btn" title="Undo mask edit">↶</button><button id="redoBtn" class="icon-btn" title="Redo mask edit">↷</button><button id="clearSelectionBtn" class="btn btn-quiet compact">Cancel selection</button></div>
+        <div class="canvas-viewport" id="viewport">
+          <div id="welcome" class="welcome"><div class="welcome-graphic"><div class="mock-frame f1"></div><div class="mock-frame f2"></div><div class="mock-frame f3"></div><div class="welcome-center">◈</div></div><div class="welcome-label">YOUR CANVAS, REIMAGINED</div><h1>Every variation.<br/><em>One vision.</em></h1><p>Combine the best parts of AI renders while keeping the original design right where you want it.</p><div class="welcome-actions"><button class="btn btn-primary" id="welcomeStart">Upload master image <span>↗</span></button><button class="btn btn-outline" id="welcomeDemo">Explore with demo</button></div><div class="welcome-steps"><span>① Add master</span><i></i><span>② Drop variations</span><i></i><span>③ Choose regions</span><i></i><span>④ Export</span></div></div>
+          <div id="canvasWrap" class="canvas-wrap hidden"><canvas id="compositeCanvas"></canvas><canvas id="overlayCanvas"></canvas></div>
+          <div id="processing" class="processing hidden"><span class="spinner"></span><strong>Finding design changes…</strong><small>Aligning and comparing each image with your master</small></div>
+        </div>
+        <div class="canvas-foot"><span id="canvasMessage">Import an image or load the demo to begin.</span><span class="bottom-shortcut">LASSO <kbd>ENTER</kbd> to keep · <kbd>ESC</kbd> to cancel · <kbd>⌘/CTRL Z</kbd> undo</span></div>
+      </main>
+
+      <aside class="right-sidebar"><div class="inspector-top"><div class="eyebrow">03 · SMART DETECTION</div><h2>Controls</h2><p>Fine-tune how Mosaic identifies meaningful changes rather than incidental visual drift.</p></div><div class="setting-card"><div class="setting-heading"><strong>Change sensitivity</strong><span id="sensitivityLabel">Balanced</span></div><input id="sensitivity" class="wide-range" type="range" min="20" max="90" step="5" value="55"/><div class="range-ends"><span>Conservative</span><span>Sensitive</span></div><p>Lower sensitivity skips subtle differences. You can always refine masks manually.</p></div><div class="setting-card toggle-setting"><div><strong>Auto-group regions</strong><p>Match new patches to existing regions by spatial overlap.</p></div><label class="switch"><input type="checkbox" id="autoGroup" checked/><span></span></label></div><div class="setting-card toggle-setting"><div><strong>Auto-activate newest</strong><p>The newest variant becomes active in its region.</p></div><label class="switch"><input type="checkbox" id="autoActivate" checked/><span></span></label></div><div class="section-rule"></div><div class="section-heading"><div><div class="eyebrow">04 · HANDOFF TO AI</div><h2>Harmonization prompt</h2></div><button id="copyPromptBtn" title="Copy prompt" class="icon-btn small">⧉</button></div><div class="prompt-preview"><p id="promptPreview"></p></div><button id="copyPromptSecondary" class="btn btn-outline full">⧉ Copy prompt</button><div class="inspector-bottom"><div class="hint-icon">✦</div><p><strong>No AI API required.</strong> Export a ZIP containing the Revit reference, approved collage and a ready-to-paste prompt. Upload them to your favorite image AI.</p></div></aside>
+    </div>
+    <div id="toast" class="toast hidden" role="status"></div>
+  </div>
+  <script type="module" src="./app.js"></script>
+</body>
+</html>
