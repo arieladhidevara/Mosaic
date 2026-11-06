@@ -354,7 +354,15 @@ function encodeRegionalCrop(patch){
       projectPrompt:premium.projectPrompt,
       prompt:patch.prompt,
       regions:annotationNotes(patch.id),
-      references:patch.referenceImages||[]
+      references:patch.referenceImages||[],
+      cropSize: (() => {
+        // GPT Image 2.5 supports custom sizes in multiples of 16.
+        // Keep local output proportional to this crop, not to the full canvas.
+        const factor=Math.max(1,512/Math.min(w,h));
+        const rw=Math.round(Math.min(1536,w*factor)/16)*16;
+        const rh=Math.round(Math.min(1536,h*factor)/16)*16;
+        return rw/rh>3||rh/rw>3?'auto':rw+'x'+rh;
+      })()
     };
     if(JSON.stringify(payload).length<3550000)return {payload,region,visibleMask:visualMask};
   }
