@@ -388,3 +388,8 @@ body:not(.premium-ready) .right-sidebar .inspector-bottom{display:none}
 .workspace.source-editor-in-progress .source-actions{pointer-events:none;opacity:.55}
 .workspace.source-editor-in-progress .source-editor-panel{pointer-events:auto;opacity:1}
 .workspace.source-editor-in-progress .source-edit-overlay.active{pointer-events:auto;opacity:1}
+
+/* Explicit first-image gate. Base upload and prompt can stay on onboarding until Continue. */
+.welcome-continue{display:block;width:100%;justify-content:center;border:1px solid #7b70a9;background:rgba(128,109,211,.11);color:#e5d9ff;font-weight:700;margin-top:2px;min-height:36px}
+.welcome-continue:hover{background:rgba(128,109,211,.23);border-color:#a89ae8}
+.welcome-continue.hidden{display:none}

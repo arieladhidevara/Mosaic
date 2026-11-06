@@ -68,6 +68,13 @@ function onMasterLoaded(image,name='Master'){
   if(state.reference)premium.originalMaster=cloneCanvas(state.reference);
   addMasterVersion(image,name.includes('AI')?'AI generated':name.includes('Base')?'Base placeholder':'Uploaded');
 }
+function onBaseContinue(working){
+  // Continue is a deliberate manual draft, not a Master upload or generation.
+  premium.masterVersions=[];
+  premium.initialMaster=cloneCanvas(working);
+  premium.originalMaster=state.reference?cloneCanvas(state.reference):cloneCanvas(working);
+  refreshMasterBrowser();
+}
 function onSourceEdited(kind,raster){
   if(kind==='base')premium.originalMaster=cloneCanvas(raster);
   if(kind==='master'){
@@ -673,7 +680,7 @@ function onPatchApplied() {
 }
 window.MosaicPremium = {
   projectPrompt: () => premium.projectPrompt,
-  onReferenceLoaded, onMasterLoaded, onSourcesAligned, onSourceEdited, onMasterReset, canSelectArea, onPatchApplied, generateSelection, decorateActive: activePatchMarkup, getReferenceFiles, clearReferenceFiles, getMasterVersions, regenerateMaster, initialMasterImage,
+  onReferenceLoaded, onMasterLoaded, onBaseContinue, onSourcesAligned, onSourceEdited, onMasterReset, canSelectArea, onPatchApplied, generateSelection, decorateActive: activePatchMarkup, getReferenceFiles, clearReferenceFiles, getMasterVersions, regenerateMaster, initialMasterImage,
   drawArchivePreview, isPreviewing, renderHistory, handleGroupEvent,
   originalImage, exportPrompt, drawRegionGuides, classifyArea
 };

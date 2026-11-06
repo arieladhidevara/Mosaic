@@ -19,7 +19,7 @@ function syncControls(){
   $('sourceEditOpacityValue').textContent=Math.round(t.opacity*100)+'%';
 }
 function fittedDimensions(image){
-  const fit=Math.min(canvas.width/image.width,canvas.height/image.height);
+  const fit=Math.min(1,canvas.width/image.width,canvas.height/image.height);
   return {w:image.width*fit,h:image.height*fit};
 }
 function drawTransformed(target,image,t,opacity=1){
@@ -90,7 +90,7 @@ function redraw(){
 function start(kind,patchId=null){
   if(state.busy||state.editingPatchId){toast('Finish the current mask edit first.');return}
   if(editing)cancel();
-  let original,sourceId=null,label='';
+  let original,sourceId=null,label='',optionMask=null,startingTransform=null;
   if(kind==='base'){original=state.reference;label='BASE'}
   else if(kind==='master'){original=state.master;label='MASTER'}
   else if(kind==='source'){
@@ -98,6 +98,20 @@ function start(kind,patchId=null){
     sourceId=patch?.sourceId||state.pendingSourceId;
     original=state.sources.get(sourceId)?.canvas;
     label=patch?.name||state.sources.get(sourceId)?.name||'NEW IMAGE';
+    if(patch&&original){
+      // Edit a selected option as ONE object: its visible pixels and its
+      // four-corner-warped mask share the same local bounding rectangle.
+      const visible=core.renderedPatchLayer(patch),mask=core.displayedPatchMask(patch);
+      const bounds=core.maskBoundingBox(mask);
+      if(bounds){
+        const x=Math.floor(bounds.x),y=Math.floor(bounds.y);
+        const w=Math.max(1,Math.min(canvas.width-x,Math.ceil(bounds.x+bounds.w)-x));
+        const h=Math.max(1,Math.min(canvas.height-y,Math.ceil(bounds.y+bounds.h)-y));
+        original=makeCanvas(w,h);original.getContext('2d').drawImage(visible,-x,-y);
+        optionMask=makeCanvas(w,h);optionMask.getContext('2d').drawImage(mask,-x,-y);
+        startingTransform={x:x+w/2-canvas.width/2,y:y+h/2-canvas.height/2,scale:1,rotation:0,opacity:.20};
+      }
+    }
   }
   if(!original){toast('Upload an image before editing it.');return}
   const wasBaseOnly=Boolean(!state.master);
@@ -117,8 +131,9 @@ function start(kind,patchId=null){
   }
   const guideWasCollapsed=inspector.classList.contains('is-collapsed');
   if(guideWasCollapsed){$('inspectorToggle').click()}
-  editing={kind,patchId,sourceId,image:original,label,
-    wasBaseOnly,transform:{x:0,y:0,scale:1,rotation:0,opacity:.20}};
+  editing={kind,patchId,sourceId,image:original,label,optionMask,
+    wasBaseOnly,initialTransform:startingTransform||{x:0,y:0,scale:1,rotation:0,opacity:.20},
+    transform:{...(startingTransform||{x:0,y:0,scale:1,rotation:0,opacity:.20})}};
   inspector.classList.add('source-editor-active');
   document.querySelector('.workspace').classList.add('source-editor-in-progress');
   $('inspectorHeading').textContent='IMAGE EDIT';
@@ -129,7 +144,7 @@ function start(kind,patchId=null){
   syncControls();redraw();
 }
 function openOption(id){if(!state.patches.has(id)){toast('Option not found.');return}start('source',id)}
-function reset(){if(!editing)return;editing.transform={x:0,y:0,scale:1,rotation:0,opacity:.20};syncControls();redraw()}
+function reset(){if(!editing)return;editing.transform={...editing.initialTransform};syncControls();redraw()}
 function finish(){
   stage.classList.remove('active');paint.clearRect(0,0,stage.width,stage.height);
   panel.classList.add('hidden');inspector.classList.remove('source-editor-active');
@@ -152,14 +167,30 @@ function apply(){
     window.MosaicPremium?.onSourceEdited?.('master',raster);
   }else if(current.kind==='source'){
     const patch=current.patchId?state.patches.get(current.patchId):null;
-    let source=state.sources.get(current.sourceId);
-    if(patch){
-      const references=[...state.patches.values()].filter(p=>p.sourceId===source.id);
-      if(references.length>1){
-        const id=core.uid('source_edit');
-        source={id,name:source.name+' edited',canvas:raster};state.sources.set(id,source);patch.sourceId=id;
-      }else source.canvas=raster;
-    }else if(source)source.canvas=raster;
+    const source=state.sources.get(current.sourceId);
+    if(patch&&source){
+      // Bake this option's pixels AND its displayed mask through the same
+      // transform. Never move the pixels while leaving the selection behind.
+      const transformedMask=makeCanvas(canvas.width,canvas.height);
+      drawTransformed(transformedMask.getContext('2d'),current.optionMask||core.displayedPatchMask(patch),current.transform,1);
+      const id=core.uid('source_edit');
+      state.sources.set(id,{id,name:source.name+' edited',canvas:raster});
+      patch.sourceId=id;patch.mask=transformedMask;
+      patch.bbox=core.maskBoundingBox(transformedMask)||patch.bbox;
+      patch.corners=null; // Previous warp is now included in the raster and mask.
+      core.invalidateDisplayedMask(patch);
+      const group=state.groups.find(g=>g.patchIds.includes(patch.id));
+      if(group)core.refreshGroupFootprint(group);
+      core.renderGroups();
+    }else if(source){
+      source.canvas=raster;
+      if(state.pendingSourceId&&state.selectionMask&&core.maskBoundingBox(state.selectionMask)){
+        const movedSelection=makeCanvas(canvas.width,canvas.height);
+        drawTransformed(movedSelection.getContext('2d'),state.selectionMask,current.transform,1);
+        state.selectionMask=movedSelection;
+        core.updateSelectionOutline();
+      }
+    }
   }
   finish();updateSourceActions();
   toast(current.label+' image position updated.');

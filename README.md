@@ -4,8 +4,8 @@ Mosaic is a manual-first architectural AI collage editor with optional single-ac
 
 ## Workflow
 
-1. Upload a **Base image**. It stays a distinct reference: **Mosaic does not automatically create Master**. A prompt and optional reference-image upload appear immediately below the Base card; upload Master using the separate card on its right instead.
-2. Upload your own **Master image** for local masking, or sign into Premium and generate a Master from Base using the inline prompt. Free use requires a Master for compositing but does not require AI.
+1. Upload a **Base image**. Mosaic stays on onboarding until you **upload a Master**, **generate a Master from the inline prompt**, or deliberately click **Continue with Base only**. Just uploading Base never silently starts the editor or creates Master.
+2. Upload your own **Master image**, generate a Master with Premium, or click **Continue with Base only** to start a local manual working draft. The draft is not registered as an uploaded/generated Master, and a real Master can still be added later (with confirmation if it would replace existing Region work).
 3. Upload one or more AI images. Each becomes a temporary top layer, one at a time.
 4. Choose **Lasso**, **Rect**, **Oval**, or **Magic Wand**. Lasso uses click-to-place polygon points or freehand dragging; close at the start, double-click, or press Enter. Start/draw outside the image if needed: the live outline stays visible in the surrounding viewport and the applied selection automatically clips to the image rectangle. Rect/Oval support Shift-constrained shapes. Magic Wand flood-selects connected, similar-colored pixels under the click, with an adjustable **Tolerance** slider. **New / Add / Subtract** work with every selection tool.
 5. Click **Apply** to keep only the selected region of the uploaded image. **Enter** closes an unfinished Lasso; selection remains a draft until Apply. The unselected pixels are hidden non-destructively.
@@ -19,7 +19,7 @@ The prompt can also be copied directly from the interface. Manual image processi
 
 - **No automatic image difference detection**. The Magic Wand operates on connected pixels of similar color in the visible composition, not semantic objects. Region grouping still happens only *after* applying a mask.
 - Automatic Region grouping now requires strong **actual mask intersection**, not just similar bounding boxes. Use the **+ next to Regions** to create a separate group explicitly. Use the per-option move picker (including on mobile) or drag options to another Region on desktop.
-- For position/crop mismatches, click **Edit** beside Base, Master, a pending upload, or an option in Regions. A 20%-opacity image overlay and bounding box appear directly on canvas; drag or use the right-side X/Y, scale, rotation and opacity controls. Changes are applied to the chosen image source only.
+- For position/crop mismatches, click **Edit** beside Base, Master, a pending upload, or an option in Regions. A 20%-opacity image overlay and bounding box appear directly on canvas. On an **applied option**, its visible image and selection mask move/scale/rotate together, preserving the mask-to-image relationship. Changes to one option never mutate a source shared by other options.
 - Maximum import size defaults to 2400 pixels on the longest side to limit browser memory; hidden Base image can be imported at up to 4000 pixels.
 - All project data, including Premium archived snapshots and masks, is **in browser memory**, so refresh clears the session. Export the finished composition before leaving. No backend persistence or synchronization.
 - Final AI harmonization is done manually and can still reinterpret visual references.
@@ -82,7 +82,7 @@ Click an existing region or variation in **Layers** to select it. Mosaic activat
 - Drag inside the outlined patch or its center handle to move the mask and image together.
 - Drag any of the four corner handles independently to skew its shape.
 - **Reset warp** restores the original location. Undo/redo also includes move and skew.
-- Switching to Lasso / Rect / Oval edits the original mask; transforms are retained separately.
+- When selecting a moved/skewed option, the current visible mask is reused (not its old location). **Edit Mask** accepts a display-space selection and maps it back to the original source coordinates without losing the warp. Reveal/Erase and Undo/Redo also respect the transformed position.
 - Layer transforms are captured in exports, Harmonized snapshots, and restored history branches.
 
 The original Base geometry is preserved separately from the working Master.
@@ -97,6 +97,6 @@ The main toolbar is grouped into **Select**, **Edit / Move**, and **Selection Mo
 - With Premium login and a user-provided OpenAI API key, Mosaic automatically classifies the highlighted crop using the gpt-4.1-mini vision model through /api/ai/classify. This incurs separate API charges. No hidden calls are made while logged out.
 - Without a key, the default category is Region. It can be changed manually, inferred from a subsequent edit prompt, or identified explicitly with the ✦ button. Model categories are suggestions, not guaranteed object detection.
 - Group and option labels remain user-editable. Local parsing derives short material/color/lighting labels from prompts (e.g. \"Make it black\" -> \"Black\"). Premium optionally uses GPT-4.1 mini to infer a better 1–4 word option label. Manual names always take precedence.
-- Clicking a group heading copies the cumulative union selection onto the currently displayed canvas, including while a newly imported image is pending. Enter/Apply uses that mask for the new image.
+- Clicking a group heading reuses the **active option's displayed selection**, including its move/skew, on the current image. An imported variation still requires explicit Apply to commit that mask.
 - On desktop, hovering a recognized Region shows a category tooltip and subtle violet boundary. None of these guides enter exported images.
 - Region memory and names remain browser-local. Create new Regions with the header +; drag options between Regions on desktop, or use the transfer button on any option. Previous Harmonize variants retain their masks.
