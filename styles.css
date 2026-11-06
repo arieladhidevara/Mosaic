@@ -336,3 +336,55 @@ body:not(.premium-ready) .right-sidebar .inspector-bottom{display:none}
 .source-preview-frame img{display:block;max-width:100%;max-height:62vh;object-fit:contain}
 .source-preview-dialog .dialog-actions{justify-content:flex-end;margin-top:12px}
 @media(max-width:730px){.master-version-actions button{font-size:9px}.source-preview-dialog{padding:12px!important}.source-preview-frame{max-height:58vh}.source-preview-frame img{max-height:54vh}}
+
+/* V0.5: Base-first onboarding remains a separate source until user uploads or generates Master. */
+.welcome-source-column{min-width:0;display:flex;flex-direction:column;gap:10px}
+.welcome-source-column .start-drop-zone{width:100%;height:210px;min-height:210px}
+.welcome-source-column .start-drop-zone:has(.welcome-uploaded-thumb:not(.hidden)){border-color:#b6a9f4}
+.welcome-uploaded-thumb{width:66px;height:54px;object-fit:cover;border-radius:8px;box-shadow:0 4px 14px #0007}
+.welcome-base-prompt{display:flex;flex-direction:column;gap:8px;text-align:left;border:1px solid #7164a2;background:#242235;border-radius:13px;padding:12px}
+.welcome-base-prompt label{color:#ded6ff;font-size:11px;font-weight:750}
+.welcome-base-prompt textarea{width:100%;min-width:0;resize:vertical;padding:10px;background:#161722;color:#f0ecff;border:1px solid #665c8c;border-radius:8px;font:inherit;font-size:12px;line-height:1.5}
+.welcome-base-prompt button[type="submit"]{align-self:stretch}
+.welcome-reference-row{display:flex;gap:7px;flex-wrap:wrap;align-items:center}
+.welcome-reference-row .reference-upload-action{margin:0;font-size:10px}
+.source-row{display:flex;gap:5px;align-items:center;margin-right:11px}
+.source-row .upload-box{flex:1;min-width:0;margin-right:0}
+.source-edit-button{flex:none;border:1px solid #60578e;background:#302b43;border-radius:6px;color:#d6c9ff;padding:6px 8px;font-size:10px;cursor:pointer;margin-top:8px}
+.source-edit-button:hover{background:#484069;color:#fff}
+.source-edit-overlay{position:absolute!important;inset:0;z-index:9;display:block;width:100%;height:100%;touch-action:none;pointer-events:none}
+.source-edit-overlay.active{pointer-events:auto;cursor:move}
+.source-editor-active #sourceEditorPanel{display:flex!important}
+.source-editor-active .inspector-top,.source-editor-active .setting-card,.source-editor-active .section-rule,
+.source-editor-active .inspector-advanced,.source-editor-active .inspector-bottom{display:none!important}
+.source-editor-panel{display:flex;flex-direction:column;gap:12px;padding:19px 15px}
+.source-editor-panel h2{margin:0;font-size:18px}
+.source-editor-panel>p{font-size:11px;color:#abb0c2;line-height:1.6;margin:0}
+.source-editor-panel>label{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:8px;color:#c7c1db;font-size:11px}
+.source-editor-panel input[type="range"]{width:100%;min-width:0;accent-color:#b7a5ff}
+.source-editor-panel output{font-variant-numeric:tabular-nums;min-width:32px;text-align:right}
+.source-edit-coordinates{display:flex;gap:10px}
+.source-edit-coordinates label{flex:1;font-size:11px;display:flex;flex-direction:column;gap:4px;color:#c7c1db}
+.source-edit-coordinates input{width:100%;border:1px solid #70668e;background:#191926;color:#fff;border-radius:7px;padding:8px}
+.source-edit-actions{display:flex;flex-wrap:wrap;gap:7px}
+.source-edit-actions button{flex:1;min-width:70px}
+.variant-row.dragging{opacity:.45}
+.region-group.region-drop-target{outline:2px solid #bc9dff;outline-offset:1px;background:#34304d}
+.region-move-picker{max-width:100%;width:100%;color:#e8dfff;background:#242336;border:1px solid #a38ce2;border-radius:6px;padding:6px;font-size:11px}
+.variant-row{flex-wrap:wrap}
+@media(max-width:730px){
+  .welcome-drop-grid{grid-template-columns:repeat(2,minmax(0,1fr));align-items:start}
+  .welcome-source-column .start-drop-zone{height:180px;min-height:180px}
+  .welcome-base-prompt{padding:8px}
+  .welcome-base-prompt textarea{font-size:11px}
+  .source-editor-panel{padding:12px}
+}
+
+/* During direct source editing, selection tools cannot accidentally repaint the canvas. */
+.workspace.source-editor-in-progress .tool-row,
+.workspace.source-editor-in-progress .canvas-actions,
+.workspace.source-editor-in-progress .group-list,
+.workspace.source-editor-in-progress .source-row,
+.workspace.source-editor-in-progress .source-actions{pointer-events:none;opacity:.55}
+.workspace.source-editor-in-progress .source-editor-panel{pointer-events:auto;opacity:1}
+.workspace.source-editor-in-progress .source-edit-overlay.active{pointer-events:auto;opacity:1}
