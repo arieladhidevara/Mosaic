@@ -7,7 +7,7 @@ const esc = core.escapeHTML;
 const premium = {
   projectPrompt: '', root: null, serial: 0, expanded: new Set(),
   previewNode: null, uploadPatch: null, lastRequest: null,
-  originalMaster: null, initialMaster: null, branchFrom: null, regionSerial: 0, showGuides: false, generationQueue: Promise.resolve()
+  originalMaster: null, initialMaster: null, masterVersions: [], regenerateFrom: null, branchFrom: null, regionSerial: 0, showGuides: false, generationQueue: Promise.resolve()
 };
 const cloneCanvas = input => {
   const output = makeCanvas(input.width, input.height);
@@ -32,11 +32,7 @@ function drawComposition(context, base, groups, patches, sources) {
     core.drawPatch(context, patch, source);
   }
 }
-function currentComposite() {
-  const output = makeCanvas(canvas.width, canvas.height);
-  drawComposition(output.getContext('2d'), state.master, state.groups, state.patches, state.sources);
-  return output;
-}
+function currentComposite(){return core.composeApprovedCanvas()}
 function findHistory(id, node = premium.root) {
   for (let n = node; n; n = n.parent) if (n.id === id) return n;
   return null;
@@ -59,7 +55,16 @@ function setReferenceAsBase() {
 }
 function onReferenceLoaded() {
   setReferenceAsBase();
-  if(state.masterIsBase){premium.projectPrompt='';updateIntent()}
+  if(state.masterIsBase){
+    premium.projectPrompt='';updateIntent();
+    // Base is a fallback working canvas, not a real uploaded/generated Master yet.
+    premium.masterVersions=[];
+    $('masterZone').classList.remove('ready');
+    $('masterStatus').textContent='＋';
+    $('masterInfo').textContent='Upload or generate Master';
+    $('masterPreview').classList.add('hidden');
+    refreshMasterBrowser();
+  }
   if (state.master && state.reference) {
     premium.originalMaster = makeCanvas(canvas.width, canvas.height);
     premium.originalMaster.getContext('2d').drawImage(state.reference, 0, 0, canvas.width, canvas.height);
@@ -71,19 +76,32 @@ function onReferenceLoaded() {
     if(window.MosaicAuth?.isReady())void openMasterGenerate();
   }
 }
-function onMasterLoaded(image){
+function refreshMasterBrowser(){window.MosaicSources?.refresh?.()}
+function addMasterVersion(image,kind='Harmonized',prompt='',from=null){
+  const number=(premium.masterVersions.at(-1)?.number||0)+1;
+  premium.masterVersions.push({number,image:cloneCanvas(image),kind,prompt,from});
+  refreshMasterBrowser();
+  return number;
+}
+function onMasterLoaded(image,name='Master'){
   premium.initialMaster=cloneCanvas(image);
   if(state.reference)premium.originalMaster=cloneCanvas(state.reference);
+  addMasterVersion(image,name.includes('AI')?'AI generated':name.includes('Base')?'Base placeholder':'Uploaded');
 }
 function onSourcesAligned(base,master){
   premium.initialMaster=cloneCanvas(master);
   premium.originalMaster=cloneCanvas(base);
+  if(premium.masterVersions.length===1)premium.masterVersions[0].image=cloneCanvas(master);
+  refreshMasterBrowser();
   core.promptText();
 }
 
 function onMasterReset() {
   premium.root = null;
   premium.serial = 0;
+  premium.masterVersions=[];
+  premium.regenerateFrom=null;
+  refreshMasterBrowser();
   premium.expanded.clear();
   premium.previewNode = null;
   premium.uploadPatch = null;
@@ -280,8 +298,8 @@ function transparentEditMask(source,w,h){
 function annotationNotes(targetId){
   return activeAIRegions().map(p=>({color:p.color,prompt:p.prompt,active:p.id===targetId}));
 }
-function encodeRequest(prompt,patch=null){
-  const collage=currentComposite();
+function encodeRequest(prompt,patch=null,masterSource=null){
+  const collage=masterSource||currentComposite();
   for(const maxSize of [1350,1120,900]){
     const scale=Math.min(1,maxSize/Math.max(canvas.width,canvas.height));
     const w=Math.max(128,Math.round(canvas.width*scale)),h=Math.max(128,Math.round(canvas.height*scale));
@@ -429,6 +447,7 @@ async function attachAIResult(file) {
   } catch (error) {toast('Could not attach result: ' + error.message);}
 }
 async function openHarmonize() {
+  premium.regenerateFrom=null;
   if (!state.master) {toast('Upload Base or Master first.');return;}
   if (state.pendingSourceId || state.editingPatchId) {toast('Apply or discard the current mask first.');return;}
   if (premium.previewNode) {toast('Close the archive preview or branch from it before harmonizing.');return;}
@@ -437,22 +456,25 @@ async function openHarmonize() {
   }
   if(!await window.MosaicAuth.ensure())return;
   $('harmonizePromptInput').value = core.promptText();
+  $('harmonizeDialog').querySelector('h2').textContent='Flatten & harmonize';
   showDialog('harmonizeDialog');
 }
-async function harmonizeWithAI(prompt) {
+async function harmonizeWithAI(prompt,sourceVersion=null) {
   if(!await window.MosaicAuth.ensure())return;
+  if(state.pendingSourceId||state.editingPatchId){toast('Apply or discard your unfinished patch before generating.');return}
   if(state.groups.some(g=>state.patches.get(g.active)?.awaitingResult)){toast('Finish pending region edits first.');return}
   const a=$('harmonizeBtn'),b=$('harmonizeSidebarBtn');a.disabled=true;b.disabled=true;
   const flattened = currentComposite();
   let finalImage;
   try{
     message('Generating harmonized architecture image with OpenAI…');
-    const answer=await window.MosaicAuth.request('/api/ai/harmonize',encodeRequest(prompt));
+    const answer=await window.MosaicAuth.request('/api/ai/harmonize',encodeRequest(prompt,null,sourceVersion?.image));
     finalImage=await fromGeneratedJPEG(answer.image);
   }catch(error){toast('Harmonize failed: '+error.message);message('Your original collage is unchanged. Please retry.');return}
   finally{a.disabled=false;b.disabled=false}
   const graph = copyGraph(state.groups, state.patches, state.sources);
   const number = ++premium.serial;
+  const masterVersion=addMasterVersion(finalImage,sourceVersion?'Regenerated':'Harmonized',prompt,sourceVersion?.number||null);
   const node = {
     id: uid('harmonized'), number, base: cloneCanvas(state.master),
     groups: graph.groups, patches: graph.patches, sources: graph.sources,
@@ -475,7 +497,7 @@ async function harmonizeWithAI(prompt) {
   const originalSource=needsOriginal?uid('original_source'):null;
   if(originalSource)state.sources.set(originalSource,{id:originalSource,name:'Original Master',canvas:cloneCanvas(original)});
   const sourceId=savedRegionMasks.length?uid('master_source'):null;
-  if(sourceId)state.sources.set(sourceId,{id:sourceId,name:'Master '+(number+1),canvas:cloneCanvas(finalImage)});
+  if(sourceId)state.sources.set(sourceId,{id:sourceId,name:'Master '+masterVersion,canvas:cloneCanvas(finalImage)});
   for(const {group,mask} of savedRegionMasks){
     if(!group.patchIds.some(id=>state.patches.get(id)?.isOriginalMaster)){
       const initialId=uid('original_master');
@@ -483,7 +505,7 @@ async function harmonizeWithAI(prompt) {
       group.patchIds.unshift(initialId);
     }
     const nextId=uid('master_version');
-    state.patches.set(nextId,{id:nextId,sourceId,mask:cloneCanvas(mask),bbox:maskBoundingBox(mask),name:'Master '+(number+1),manualName:true,isMasterVersion:true,masterVersion:number+1,groupId:group.id});
+    state.patches.set(nextId,{id:nextId,sourceId,mask:cloneCanvas(mask),bbox:maskBoundingBox(mask),name:'Master '+masterVersion,manualName:true,isMasterVersion:true,masterVersion,groupId:group.id});
     group.patchIds.push(nextId);group.active=nextId;group.hasHarmonizedMaster=true;
   }
   state.pendingSourceId = null;
@@ -493,13 +515,26 @@ async function harmonizeWithAI(prompt) {
   state.redo = [];
   premium.branchFrom = node.id;
   resetSelection();
-  $('masterTitle').textContent = 'Master ' + (number+1) + ' · AI';
-  $('masterInfo').textContent = canvas.width + ' × ' + canvas.height + ' · working image';document.getElementById('masterPreview').src=finalImage.toDataURL('image/jpeg',.78);
+  $('masterTitle').textContent = 'Master ' + masterVersion + ' · AI';
+  $('masterInfo').textContent = canvas.width + ' × ' + canvas.height + ' · working image';core.setSourcePreview('masterPreview',finalImage);
   $('projectName').textContent = 'Harmonized ' + number + ' · AI render';
   renderGroups();
   render();
-  message('Master '+(number+1)+' is now active. Previous materials and Original Master stay inside each Region.');
-  toast('Harmonization saved. All previous region options are preserved.');
+  message('Master '+masterVersion+' is active. Earlier Masters remain available in the expandable source list.');
+  refreshMasterBrowser();toast('Master '+masterVersion+' saved in the version list. Previous region options are preserved.');
+}
+function getMasterVersions(){return [...premium.masterVersions]}
+function initialMasterImage(){return premium.masterVersions[0]?.image||premium.initialMaster}
+async function regenerateMaster(number){
+  const version=premium.masterVersions.find(item=>item.number===Number(number));
+  if(!version){toast('This Master version is no longer available.');return}
+  if(state.pendingSourceId||state.editingPatchId){toast('Apply or discard the unfinished patch first.');return}
+  if(state.groups.some(g=>g.active&&state.patches.get(g.active)?.awaitingResult)){toast('Complete the pending AI region first.');return}
+  if(!await window.MosaicAuth.ensure())return;
+  premium.regenerateFrom=version;
+  $('harmonizePromptInput').value=version.prompt||'Regenerate Master '+version.number+' into a refined architectural rendering. Preserve the camera, geometry, approved design, and material intent.';
+  $('harmonizeDialog').querySelector('h2').textContent='Regenerate Master '+version.number+' → new Master';
+  showDialog('harmonizeDialog');
 }
 function exportPrompt() {
   return premium.lastRequest?.prompt || null;
@@ -609,7 +644,7 @@ function onPatchApplied() {
 }
 window.MosaicPremium = {
   projectPrompt: () => premium.projectPrompt,
-  onReferenceLoaded, onMasterLoaded, onSourcesAligned, onMasterReset, canSelectArea, onPatchApplied, generateSelection, decorateActive: activePatchMarkup, getReferenceFiles, clearReferenceFiles,
+  onReferenceLoaded, onMasterLoaded, onSourcesAligned, onMasterReset, canSelectArea, onPatchApplied, generateSelection, decorateActive: activePatchMarkup, getReferenceFiles, clearReferenceFiles, getMasterVersions, regenerateMaster, initialMasterImage,
   drawArchivePreview, isPreviewing, renderHistory, handleGroupEvent,
   originalImage, exportPrompt, drawRegionGuides, classifyArea
 };
@@ -637,8 +672,9 @@ for (const id of ['harmonizeBtn', 'harmonizeSidebarBtn'])
 $('harmonizeForm').addEventListener('submit', e => {
   e.preventDefault();
   const prompt = $('harmonizePromptInput').value.trim() || core.promptText();
+  const source=premium.regenerateFrom;premium.regenerateFrom=null;
   $('harmonizeDialog').close();
-  void harmonizeWithAI(prompt);
+  void harmonizeWithAI(prompt,source);
 });
 $('aiResultInput').addEventListener('change', async e => {
   await attachAIResult(e.target.files[0]);
