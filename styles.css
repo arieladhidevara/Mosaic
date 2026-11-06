@@ -262,3 +262,14 @@
 .region-option-prompt button{font-size:10px;padding:4px 7px;border:1px solid #7668cb;border-radius:6px;color:#eee9ff;background:#51467f;cursor:pointer}
 .group-add-option{font-size:17px!important;color:#b9adff!important}
 @media(max-width:730px){.welcome-choice{padding:20px 12px}.welcome-drop-grid{gap:9px}.start-drop-zone{min-height:180px;padding:15px 7px}.start-drop-zone strong{font-size:17px}.start-drop-zone small{font-size:10px}.quick-area-prompt{width:240px}}
+
+/* Manual Free: clean masking tools, Premium adds generation UI only when connected. */
+body:not(.premium-ready) .base-prompt-shortcut,
+body:not(.premium-ready) #promptAreaBtn,
+body:not(.premium-ready) #harmonizeBtn,
+body:not(.premium-ready) #harmonizeSidebarBtn,
+body:not(.premium-ready) .group-details [data-region-action="identify"]{display:none!important}
+body:not(.premium-ready) .inspector-advanced{display:none}
+body:not(.premium-ready) .right-sidebar .inspector-top li:nth-child(2),
+body:not(.premium-ready) .right-sidebar .inspector-top li:nth-child(3){display:none}
+body:not(.premium-ready) .right-sidebar .inspector-bottom{display:none}
