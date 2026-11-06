@@ -448,19 +448,23 @@ async function harmonizeWithAI(prompt) {
     originalBase: state.reference, collage: cloneCanvas(flattened),
     prompt, snapshotId: node.id
   };
-  // Preserve all region groups and their material alternatives across Harmonize.
+  // Preserve region/material alternatives. Share a single image source per Master version,
+  // rather than duplicating a large full-resolution canvas for every region.
   const original = premium.initialMaster || cloneCanvas(state.master);
   const savedRegionMasks = state.groups.map(g=>({group:g,mask:cloneCanvas(core.groupMask(g))}));
   state.master = finalImage;
+  const needsOriginal=savedRegionMasks.some(({group})=>!group.patchIds.some(id=>state.patches.get(id)?.isOriginalMaster));
+  const originalSource=needsOriginal?uid('original_source'):null;
+  if(originalSource)state.sources.set(originalSource,{id:originalSource,name:'Original Master',canvas:cloneCanvas(original)});
+  const sourceId=savedRegionMasks.length?uid('master_source'):null;
+  if(sourceId)state.sources.set(sourceId,{id:sourceId,name:'Master '+(number+1),canvas:cloneCanvas(finalImage)});
   for(const {group,mask} of savedRegionMasks){
     if(!group.patchIds.some(id=>state.patches.get(id)?.isOriginalMaster)){
-      const initialId=uid('original_master'),initialSource=uid('original_source');
-      state.sources.set(initialSource,{id:initialSource,name:'Original Master',canvas:cloneCanvas(original)});
-      state.patches.set(initialId,{id:initialId,sourceId:initialSource,mask:cloneCanvas(mask),bbox:maskBoundingBox(mask),name:'Original Master',manualName:true,isOriginalMaster:true,groupId:group.id});
+      const initialId=uid('original_master');
+      state.patches.set(initialId,{id:initialId,sourceId:originalSource,mask:cloneCanvas(mask),bbox:maskBoundingBox(mask),name:'Original Master',manualName:true,isOriginalMaster:true,groupId:group.id});
       group.patchIds.unshift(initialId);
     }
-    const nextId=uid('master_version'),sourceId=uid('master_source');
-    state.sources.set(sourceId,{id:sourceId,name:'Master '+(number+1),canvas:cloneCanvas(finalImage)});
+    const nextId=uid('master_version');
     state.patches.set(nextId,{id:nextId,sourceId,mask:cloneCanvas(mask),bbox:maskBoundingBox(mask),name:'Master '+(number+1),manualName:true,isMasterVersion:true,masterVersion:number+1,groupId:group.id});
     group.patchIds.push(nextId);group.active=nextId;group.hasHarmonizedMaster=true;
   }
