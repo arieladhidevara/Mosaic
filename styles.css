@@ -220,3 +220,17 @@
 .workflow-steps{margin:8px 0 5px;padding-left:21px;display:flex;flex-direction:column;gap:10px;color:#9ba0b0;font-size:11px;line-height:1.55}
 .workflow-steps li::marker{color:#9d91ec;font-weight:800}
 .workflow-steps strong{color:#d7d1fd}
+
+/* Reusable semantic regions */
+.region-group.region-focused{outline:1px solid #8e82d9}
+.group-head[role="button"]{cursor:pointer}
+.group-head[role="button"]:hover{background:#373341}
+.group-head .group-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.group-details{display:flex;gap:5px;align-items:center;padding:1px 7px 8px}
+.group-badge{color:#bfb6db;font-size:10px;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.group-category{background:#232630;border:1px solid #484959;border-radius:5px;color:#d2d1dc;max-width:96px;font-size:10px;padding:4px 2px}
+.group-details .variant-action{flex:none;padding:4px}
+.region-rename-input{font-size:11px;font-weight:600;color:#fff;background:#181923;border:1px solid #a99bf2;border-radius:5px;width:100%;min-width:40px;box-sizing:border-box;padding:4px}
+.variant-text small{color:#878c99;font-size:9px}
+.region-ghost-canvas{position:absolute;inset:0;width:100%;height:100%;z-index:2;pointer-events:none}
+.group-hover-hint{position:absolute;z-index:10;top:0;left:0;background:#252630ed;color:#f2edff;border:1px solid #a399ca70;border-radius:6px;padding:5px 8px;font-size:11px;font-weight:700;box-shadow:0 5px 16px #0006;pointer-events:none;white-space:nowrap;max-width:180px;overflow:hidden;text-overflow:ellipsis}
