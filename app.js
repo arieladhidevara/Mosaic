@@ -139,7 +139,7 @@ function activeTransformPatch(){
   return patch&&state.groups.some(g=>g.active===patch.id)?patch:null;
 }
 function beginTransform(e,p){
-  if(state.pendingSourceId||state.editingPatchId)return false;
+  if(state.pendingSourceId||state.editingPatchId||window.MosaicPremium?.isPreviewing())return false;
   let patch=activeTransformPatch(),hit=patch&&transformHit(p,patch);
   if(!hit){
     for(const group of [...state.groups].reverse()){
@@ -182,7 +182,7 @@ function endTransform(){
   drawOverlay();
 }
 function resetPatchTransform(){
-  const patch=activeTransformPatch();if(!patch||!patch.corners)return;
+  const patch=activeTransformPatch();if(!patch||!patch.corners||window.MosaicPremium?.isPreviewing())return;
   state.undo.push({type:'transform',patchId:patch.id,corners:copyCorners(patch.corners)});
   if(state.undo.length>12)state.undo.shift();state.redo=[];
   patch.corners=null;render();toast('Layer transform reset.');
