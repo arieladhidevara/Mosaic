@@ -90,7 +90,7 @@ function handleGroupEvent(e){
         });
         field.querySelector('input').focus({preventScroll:true});
       }else{
-        core.toast('Add a new image, then press Enter to keep this region.');
+        state.queuedGroupId=group.id;core.toast('Choose another image, then press Enter to keep this region.');
         document.getElementById('variantInput').click();
       }
       return true;
