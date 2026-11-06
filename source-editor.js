@@ -152,7 +152,10 @@ function point(e){
   return {x:(e.clientX-bounds.left)*canvas.width/bounds.width,y:(e.clientY-bounds.top)*canvas.height/bounds.height};
 }
 stage.addEventListener('pointerdown',e=>{
-  if(!editing||(e.button!==0&&e.pointerType==='mouse'))return;
+  if(!editing)return;
+  e.stopPropagation();
+  if(e.button!==0&&e.pointerType==='mouse')return;
+  e.stopPropagation();
   const p=point(e),q=corners(),radius=13/Math.max(.25,state.zoom);
   const index=q.findIndex(c=>Math.hypot(p.x-c.x,p.y-c.y)<=radius);
   if(index<0&&!imageAt(p))return;
@@ -163,6 +166,7 @@ stage.addEventListener('pointerdown',e=>{
 });
 stage.addEventListener('pointermove',e=>{
   if(!editing)return;
+  e.stopPropagation();
   const p=point(e),q=corners();
   if(!drag){
     const near=q.some(c=>Math.hypot(p.x-c.x,p.y-c.y)<13/Math.max(.25,state.zoom));
@@ -178,7 +182,7 @@ stage.addEventListener('pointermove',e=>{
   }
   syncControls();redraw();e.preventDefault();e.stopPropagation();
 });
-for(const name of ['pointerup','pointercancel'])stage.addEventListener(name,e=>{if(drag&&drag.id===e.pointerId){drag=null;e.stopPropagation()}});
+for(const name of ['pointerup','pointercancel'])stage.addEventListener(name,e=>{if(editing){e.stopPropagation();if(drag&&drag.id===e.pointerId)drag=null}});
 $('editBaseBtn').addEventListener('click',()=>start('base'));
 $('editMasterBtn').addEventListener('click',()=>start('master'));
 $('editPendingBtn').addEventListener('click',()=>start('source'));
