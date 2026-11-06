@@ -59,6 +59,7 @@ function setReferenceAsBase() {
 }
 function onReferenceLoaded() {
   setReferenceAsBase();
+  if(state.masterIsBase){premium.projectPrompt='';updateIntent()}
   if (state.master && state.reference) {
     premium.originalMaster = makeCanvas(canvas.width, canvas.height);
     premium.originalMaster.getContext('2d').drawImage(state.reference, 0, 0, canvas.width, canvas.height);
@@ -70,7 +71,10 @@ function onReferenceLoaded() {
     if(window.MosaicAuth?.isReady())void openMasterGenerate();
   }
 }
-function onMasterLoaded(image){premium.initialMaster=cloneCanvas(image)}
+function onMasterLoaded(image){
+  premium.initialMaster=cloneCanvas(image);
+  if(state.reference)premium.originalMaster=cloneCanvas(state.reference);
+}
 function onSourcesAligned(base,master){
   premium.initialMaster=cloneCanvas(master);
   premium.originalMaster=cloneCanvas(base);
