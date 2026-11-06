@@ -1,49 +1,48 @@
 # Mosaic — AI Collage Workspace
 
-A zero-API, browser-only proof of concept for architectural AI render exploration. Combine the strongest parts of multiple AI-generated renders, group spatial alternatives, and export an AI harmonization handoff.
+Mosaic is a manual-first, zero-API architectural AI collage editor. Choose exactly which parts to keep from multiple AI-generated variations, group alternatives by masked location, and export a ready-to-harmonize ZIP for ChatGPT or another image model.
 
-## What works
+## Workflow
 
-- Hidden Revit reference input (stored **in browser memory**, not uploaded to a backend)
-- Visible master image with pixel-faithful base canvas
-- Multi-upload AI variants, with heuristic automatic change detection versus the master
-- Automatic spatial grouping of detected change patches, with one active variant per region (or Original Master)
-- Lasso selection (freehand drag, then Enter), brush to reveal mask, eraser to hide mask, mask undo / redo
-- Change-sensitivity slider; detect and ignore some subtle tone drift
-- Before/after compare, fit and zoom, downloadable ZIP containing `01_Revit_Reference.png`, `02_Final_Collage.png`, and `03_Harmonization_Prompt.txt`
-- Built-in synthetic demo scene, client-side image processing, no login or API keys
+1. Upload a **Revit reference** (stored locally in the browser and hidden from the canvas).
+2. Upload a **master render** to display under all other images.
+3. Upload one or more AI images. Each becomes a temporary top layer, one at a time.
+4. Draw a freehand **Lasso**. Switch to **New**, **Add**, or **Subtract** for as many selection strokes as needed. The dotted outline shows selected pixels.
+5. Press **Enter** or **Apply** to keep only the selected region of the uploaded image. The unselected pixels are hidden non-destructively.
+6. Refine a patch later with **Edit**, **Brush**, or **Eraser**. Overlapping patches from the same region are automatically grouped as alternatives, with the newest active.
+7. Use **Compare master**: hold the button with a mouse to compare temporarily; on touch devices tap once to view master and again to return.
+8. Export a ZIP with `01_Revit_Reference.png`, `02_Final_Collage.png`, and `03_Harmonization_Prompt.txt`.
 
-## Limitations / accuracy
+The prompt can also be copied directly from the interface. No image-generation API or backend is used; the only network request is for the UI's Google Fonts, if available.
 
-Auto-detection is conventional image comparison (low-pass color, global median color normalization, morphological segmentation, connected components), **not AI design-intent classification**. It will make mistakes on global rerenders, altered perspectives, complex light changes, objects whose shapes moved, or subtle recoloring. Use lasso/brush/eraser to correct auto-generated masks. Input images should share the same camera/crop. The browser aligns sizes, not geometric features. Final harmonization happens manually in an external image AI, which may reinterpret the references.
+## Important notes
 
-Masks are stored per-patch and applied non-destructively when selecting a variant. No actual changes are written to the master image. All local project state is lost on refresh in this MVP; export your work. Original export resolution is capped to 2400px for the master to reduce browser RAM; reference images may be kept up to 4000px.
+- **No automatic image difference detection**. The user decides what to select; grouping happens only *after* a mask has been applied.
+- Grouping is a heuristic based on patch bounding-box overlap and normalized center distance. Distinct objects that overlap heavily may need a future manual split/ungroup feature.
+- Variations should share camera position, aspect ratio, and crop. A different aspect ratio is drawn to fit the canvas and is not automatically geometry-aligned.
+- Maximum import size defaults to 2400 pixels on the longest side to limit browser memory; hidden Revit reference can be imported at up to 4000 pixels.
+- All project data is **in browser memory**, so refresh clears the session. Export the finished composition before leaving. No backend persistence or synchronization.
+- Final AI harmonization is done manually and can still reinterpret visual references.
 
 ## Run
 
-No npm packages required. Open `index.html` in a modern browser, or run a static server:
+Static HTML, JavaScript and CSS. Open `index.html` or serve from the directory:
 
 ```bash
 python3 -m http.server 8000
 ```
 
-Then open `http://localhost:8000`.
+Open http://localhost:8000.
 
 ## Deploy to Vercel
 
-1. In Vercel, connect your GitHub account and select the `arieladhidevara/Mosaic` repository.
-2. Choose **Add New → Project → Import Git Repository**.
-3. Framework preset: **Other**, build command: **None**, output directory: **.** (root), production branch: **main**.
-4. Deploy.
+The public GitHub repository `arieladhidevara/Mosaic` is connected to the Mosaic project on Vercel. Pushing to the `main` branch automatically updates its production deployment. Framework: Other/static site. No build or environment variables are required.
 
-No environment variables, database, AI API, or server code required.
+## Structure
 
-## Design and architecture
+- `index.html`: editor UI
+- `styles.css`: visual styles and responsive layout
+- `app.js`: masks, region groups, selection modes, canvas drawing, ZIP export
+- `vercel.json`: static hosting config
 
-- `index.html` — UI structure
-- `styles.css` — dark editor UI and responsive styles
-- `app.js` — import, detection, region groups, canvas masking, ZIP writer, demo
-
-Future improvements: true image registration / feature matching, explicit crop/transform controls, persistent project JSON, SAM-style object-aware masking and automatic design-intent classification, shared projects, integration with generative APIs.
-
-License: MIT.
+MIT License.
