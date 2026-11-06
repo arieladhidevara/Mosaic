@@ -106,7 +106,14 @@ function start(kind,patchId=null){
     canvas.height=overlay.height=original.height;
     $('selectionDraft').setAttribute('viewBox','0 0 '+canvas.width+' '+canvas.height);
     $('welcome').classList.add('hidden');$('canvasWrap').classList.remove('hidden');
-    updateZoomFit();
+    // The ordinary Fit tool requires a Master; fit a Base-only editing preview manually.
+    const viewport=$('viewport'),margin=window.innerWidth<=730?72:124;
+    const z=clamp(Math.min((viewport.clientWidth-margin)/canvas.width,(viewport.clientHeight-margin)/canvas.height,1),.08,4);
+    state.zoom=z;
+    $('canvasWrap').style.width=Math.round(canvas.width*z)+'px';
+    $('canvasWrap').style.height=Math.round(canvas.height*z)+'px';
+    canvas.style.width=overlay.style.width='100%';canvas.style.height=overlay.style.height='100%';
+    $('zoomValue').textContent=Math.round(z*100)+'%';
   }
   const guideWasCollapsed=inspector.classList.contains('is-collapsed');
   if(guideWasCollapsed){$('inspectorToggle').click()}
