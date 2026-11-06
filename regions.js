@@ -80,13 +80,23 @@ function handleGroupEvent(e){
       if(window.MosaicAuth?.isReady()){
         list.querySelectorAll('.region-option-prompt').forEach(el=>el.remove());
         const field=document.createElement('form');field.className='region-option-prompt';
-        field.innerHTML='<input type="text" maxlength="250" aria-label="New material or edit prompt" placeholder="e.g. Black, Walnut, Terrazzo" required><button type="submit">✦ Generate</button>';
+        field.innerHTML='<input type="text" maxlength="250" aria-label="New material or edit prompt" placeholder="e.g. Black, Walnut, Terrazzo" required><label class="reference-upload-action">＋ Ref<input class="region-reference-input" type="file" accept="image/png,image/jpeg,image/webp" multiple hidden></label><span class="reference-previews region-inline-previews"></span><button type="submit">✦ Generate</button>';
         list.querySelector('.region-group[data-group="'+group.id+'"] .group-options')?.prepend(field);
         field.addEventListener('click',event=>event.stopPropagation());
+        field.querySelector('.region-reference-input').addEventListener('change',event=>{
+          const files=[...event.target.files].slice(0,3),target=field.querySelector('.region-inline-previews');
+          target.replaceChildren();
+          for(const file of files){
+            const picture=document.createElement('img');picture.src=URL.createObjectURL(file);picture.alt=file.name;
+            picture.onload=()=>URL.revokeObjectURL(picture.src);target.append(picture);
+          }
+          if(event.target.files.length>3)core.toast('Maximum 3 reference images.');
+        });
         field.addEventListener('submit',event=>{
           event.preventDefault();event.stopPropagation();
-          const prompt=field.querySelector('input').value.trim();
-          field.remove();if(prompt)window.MosaicPremium?.generateSelection?.(prompt,group.id);
+          const prompt=field.querySelector('input[type="text"]').value.trim();
+          const references=[...field.querySelector('.region-reference-input').files].slice(0,3);
+          field.remove();if(prompt)void window.MosaicPremium?.generateSelection?.(prompt,group.id,references);
         });
         field.querySelector('input').focus({preventScroll:true});
       }else{

@@ -50,23 +50,36 @@ function updateIntent() {
   core.promptText();
 }
 function setReferenceAsBase() {
-  if (state.master || !state.reference) return;
+  if ((state.master && !state.masterIsBase) || !state.reference) return;
   const ref = state.reference;
   const scale = Math.min(1, 2400 / Math.max(ref.width, ref.height));
   const base = makeCanvas(Math.round(ref.width * scale), Math.round(ref.height * scale));
   base.getContext('2d').drawImage(ref, 0, 0, base.width, base.height);
-  core.setMaster(base, 'Base · Original');
+  core.setMaster(base, 'Base · Original');state.masterIsBase=true;core.updateSourceActions();
 }
 function onReferenceLoaded() {
   setReferenceAsBase();
+  if(state.masterIsBase){premium.projectPrompt='';updateIntent()}
   if (state.master && state.reference) {
     premium.originalMaster = makeCanvas(canvas.width, canvas.height);
     premium.originalMaster.getContext('2d').drawImage(state.reference, 0, 0, canvas.width, canvas.height);
   }
   $('projectPromptInput').value = premium.projectPrompt;
-  if(window.MosaicAuth?.isReady())showDialog('projectPromptDialog');
+  // Base-only onboarding exposes Generate Master; a separate first-prompt popup is unnecessary.
+  if(state.masterIsBase){
+    message('Base ready. Add a first prompt and reference images to generate Master, or import variations manually.');
+    if(window.MosaicAuth?.isReady())void openMasterGenerate();
+  }
 }
-function onMasterLoaded(image){premium.initialMaster=cloneCanvas(image)}
+function onMasterLoaded(image){
+  premium.initialMaster=cloneCanvas(image);
+  if(state.reference)premium.originalMaster=cloneCanvas(state.reference);
+}
+function onSourcesAligned(base,master){
+  premium.initialMaster=cloneCanvas(master);
+  premium.originalMaster=cloneCanvas(base);
+  core.promptText();
+}
 
 function onMasterReset() {
   premium.root = null;
@@ -273,7 +286,7 @@ function encodeRequest(prompt,patch=null){
     const scale=Math.min(1,maxSize/Math.max(canvas.width,canvas.height));
     const w=Math.max(128,Math.round(canvas.width*scale)),h=Math.max(128,Math.round(canvas.height*scale));
     const payload={collage:resizedFrame(collage,w,h),base:resizedFrame(state.reference||premium.initialMaster||state.master,w,h),
-      projectPrompt:premium.projectPrompt,prompt,regions:annotationNotes(patch?.id)};
+      projectPrompt:premium.projectPrompt,prompt,regions:annotationNotes(patch?.id),references:patch?.referenceImages||[]};
     if(patch){
       payload.mask=transparentEditMask(patch.mask,w,h);
       const guide=cloneCanvas(collage);paintGuides(guide.getContext('2d'));
@@ -350,20 +363,20 @@ async function openAreaPrompt() {
   const bbox = state.selectionMask && maskBoundingBox(state.selectionMask);
   if (!bbox) {toast('Draw a lasso selection first, then press Prompt area.');return;}
   if(!await window.MosaicAuth.ensure())return;
-  $('areaPromptInput').value = '';
+  $('areaPromptInput').value = '';clearReferenceFiles('area');
   showDialog('areaPromptDialog');
 }
-function createRegionRequest(prompt) {
-  const bbox = maskBoundingBox(state.selectionMask);
+function createRegionRequest(prompt,referenceImages=[],selectedMask=state.selectionMask) {
+  const bbox = maskBoundingBox(selectedMask);
   if (!bbox) {toast('Selection has no pixels.');return;}
-  const mask = cloneCanvas(state.selectionMask);
+  const mask = cloneCanvas(selectedMask);
   const base = currentComposite();
   const sourceId = uid('ai_source');
   const text = prompt.trim();
   const source = {id: sourceId, name: 'AI request', canvas: base};
   const regionNumber=++premium.regionSerial,color=REGION_COLORS[(regionNumber-1)%REGION_COLORS.length];
   const patch = {id: uid('ai_patch'), sourceId, mask, bbox, regionNumber, color,
-    name: core.optionNameFromPrompt(text,'AI edit '+regionNumber), manualName:false, prompt: text, awaitingResult: true,
+    name: core.optionNameFromPrompt(text,'AI edit '+regionNumber), manualName:false, prompt: text, referenceImages, awaitingResult: true,
     projectPrompt: premium.projectPrompt,
     request: {baseImage: base, reference: state.reference, mask, prompt: text}};
   state.sources.set(sourceId, source);
@@ -377,15 +390,20 @@ function createRegionRequest(prompt) {
   toast('AI region '+regionNumber+' queued.');
   return patch.id;
 }
-function generateSelection(prompt,groupId=null){
+async function generateSelection(prompt,groupId=null,referenceFiles=[]){
   if(!window.MosaicAuth?.isReady()){toast('Sign in to Premium to generate an AI edit.');return}
   if(!canSelectArea()){toast('Finish the current imported layer before generating.');return}
   if(state.lasso.length>2)core.updateMaskWithLasso();
   const bbox=maskBoundingBox(state.selectionMask);
   if(!bbox){toast('Select a region before generating.');return}
-  if(groupId){const g=state.groups.find(g=>g.id===groupId);if(g)state.draftGroupId=g.id}
-  const patchId=createRegionRequest(prompt);
-  if(patchId)void generateRegion(patchId);
+  const savedMask=cloneCanvas(state.selectionMask),generation=state.selectionGeneration;
+  try{
+    const referenceImages=await prepareReferenceImages(referenceFiles);
+    if(generation!==state.selectionGeneration){toast('The project changed. Please select the region again.');return}
+    if(groupId){const g=state.groups.find(g=>g.id===groupId);if(g)state.draftGroupId=g.id}
+    const patchId=createRegionRequest(prompt,referenceImages,savedMask);
+    if(patchId)void generateRegion(patchId);
+  }catch(error){toast('Reference upload: '+error.message)}
 }
 async function attachAIResult(file) {
   const patch = state.patches.get(premium.uploadPatch);
@@ -489,13 +507,109 @@ function exportPrompt() {
 function originalImage() {
   return premium.originalMaster;
 }
+/* Per-request visual references: optional, capped, compressed, and never persisted in browser storage. */
+const referenceState={master:[],area:[],quick:[]};
+const referenceInputIds={master:['masterReferenceInput','masterReferencePreviews'],area:['areaReferenceInput','areaReferencePreviews'],quick:['quickAreaReferenceInput','quickAreaReferencePreviews']};
+function getReferenceFiles(scope){return [...(referenceState[scope]||[])]}
+function clearReferenceFiles(scope){
+  if(!referenceInputIds[scope])return;
+  referenceState[scope]=[];
+  const [id]=referenceInputIds[scope];$(id).value='';
+  renderReferenceFiles(scope);
+}
+function renderReferenceFiles(scope){
+  const [,id]=referenceInputIds[scope],container=$(id);
+  if(!container)return;
+  for(const element of container.querySelectorAll('[data-preview-url]'))URL.revokeObjectURL(element.dataset.previewUrl);
+  container.replaceChildren();
+  (referenceState[scope]||[]).forEach((file,index)=>{
+    const item=document.createElement('span');item.className='reference-thumb';
+    const img=document.createElement('img');const url=URL.createObjectURL(file);
+    img.src=url;img.alt=file.name;item.dataset.previewUrl=url;
+    const remove=document.createElement('button');remove.type='button';remove.textContent='×';remove.title='Remove '+file.name;
+    remove.setAttribute('aria-label','Remove '+file.name);
+    remove.addEventListener('click',()=>{referenceState[scope].splice(index,1);renderReferenceFiles(scope)});
+    item.append(img,remove);container.append(item);
+  });
+}
+for(const [scope,[inputId]] of Object.entries(referenceInputIds)){
+  $(inputId).addEventListener('change',event=>{
+    const selected=[...event.target.files];
+    const files=referenceState[scope];
+    for(const file of selected){
+      if(files.length>=3){toast('Maximum 3 reference images.');break}
+      if(!/^image\/(jpeg|png|webp)$/.test(file.type)||file.size>10000000){toast('Reference must be JPG, PNG or WEBP under 10 MB.');continue}
+      files.push(file);
+    }
+    event.target.value='';
+    renderReferenceFiles(scope);
+  });
+}
+async function prepareReferenceImages(files){
+  const list=[...(files||[])];
+  if(list.length>3)throw Error('Maximum 3 reference images.');
+  const output=[];
+  for(const file of list){
+    if(!/^image\/(jpeg|png|webp)$/.test(file.type)||file.size>10000000)throw Error('Choose a JPG, PNG or WEBP image under 10 MB.');
+    const frame=await core.loadFileToCanvas(file,1000);
+    output.push(frame.toDataURL('image/jpeg',.72));
+  }
+  return output;
+}
+function encodeMasterRequest(prompt,referenceImages){
+  const base=state.reference;
+  if(!base)throw Error('Upload Base before generating Master.');
+  for(const maxSize of [1280,1080,900]){
+    const factor=Math.min(1,maxSize/Math.max(base.width,base.height));
+    const w=Math.max(128,Math.round(base.width*factor)),h=Math.max(128,Math.round(base.height*factor));
+    const encoded=resizedFrame(base,w,h);
+    const payload={base:encoded,collage:encoded,projectPrompt:prompt,prompt,references:referenceImages,regions:[]};
+    if(JSON.stringify(payload).length<3550000)return payload;
+  }
+  throw Error('Base and references are too large. Try smaller images.');
+}
+async function openMasterGenerate(){
+  if(!state.reference){toast('Upload a Base image to generate Master.');return}
+  if(!await window.MosaicAuth.ensure())return;
+  clearReferenceFiles('master');
+  $('masterGeneratePromptInput').value=premium.projectPrompt;
+  showDialog('masterGenerateDialog');
+}
+async function generateMaster(event){
+  event.preventDefault();
+  if(!state.reference||state.busy)return;
+  const prompt=$('masterGeneratePromptInput').value.trim();
+  if(!prompt)return;
+  if(state.groups.length&&!window.confirm('Generating Master will replace the current working image and its existing regions. Continue?'))return;
+  const button=$('masterGenerateSubmit');button.disabled=true;button.textContent='Generating…';
+  try{
+    if(!await window.MosaicAuth.ensure())return;
+    const images=await prepareReferenceImages(getReferenceFiles('master'));
+    const request=encodeMasterRequest(prompt,images);
+    message('Generating Master from Base…');
+    const reply=await window.MosaicAuth.request('/api/ai/master',request);
+    const generated=await fromGeneratedJPEG(reply.image);
+    premium.projectPrompt=prompt;
+    core.setMaster(generated,'Master · AI');
+    premium.originalMaster=cloneCanvas(state.reference);
+    updateIntent();
+    $('masterGenerateDialog').close();clearReferenceFiles('master');
+    core.updateSourceActions();render();
+    message('AI Master ready. Select regions to edit, or add other image variations.');
+    toast('Generated Master from the Base image.');
+  }catch(error){toast('Master generation: '+error.message);message('Base image preserved. Retry Generate Master.')}
+  finally{button.disabled=false;button.textContent='✦ Generate Master'}
+}
+$('generateMasterBtn').addEventListener('click',openMasterGenerate);
+$('masterGenerateForm').addEventListener('submit',event=>void generateMaster(event));
+
 function onPatchApplied() {
   // A committed patch stays selected so its four corner handles are immediately available.
   if(state.selectedPatchId)core.selectTool('transform');
 }
 window.MosaicPremium = {
   projectPrompt: () => premium.projectPrompt,
-  onReferenceLoaded, onMasterLoaded, onMasterReset, canSelectArea, onPatchApplied, generateSelection, decorateActive: activePatchMarkup,
+  onReferenceLoaded, onMasterLoaded, onSourcesAligned, onMasterReset, canSelectArea, onPatchApplied, generateSelection, decorateActive: activePatchMarkup, getReferenceFiles, clearReferenceFiles,
   drawArchivePreview, isPreviewing, renderHistory, handleGroupEvent,
   originalImage, exportPrompt, drawRegionGuides, classifyArea
 };
@@ -515,8 +629,8 @@ $('areaPromptForm').addEventListener('submit', e => {
   e.preventDefault();
   const text = $('areaPromptInput').value.trim();
   if (!text) return;
-  $('areaPromptDialog').close();
-  generateSelection(text);
+  const references=getReferenceFiles('area');$('areaPromptDialog').close();
+  void generateSelection(text,null,references);
 });
 for (const id of ['harmonizeBtn', 'harmonizeSidebarBtn'])
   $(id).addEventListener('click', openHarmonize);
