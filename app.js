@@ -593,6 +593,7 @@ for(const button of document.querySelectorAll('[data-initial-drop]')){
   });
 }
 $('quickAreaDismiss').addEventListener('click',hideQuickPrompt);
+$('quickAreaPromptInput').addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();$('quickAreaPromptForm').requestSubmit()}});
 $('quickAreaPromptForm').addEventListener('submit',e=>{
   e.preventDefault();
   if(!window.MosaicAuth?.isReady())return hideQuickPrompt();
