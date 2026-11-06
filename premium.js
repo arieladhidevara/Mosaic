@@ -1,7 +1,4 @@
-/* Mosaic Premium Preview — non-destructive masked AI handoff and harmonization.
- * No network calls, API key or subscription entitlement is implemented here.
- * Connect a server-side provider later; never expose an OpenAI key in the browser.
- */
+/* Mosaic Premium — authenticated masked editing and harmonization. */
 const core = window.MosaicCore;
 if (!core) throw new Error('Mosaic core must load before Premium');
 const {state, canvas, makeCanvas, uid, render, renderGroups, resetSelection, assignGroup, maskBoundingBox, toast, message} = core;
@@ -10,7 +7,7 @@ const esc = core.escapeHTML;
 const premium = {
   projectPrompt: '', root: null, serial: 0, expanded: new Set(),
   previewNode: null, uploadPatch: null, lastRequest: null,
-  originalMaster: null, branchFrom: null
+  originalMaster: null, branchFrom: null, regionSerial: 0, showGuides: true, generationQueue: Promise.resolve()
 };
 const cloneCanvas = input => {
   const output = makeCanvas(input.width, input.height);
@@ -78,6 +75,7 @@ function onMasterReset() {
   premium.lastRequest = null;
   premium.originalMaster = null;
   premium.branchFrom = null;
+  premium.regionSerial = 0;
 }
 function canSelectArea() {
   return Boolean(state.master && !state.pendingSourceId && !state.editingPatchId && !premium.previewNode);
@@ -97,6 +95,10 @@ function activePatchMarkup() {
     const row = $('groupList').querySelector('.variant-row[data-action="choose"][data-patch="' + patch.id + '"]');
     if (!row) continue;
     row.classList.add('awaiting-ai');
+    const generate = document.createElement('button');
+    generate.type='button';generate.className='small-action';generate.dataset.aiAction='generate';
+    generate.dataset.patch=patch.id;generate.textContent=patch.generating?'Generating…':'↻ Generate';
+    generate.disabled=Boolean(patch.generating);row.appendChild(generate);
     const b = document.createElement('button');
     b.type = 'button';
     b.className = 'small-action add-ai-result';
@@ -128,7 +130,7 @@ function nodeMarkup(node, depth = 0) {
   let html = '<section class="archive-node ' + (preview ? 'archive-previewing' : '') +
     '" style="--history-depth:' + Math.min(depth, 6) + '"><button class="archive-head" type="button" data-history-action="toggle" data-node="' +
     node.id + '"><span>' + (open ? '▾' : '▸') + '</span><span class="archive-icon">▣</span><span class="archive-title">' +
-    safeTitle + '<small>Archived · Local snapshot · ' + node.groups.length +
+    safeTitle + '<small>Archived · ' + (node.aiGenerated?'AI output':'Local snapshot') + ' · ' + node.groups.length +
     ' groups</small></span><span class="archive-lock">◎</span></button>';
   if (open) {
     html += '<div class="archive-body"><div class="archive-actions">' +
@@ -188,6 +190,7 @@ function workFromNode(node, useFlattened) {
 function handleGroupEvent(event) {
   const ai = event.target.closest('[data-ai-action]');
   if (ai) {
+    if(ai.dataset.aiAction === 'generate')void generateRegion(ai.dataset.patch);
     if (ai.dataset.aiAction === 'upload') {
       premium.uploadPatch = ai.dataset.patch;
       $('aiResultInput').click();
@@ -222,11 +225,111 @@ function handleGroupEvent(event) {
   render();
   return true;
 }
-function openAreaPrompt() {
+
+const REGION_COLORS=['#f59e60','#4eb8eb','#cb86e8','#7dd1ab','#e4bc4f','#ff7d9f','#8d9bf4','#b1d278'];
+const contourCache=new WeakMap();
+function coloredContour(mask,color){
+  const cached=contourCache.get(mask);
+  if(cached&&cached.color===color)return cached.canvas;
+  const w=Math.min(700,canvas.width),h=Math.max(1,Math.round(w*canvas.height/canvas.width));
+  const small=makeCanvas(w,h),sc=small.getContext('2d',{willReadFrequently:true});
+  sc.drawImage(mask,0,0,w,h);
+  const px=sc.getImageData(0,0,w,h).data,out=makeCanvas(w,h),oc=out.getContext('2d'),image=oc.createImageData(w,h);
+  const rgb=[1,3,5].map(i=>parseInt(color.slice(i,i+2),16));
+  for(let y=0;y<h;y++)for(let x=0;x<w;x++){
+    const i=y*w+x;if(px[i*4+3]<110)continue;
+    if(x>0&&px[(i-1)*4+3]>110&&x<w-1&&px[(i+1)*4+3]>110&&y>0&&px[(i-w)*4+3]>110&&y<h-1&&px[(i+w)*4+3]>110)continue;
+    image.data.set([...rgb,242],i*4);
+  }
+  oc.putImageData(image,0,0);contourCache.set(mask,{color,canvas:out});return out;
+}
+function activeAIRegions(){return state.groups.map(g=>state.patches.get(g.active)).filter(p=>p?.color)}
+function paintGuides(target){
+  for(const p of activeAIRegions()){
+    target.save();target.imageSmoothingEnabled=false;target.globalAlpha=.98;
+    target.drawImage(coloredContour(p.mask,p.color),0,0,canvas.width,canvas.height);
+    const x=Math.min(canvas.width-20,Math.max(15,p.bbox.x+12)),y=Math.max(17,p.bbox.y-7);
+    target.fillStyle=p.color;target.beginPath();target.arc(x,y,13,0,Math.PI*2);target.fill();
+    target.fillStyle='#11151c';target.font='bold 12px sans-serif';target.textAlign='center';
+    target.fillText(String(p.regionNumber),x,y+4);target.restore();
+  }
+}
+function drawRegionGuides(target){if(premium.showGuides)paintGuides(target)}
+function resizedFrame(source,w,h){
+  const out=makeCanvas(w,h),o=out.getContext('2d');
+  o.fillStyle='#fff';o.fillRect(0,0,w,h);
+  o.drawImage(source,0,0,w,h);
+  return out.toDataURL('image/jpeg',.78);
+}
+function transparentEditMask(source,w,h){
+  const out=makeCanvas(w,h),m=out.getContext('2d');
+  m.fillStyle='#fff';m.fillRect(0,0,w,h);
+  m.globalCompositeOperation='destination-out';m.drawImage(source,0,0,w,h);
+  return out.toDataURL('image/png');
+}
+function annotationNotes(targetId){
+  return activeAIRegions().map(p=>({color:p.color,prompt:p.prompt,active:p.id===targetId}));
+}
+function encodeRequest(prompt,patch=null){
+  const collage=currentComposite();
+  for(const maxSize of [1350,1120,900]){
+    const scale=Math.min(1,maxSize/Math.max(canvas.width,canvas.height));
+    const w=Math.max(128,Math.round(canvas.width*scale)),h=Math.max(128,Math.round(canvas.height*scale));
+    const payload={collage:resizedFrame(collage,w,h),base:resizedFrame(state.reference,w,h),
+      projectPrompt:premium.projectPrompt,prompt,regions:annotationNotes(patch?.id)};
+    if(patch){
+      payload.mask=transparentEditMask(patch.mask,w,h);
+      const guide=cloneCanvas(collage);paintGuides(guide.getContext('2d'));
+      payload.guide=resizedFrame(guide,w,h);
+    }
+    if(JSON.stringify(payload).length<3550000)return payload;
+  }
+  throw Error('Image is too large for the server. Try a smaller Base image.');
+}
+async function fromGeneratedJPEG(encoded){
+  const binary=atob(encoded),bytes=new Uint8Array(binary.length);
+  for(let i=0;i<binary.length;i++)bytes[i]=binary.charCodeAt(i);
+  const input=await core.loadFileToCanvas(new Blob([bytes],{type:'image/jpeg'}));
+  const out=makeCanvas(canvas.width,canvas.height);
+  out.getContext('2d').drawImage(input,0,0,canvas.width,canvas.height);
+  return out;
+}
+async function generateRegion(patchId){
+  const patch=state.patches.get(patchId);
+  if(!patch||!patch.awaitingResult||patch.generating)return;
+  patch.generating=true;renderGroups();
+  const run=async()=>{
+    try{
+      if(!await window.MosaicAuth.ensure())throw Error('Premium login canceled.');
+      const request=encodeRequest(patch.prompt,patch);
+      message('Generating AI edit for region '+patch.regionNumber+'…');
+      const answer=await window.MosaicAuth.request('/api/ai/edit',request);
+      const image=await fromGeneratedJPEG(answer.image);
+      const existing=state.patches.get(patchId),source=state.sources.get(patch.sourceId);
+      if(!existing||!source)return;
+      source.canvas=image;source.name='AI region '+patch.regionNumber;
+      existing.awaitingResult=false;existing.name='✦ R'+patch.regionNumber+' · '+existing.prompt.slice(0,32);
+      existing.generating=false;
+      state.selectedPatchId=patchId;core.selectTool('transform');renderGroups();render();
+      message('Region '+patch.regionNumber+' ready. All pixels outside the saved mask are untouched.');
+      toast('AI result automatically clipped to the original mask.');
+    }catch(error){
+      patch.generating=false;renderGroups();
+      toast('Region '+patch.regionNumber+': '+error.message);
+      message('AI edit failed. Retry using Generate in the region list.');
+    }
+  };
+  const job=premium.generationQueue.catch(()=>{}).then(run);
+  premium.generationQueue=job;
+  return job;
+}
+
+async function openAreaPrompt() {
   if (!canSelectArea()) {toast('Finish the current layer or restore an archived branch before prompting.');return;}
   if (state.lasso.length > 2) core.updateMaskWithLasso();
   const bbox = state.selectionMask && maskBoundingBox(state.selectionMask);
   if (!bbox) {toast('Draw a lasso selection first, then press Prompt area.');return;}
+  if(!await window.MosaicAuth.ensure())return;
   $('areaPromptInput').value = '';
   showDialog('areaPromptDialog');
 }
@@ -238,8 +341,9 @@ function createRegionRequest(prompt) {
   const sourceId = uid('ai_source');
   const text = prompt.trim();
   const source = {id: sourceId, name: 'AI request', canvas: base};
-  const patch = {id: uid('ai_patch'), sourceId, mask, bbox,
-    name: '✦ ' + text.slice(0, 36), prompt: text, awaitingResult: true,
+  const regionNumber=++premium.regionSerial,color=REGION_COLORS[(regionNumber-1)%REGION_COLORS.length];
+  const patch = {id: uid('ai_patch'), sourceId, mask, bbox, regionNumber, color,
+    name: '✦ R'+regionNumber+' · '+text.slice(0,32), prompt: text, awaitingResult: true,
     projectPrompt: premium.projectPrompt,
     request: {baseImage: base, reference: state.reference, mask, prompt: text}};
   state.sources.set(sourceId, source);
@@ -249,8 +353,9 @@ function createRegionRequest(prompt) {
   resetSelection();
   renderGroups();
   render();
-  message('Masked request saved in ' + group.name + '. Attach an AI result to fill only the selected area.');
-  toast('AI request queued locally. Attach a result when it is ready.');
+  message('Region '+regionNumber+' assigned '+color+'. Sending to AI.');
+  toast('AI region '+regionNumber+' queued.');
+  return patch.id;
 }
 async function attachAIResult(file) {
   const patch = state.patches.get(premium.uploadPatch);
@@ -275,27 +380,36 @@ async function attachAIResult(file) {
     toast('Generated result masked automatically and added to its region group.');
   } catch (error) {toast('Could not attach result: ' + error.message);}
 }
-function openHarmonize() {
+async function openHarmonize() {
   if (!state.master || !state.reference) {toast('Upload Base first.');return;}
   if (state.pendingSourceId || state.editingPatchId) {toast('Apply or discard the current mask first.');return;}
   if (premium.previewNode) {toast('Close the archive preview or branch from it before harmonizing.');return;}
   if (state.groups.some(g => g.active && state.patches.get(g.active)?.awaitingResult)) {
     toast('An active masked AI request is still waiting for its result image.');return;
   }
+  if(!await window.MosaicAuth.ensure())return;
   $('harmonizePromptInput').value = core.promptText();
   showDialog('harmonizeDialog');
 }
-function harmonizeLocally(prompt) {
-  // Provider slot: send Base + currentComposite() + prompt to a trusted
-  // backend once an AI endpoint and premium entitlements are actually configured.
+async function harmonizeWithAI(prompt) {
+  if(!await window.MosaicAuth.ensure())return;
+  if(state.groups.some(g=>state.patches.get(g.active)?.awaitingResult)){toast('Finish pending region edits first.');return}
+  const a=$('harmonizeBtn'),b=$('harmonizeSidebarBtn');a.disabled=true;b.disabled=true;
   const flattened = currentComposite();
+  let finalImage;
+  try{
+    message('Generating harmonized architecture image with OpenAI…');
+    const answer=await window.MosaicAuth.request('/api/ai/harmonize',encodeRequest(prompt));
+    finalImage=await fromGeneratedJPEG(answer.image);
+  }catch(error){toast('Harmonize failed: '+error.message);message('Your original collage is unchanged. Please retry.');return}
+  finally{a.disabled=false;b.disabled=false}
   const graph = copyGraph(state.groups, state.patches, state.sources);
   const number = ++premium.serial;
   const node = {
     id: uid('harmonized'), number, base: cloneCanvas(state.master),
     groups: graph.groups, patches: graph.patches, sources: graph.sources,
-    output: cloneCanvas(flattened), prompt, parent: premium.root,
-    branchedFrom: premium.branchFrom, aiGenerated: false
+    output: cloneCanvas(finalImage), prompt, parent: premium.root,
+    branchedFrom: premium.branchFrom, aiGenerated: true
   };
   premium.root = node;
   premium.expanded.add(node.id);
@@ -304,7 +418,7 @@ function harmonizeLocally(prompt) {
     originalBase: state.reference, collage: cloneCanvas(flattened),
     prompt, snapshotId: node.id
   };
-  state.master = flattened;
+  state.master = finalImage;
   state.groups = [];
   state.patches = new Map();
   state.sources = new Map();
@@ -315,13 +429,13 @@ function harmonizeLocally(prompt) {
   state.redo = [];
   premium.branchFrom = node.id;
   resetSelection();
-  $('masterTitle').textContent = 'Harmonized ' + number + ' · Local';
+  $('masterTitle').textContent = 'Harmonized ' + number + ' · AI';
   $('masterInfo').textContent = canvas.width + ' × ' + canvas.height + ' · working image';
-  $('projectName').textContent = 'Harmonized ' + number + ' · local snapshot';
+  $('projectName').textContent = 'Harmonized ' + number + ' · AI render';
   renderGroups();
   render();
   message('Flattened working image created. Expand Harmonized ' + number + ' to access previous layers.');
-  toast('Harmonized ' + number + ' archived. Preview only: no AI API connected.');
+  toast('Harmonization saved, with previous editable layers archived.');
 }
 function exportPrompt() {
   return premium.lastRequest?.prompt || null;
@@ -337,7 +451,7 @@ window.MosaicPremium = {
   projectPrompt: () => premium.projectPrompt,
   onReferenceLoaded, onMasterReset, canSelectArea, onPatchApplied,
   drawArchivePreview, isPreviewing, renderHistory, handleGroupEvent,
-  originalImage, exportPrompt
+  originalImage, exportPrompt, drawRegionGuides
 };
 for (const id of ['editProjectPromptBtn', 'projectPromptToolbarBtn']) $(id).addEventListener('click', () => {
   $('projectPromptInput').value = premium.projectPrompt;
@@ -356,7 +470,8 @@ $('areaPromptForm').addEventListener('submit', e => {
   const text = $('areaPromptInput').value.trim();
   if (!text) return;
   $('areaPromptDialog').close();
-  createRegionRequest(text);
+  const patchId=createRegionRequest(text);
+  if(patchId)void generateRegion(patchId);
 });
 for (const id of ['harmonizeBtn', 'harmonizeSidebarBtn'])
   $(id).addEventListener('click', openHarmonize);
@@ -364,7 +479,7 @@ $('harmonizeForm').addEventListener('submit', e => {
   e.preventDefault();
   const prompt = $('harmonizePromptInput').value.trim() || core.promptText();
   $('harmonizeDialog').close();
-  harmonizeLocally(prompt);
+  void harmonizeWithAI(prompt);
 });
 $('aiResultInput').addEventListener('change', async e => {
   await attachAIResult(e.target.files[0]);
@@ -373,3 +488,9 @@ $('aiResultInput').addEventListener('change', async e => {
 document.querySelectorAll('[data-close-dialog]').forEach(button =>
   button.addEventListener('click', () => $(button.dataset.closeDialog).close()));
 updateIntent();
+
+$('regionGuidesBtn').addEventListener('click',()=>{
+  premium.showGuides=!premium.showGuides;
+  $('regionGuidesBtn').setAttribute('aria-pressed',String(premium.showGuides));
+  render();
+});
