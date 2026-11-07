@@ -91,6 +91,15 @@ Click an existing region or variation in **Layers** to select it. Mosaic activat
 
 The original Base geometry is preserved separately from the working Master.
 
+## Non-blocking AI generation and masking
+
+- The quick selection prompt's **+ Reference image** and the per-Group inline **+ Ref** controls are explicit buttons that open a native file picker. Both also support pasted images and drag/drop directly into the prompt.
+- Canvas pointer events do not intercept clicks inside the floating prompt, so opening the picker or typing cannot dismiss it.
+- Regional AI generation captures a copy of the submitted mask/crop; the live mask, lasso, active tool, editor and current option remain editable while requests run and after their results arrive.
+- AI result downloads update the corresponding image source behind the current editor. The Groups panel keeps any inline prompt text and attached reference images during AI progress updates.
+- Full Master generation closes the prompt modal before the network request and updates an existing Master's background without deleting its Groups. Harmonize stores an archive snapshot from when it was requested and doesn't reset any active mask editor when it finishes.
+- If a different project/Master is loaded before a Harmonize response returns, the response is not applied to that new project. Native file import processing remains a separate brief blocking step.
+
 ## Paste or drag references into AI prompts
 
 - Every image-generation prompt accepts images by **Ctrl/Cmd+V** (copied screenshot or image), **drag-and-drop into the prompt text area**, or the normal **+ Reference images** file picker.
