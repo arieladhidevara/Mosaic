@@ -406,17 +406,25 @@ async function generateRegion(patchId,regenerate=false){
   const patch=state.patches.get(patchId);
   if(!patch||patch.generating||(!regenerate&&!patch.awaitingResult))return;
   patch.generating=true;renderGroups();
+  // Freeze exactly the collage, crop and mask that were submitted. Subsequent
+  // drawing/editing must not change a queued request's target or alignment.
+  let capture;
+  try{capture=encodeRegionalCrop(patch)}
+  catch(error){patch.generating=false;renderGroups();toast('Local AI edit: '+error.message);return}
+  const initialCorners=JSON.stringify(patch.corners||null);
+  const generationId=patch.sourceId;
+  const canvasSize={width:canvas.width,height:canvas.height};
   const run=async()=>{
     try{
       if(!await window.MosaicAuth.ensure())throw Error('Premium login canceled.');
-      const {payload,region,visibleMask}=encodeRegionalCrop(patch);
-      const generationId=patch.sourceId;
+      const {payload,region,visibleMask}=capture;
       message('Generating only the selected area with nearby architectural context…');
       const answer=await window.MosaicAuth.request('/api/ai/edit',payload);
       const image=await fromGeneratedJPEG(answer.image,{width:region.w,height:region.h});
       const existing=state.patches.get(patchId);
-      if(!existing||!state.sources.has(generationId)||existing.sourceId!==generationId)return;
-      const result=makeCanvas(canvas.width,canvas.height);
+      if(!existing||!state.sources.has(generationId)||existing.sourceId!==generationId
+        ||canvas.width!==canvasSize.width||canvas.height!==canvasSize.height)return;
+      const result=makeCanvas(canvasSize.width,canvasSize.height);
       result.getContext('2d').drawImage(image,region.x,region.y,region.w,region.h);
       // Always fork on regeneration to preserve shared source images and older options.
       if(regenerate){
@@ -427,7 +435,9 @@ async function generateRegion(patchId,regenerate=false){
         const source=state.sources.get(existing.sourceId);
         source.canvas=result;source.name='AI region '+patch.regionNumber;
       }
-      if(existing.corners?.length){
+      if(existing.corners?.length
+        && state.editingPatchId!==patchId
+        && JSON.stringify(existing.corners)===initialCorners){
         existing.mask=cloneCanvas(visibleMask);
         existing.bbox=maskBoundingBox(existing.mask);
         existing.corners=null;
@@ -455,8 +465,8 @@ async function generateRegion(patchId,regenerate=false){
 }
 async function regenerateOption(patchId){
   const patch=state.patches.get(patchId);
-  if(!patch||patch.generating||state.pendingSourceId||state.editingPatchId){
-    toast('Finish editing the active image first.');return;
+  if(!patch||patch.generating||state.pendingSourceId){
+    toast('Finish the imported image or running request first.');return;
   }
   if(!await window.MosaicAuth.ensure())return;
   if(!patch.prompt){
