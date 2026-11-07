@@ -54,7 +54,7 @@ function clearDraft(){state.lasso=[];state.hoverPoint=null;state.pointerStart=nu
 function clearHover(){window.MosaicRegions?.clearHover()}
 function hideQuickPrompt(){document.getElementById('quickAreaPromptForm')?.classList.add('hidden')}
 function showQuickPrompt(point=state.lastCanvasPointer){
-  if(!window.MosaicAuth?.isReady()||!state.master||!state.selectionMask||!maskBoundingBox(state.selectionMask)||state.pendingSourceId||state.editingPatchId)return;
+  if(!state.master||!state.selectionMask||!maskBoundingBox(state.selectionMask)||state.pendingSourceId||state.editingPatchId)return;
   const form=$('quickAreaPromptForm'),vp=$('viewport'),r=vp.getBoundingClientRect();
   const x=(point?.clientX??r.left+r.width/2)-r.left+12,y=(point?.clientY??r.top+r.height/2)-r.top+12;
   form.style.left=Math.max(6,Math.min(x,r.width-280))+'px';
@@ -693,7 +693,7 @@ function snapshotPatch(p){state.undo.push({type:'patch',patchId:p.id,image:p.mas
 function commitMaskPath(trace){if(!state.selectionMask)return;const m=state.selectionMask.getContext('2d');snapshotSelection();m.save();
   if(state.selectionMode==='new')m.clearRect(0,0,canvas.width,canvas.height);
   m.globalCompositeOperation=state.selectionMode==='subtract'?'destination-out':'source-over';m.fillStyle='#ffffff';m.beginPath();trace(m);m.closePath();m.fill();m.restore();
-  state.pendingRevealOnly=Boolean(state.pendingSourceId);updateSelectionOutline();prepareSelectionGroup();updateApplyButton();render();message(state.pendingSourceId?'Click Apply to keep the selected part of the new image.':window.MosaicAuth?.isReady()?'Selection ready. Describe a Premium edit.':'Selection ready. Add an image to apply this region.');showQuickPrompt()}
+  state.pendingRevealOnly=Boolean(state.pendingSourceId);updateSelectionOutline();prepareSelectionGroup();updateApplyButton();render();message(state.pendingSourceId?'Click Apply to keep the selected part of the new image.':'Selection ready. Describe an AI edit or add another image.');showQuickPrompt()}
 function updateMaskWithLasso(){const points=state.lasso.filter((p,i,a)=>i===0||Math.hypot(p.x-a[i-1].x,p.y-a[i-1].y)>.01);
   if(points.length<3||!state.selectionMask)return false;
   commitMaskPath(m=>points.forEach((p,i)=>i?m.lineTo(p.x,p.y):m.moveTo(p.x,p.y)));
@@ -870,7 +870,7 @@ function onKeys(e){if(e.target.matches('input,textarea')||e.repeat&&e.key==='Ent
     if(state.lasso.length>=3){e.preventDefault();updateMaskWithLasso();return}
     // Enter closes a draft shape; only clicking Apply commits an imported image.
     if(state.pendingSourceId||state.editingPatchId){e.preventDefault();message('Selection ready. Click Apply to commit the patch.');return}
-    if(window.MosaicAuth?.isReady()&&maskBoundingBox(state.selectionMask||makeCanvas(1,1))){e.preventDefault();showQuickPrompt()}
+    if(maskBoundingBox(state.selectionMask||makeCanvas(1,1))){e.preventDefault();showQuickPrompt()}
   }
   else if(e.key==='Escape'){e.preventDefault();if(state.lasso.length||state.shapeStart){clearDraft();drawOverlay();message('Unfinished shape canceled.')}else{resetSelection();render();message('Selection cleared.')}}
   else if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='z'){e.preventDefault();historyStep(state.undo,state.redo)}
@@ -927,7 +927,6 @@ $('quickAreaDismiss').addEventListener('click',hideQuickPrompt);
 $('quickAreaPromptInput').addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();$('quickAreaPromptForm').requestSubmit()}});
 $('quickAreaPromptForm').addEventListener('submit',e=>{
   e.preventDefault();
-  if(!window.MosaicAuth?.isReady())return hideQuickPrompt();
   const prompt=$('quickAreaPromptInput').value.trim();if(!prompt)return;
   const referenceFiles=window.MosaicPremium?.getReferenceFiles?.('quick')||[];
   hideQuickPrompt();void window.MosaicPremium?.generateSelection?.(prompt,null,referenceFiles);

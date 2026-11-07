@@ -1,65 +1,58 @@
-/* Single-user Premium BYOK. OpenAI key lives only in tab memory. */
+/* BYOK image generation. No Mosaic account: OpenAI key lives only in this tab's JS memory. */
 const $=id=>document.getElementById(id);
-const dialog=$('premiumLoginDialog'),form=$('premiumLoginForm'),button=$('premiumStatusBtn');
-let signedIn=false,key='',pending=null,finishPending=null;
-function updateButton(){button.textContent=signedIn?'✦ Premium account':'✦ Premium login';button.classList.toggle('premium-active',signedIn);document.body.classList.toggle('premium-ready',signedIn&&Boolean(key))}
-async function status(){
-  try {const res=await fetch('/api/session',{credentials:'same-origin',cache:'no-store'});const data=await res.json();signedIn=Boolean(data.authenticated)}
-  catch{signedIn=false}
-  updateButton();return signedIn;
+const dialog=$('apiKeyDialog'),form=$('apiKeyForm'),button=$('apiKeyStatusBtn');
+let key='',pending=null,finishPending=null;
+const validKey=value=>/^sk-[\w-]{15,300}$/.test(value);
+function updateButton(){
+  const ready=Boolean(key);
+  button.textContent=ready?'✦ API key added':'✦ Add API key';
+  button.classList.toggle('premium-active',ready);
+  document.body.classList.toggle('premium-ready',ready);
 }
-function openLogin(){
-  $('premiumUsernameInput').value='arieladhidevara';
-  $('premiumPasswordInput').value='';$('premiumKeyInput').value='';
-  $('premiumPasswordRow').classList.toggle('hidden',signedIn);
-  $('premiumPasswordInput').required=!signedIn;
-  $('premiumLoginTitle').textContent=signedIn?'Connect your OpenAI API key':'Sign in to Mosaic Premium';
-  $('premiumLogoutBtn').classList.toggle('hidden',!signedIn);
-  $('premiumLoginError').textContent='';
+function openKeyDialog(){
+  $('apiKeyInput').value='';
+  $('apiKeyRemoveBtn').classList.toggle('hidden',!key);
+  $('apiKeyError').textContent='';
   if(!dialog.open)dialog.showModal();
+  $('apiKeyInput').focus({preventScroll:true});
 }
-function complete(value){if(finishPending){finishPending(value);finishPending=null;pending=null}}
+function complete(value){
+  if(finishPending){finishPending(value);finishPending=null;pending=null}
+}
 async function ensure(){
-  if(signedIn&&key)return true;
-  await status();
-  if(signedIn&&key)return true;
+  if(key)return true;
   if(pending)return pending;
   pending=new Promise(resolve=>{finishPending=resolve});
-  openLogin();
+  openKeyDialog();
   return pending;
 }
 async function request(path,body){
-  if(!signedIn||!key)throw Error('Premium login and an OpenAI API key are required.');
-  const response=await fetch(path,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({...body,apiKey:key})});
-  const result=await response.json().catch(()=>({error:'Unexpected API response'}));
+  if(!key)throw Error('Add your OpenAI API key to generate images.');
+  if(!/^\/api\/ai\/(?:master|edit|harmonize|classify|option-name)$/.test(path))
+    throw Error('Unsupported AI request.');
+  // HTTPS to Mosaic's same-origin function, which forwards this key to OpenAI.
+  // Do not place keys in URLs, cookies, localStorage or project files.
+  const response=await fetch(path,{
+    method:'POST',credentials:'omit',cache:'no-store',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({...body,apiKey:key})
+  });
+  const result=await response.json().catch(()=>({error:'Unexpected AI response'}));
   if(!response.ok)throw Error(result.error||'AI request failed');
   return result;
 }
-form.addEventListener('submit',async e=>{
-  e.preventDefault();
-  const btn=$('premiumLoginSubmit');btn.disabled=true;$('premiumLoginError').textContent='';
-  try{
-    const nextKey=$('premiumKeyInput').value.trim();
-    if(!/^sk-[\w-]{15,300}$/.test(nextKey))throw Error('Enter a valid OpenAI API key.');
-    if(!signedIn){
-      const response=await fetch('/api/login',{method:'POST',credentials:'same-origin',
-        headers:{'Content-Type':'application/json'},body:JSON.stringify({username:$('premiumUsernameInput').value.trim(),password:$('premiumPasswordInput').value})});
-      const result=await response.json().catch(()=>({}));
-      if(!response.ok)throw Error(result.error||'Login failed');
-      signedIn=true;
-    }
-    key=nextKey;
-    $('premiumPasswordInput').value='';$('premiumKeyInput').value='';
-    dialog.close();updateButton();complete(true);
-  }catch(error){$('premiumLoginError').textContent=error.message}
-  finally{btn.disabled=false}
+form.addEventListener('submit',event=>{
+  event.preventDefault();
+  const nextKey=$('apiKeyInput').value.trim();
+  if(!validKey(nextKey)){$('apiKeyError').textContent='Enter a valid OpenAI API key starting with sk-.';return}
+  key=nextKey;
+  form.reset();complete(true);dialog.close();updateButton();
 });
 dialog.addEventListener('close',()=>complete(false));
-$('premiumLoginCancel').addEventListener('click',()=>dialog.close());
-$('premiumLogoutBtn').addEventListener('click',async()=>{
-  try{await fetch('/api/logout',{method:'POST',credentials:'same-origin'})}catch{}
-  signedIn=false;key='';dialog.close();complete(false);updateButton();
+$('apiKeyCancelBtn').addEventListener('click',()=>dialog.close());
+$('apiKeyRemoveBtn').addEventListener('click',()=>{
+  key='';form.reset();complete(false);dialog.close();updateButton();
 });
-button.addEventListener('click',async()=>{await status();openLogin()});
-window.MosaicAuth={ensure,request,status,isReady:()=>signedIn&&Boolean(key)};
-void status();
+button.addEventListener('click',openKeyDialog);
+window.MosaicAuth={ensure,request,status:async()=>Boolean(key),isReady:()=>Boolean(key)};
+updateButton();

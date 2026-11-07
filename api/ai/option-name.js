@@ -1,11 +1,11 @@
-/* Small Premium semantic naming step. Keeps raw edit prompts in patch metadata. */
-const {send,guard,requireAuth}=require('../../lib/auth');
+/* Small BYOK semantic naming step. Keeps raw edit prompts in patch metadata. */
+const {send,guard,requireApiKey}=require('../../lib/auth');
 module.exports=async function handler(req,res){
-  if(!guard(req,res,'POST')||!requireAuth(req,res))return;
+  if(!guard(req,res,'POST')||!requireApiKey(req,res))return;
   const body=typeof req.body==='string'?JSON.parse(req.body):req.body||{};
   const key=body.apiKey,prompt=String(body.prompt||'').trim().slice(0,1400);
   const category=String(body.category||'Region').slice(0,60);
-  if(typeof key!=='string'||!/^sk-[\w-]{15,300}$/.test(key))return send(res,400,{error:'Premium API key required.'});
+  if(typeof key!=='string'||!/^sk-[\w-]{15,300}$/.test(key))return send(res,400,{error:'OpenAI API key required.'});
   if(!prompt)return send(res,400,{error:'Prompt required.'});
   const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),15000);
   try{

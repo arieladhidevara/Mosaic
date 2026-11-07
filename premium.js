@@ -1,4 +1,4 @@
-/* Mosaic Premium — authenticated masked editing and harmonization. */
+/* Mosaic BYOK — masked AI editing and harmonization with an OpenAI API key. */
 const core = window.MosaicCore;
 if (!core) throw new Error('Mosaic core must load before Premium');
 const {state, canvas, makeCanvas, uid, render, renderGroups, resetSelection, assignGroup, maskBoundingBox, toast, message} = core;
@@ -382,7 +382,7 @@ async function fromGeneratedJPEG(encoded,targetSize=null){
 /* Lightweight category classification; image understanding is separate from rendering. */
 async function classifyArea(mask){
   if(!maskBoundingBox(mask))return 'Region';
-  if(!window.MosaicAuth?.isReady())throw Error('Connect Premium and your OpenAI API key to identify objects.');
+  if(!window.MosaicAuth?.isReady())throw Error('Add an OpenAI API key to identify objects.');
   const bounds=maskBoundingBox(mask);
   const margin=Math.max(18,Math.min(bounds.w,bounds.h)*.22);
   const x=Math.max(0,Math.floor(bounds.x-margin)),y=Math.max(0,Math.floor(bounds.y-margin));
@@ -416,7 +416,7 @@ async function generateRegion(patchId,regenerate=false){
   const canvasSize={width:canvas.width,height:canvas.height};
   const run=async()=>{
     try{
-      if(!await window.MosaicAuth.ensure())throw Error('Premium login canceled.');
+      if(!await window.MosaicAuth.ensure())throw Error('OpenAI API key entry canceled.');
       const {payload,region,visibleMask}=capture;
       message('Generating only the selected area with nearby architectural context…');
       const answer=await window.MosaicAuth.request('/api/ai/edit',payload);
@@ -529,7 +529,7 @@ function createRegionRequest(prompt,referenceImages=[],selectedMask=state.select
   return patch.id;
 }
 async function generateSelection(prompt,groupId=null,referenceFiles=[]){
-  if(!window.MosaicAuth?.isReady()){toast('Sign in to Premium to generate an AI edit.');return}
+  if(!await window.MosaicAuth.ensure())return;
   if(!canSelectArea()){toast('Finish the current imported layer before generating.');return}
   if(state.lasso.length>2)core.updateMaskWithLasso();
   const bbox=maskBoundingBox(state.selectionMask);
