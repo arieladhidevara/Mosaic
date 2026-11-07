@@ -22,6 +22,11 @@ function fittedDimensions(image){
   const fit=Math.min(1,canvas.width/image.width,canvas.height/image.height);
   return {w:image.width*fit,h:image.height*fit};
 }
+function transformedPoint(point,image,t){
+  const fit=fittedDimensions(image),r=t.rotation*Math.PI/180;
+  const x=(point.x-image.width/2)*fit.w/image.width*t.scale,y=(point.y-image.height/2)*fit.h/image.height*t.scale;
+  return {x:canvas.width/2+t.x+Math.cos(r)*x-Math.sin(r)*y,y:canvas.height/2+t.y+Math.sin(r)*x+Math.cos(r)*y};
+}
 function drawTransformed(target,image,t,opacity=1){
   const {w,h}=fittedDimensions(image);
   target.save();target.translate(canvas.width/2+t.x,canvas.height/2+t.y);
@@ -76,7 +81,7 @@ function redraw(){
   paint.setLineDash([7/Math.max(.25,state.zoom),5/Math.max(.25,state.zoom)]);
   paint.beginPath();points.forEach((p,i)=>i?paint.lineTo(p.x,p.y):paint.moveTo(p.x,p.y));
   paint.closePath();paint.stroke();paint.setLineDash([]);
-  const radius=5/Math.max(.25,state.zoom);
+  const radius=3/Math.max(.25,state.zoom);
   for(const p of points){
     paint.fillStyle='#faf7ff';paint.strokeStyle='#8067cf';
     paint.fillRect(p.x-radius,p.y-radius,radius*2,radius*2);
@@ -90,7 +95,7 @@ function redraw(){
 function start(kind,patchId=null){
   if(state.busy||state.editingPatchId){toast('Finish the current mask edit first.');return}
   if(editing)cancel();
-  let original,sourceId=null,label='',optionMask=null,startingTransform=null;
+  let original,sourceId=null,label='',optionMask=null,optionPoints=[],startingTransform=null;
   if(kind==='base'){original=state.reference;label='BASE'}
   else if(kind==='master'){original=state.master;label='MASTER'}
   else if(kind==='source'){
@@ -108,6 +113,7 @@ function start(kind,patchId=null){
         const w=Math.max(1,Math.min(canvas.width-x,Math.ceil(bounds.x+bounds.w)-x));
         const h=Math.max(1,Math.min(canvas.height-y,Math.ceil(bounds.y+bounds.h)-y));
         original=makeCanvas(w,h);original.getContext('2d').drawImage(visible,-x,-y);
+        optionPoints=core.patchControlPoints(patch).map(point=>({x:point.x-x,y:point.y-y}));
         optionMask=makeCanvas(w,h);optionMask.getContext('2d').drawImage(mask,-x,-y);
         startingTransform={x:x+w/2-canvas.width/2,y:y+h/2-canvas.height/2,scale:1,rotation:0,opacity:.20};
       }
@@ -131,7 +137,7 @@ function start(kind,patchId=null){
   }
   const guideWasCollapsed=inspector.classList.contains('is-collapsed');
   if(guideWasCollapsed){$('inspectorToggle').click()}
-  editing={kind,patchId,sourceId,image:original,label,optionMask,
+  editing={kind,patchId,sourceId,image:original,label,optionMask,optionPoints,
     wasBaseOnly,initialTransform:startingTransform||{x:0,y:0,scale:1,rotation:0,opacity:.20},
     transform:{...(startingTransform||{x:0,y:0,scale:1,rotation:0,opacity:.20})}};
   inspector.classList.add('source-editor-active');
@@ -177,6 +183,7 @@ function apply(){
       state.sources.set(id,{id,name:source.name+' edited',canvas:raster});
       patch.sourceId=id;patch.mask=transformedMask;
       patch.bbox=core.maskBoundingBox(transformedMask)||patch.bbox;
+      patch.maskPoints=current.optionPoints.map(point=>transformedPoint(point,current.image,current.transform));
       patch.corners=null; // Previous warp is now included in the raster and mask.
       core.invalidateDisplayedMask(patch);
       const group=state.groups.find(g=>g.patchIds.includes(patch.id));
@@ -188,6 +195,7 @@ function apply(){
         const movedSelection=makeCanvas(canvas.width,canvas.height);
         drawTransformed(movedSelection.getContext('2d'),state.selectionMask,current.transform,1);
         state.selectionMask=movedSelection;
+        state.selectionPoints=(state.selectionPoints||[]).map(point=>transformedPoint(point,current.image,current.transform));
         core.updateSelectionOutline();
       }
     }

@@ -56,12 +56,14 @@ MIT License.
 
 1. Upload **Base**. A compact prompt bar appears under Base: type the first prompt and press **Enter** to generate a Master, or click the image icon to attach up to 3 visual references. Paste (Ctrl/Cmd+V) or drag image references into the bar too; small thumbnails appear only when attached. Alternatively upload Master manually. Base remains the camera/geometry reference.
 2. Draw a Lasso, Rectangle or Oval selection, click **Area**, and enter the instruction for that region. Each requested area receives a new colored contour and numbered label. Multiple areas can have different prompts.
-2a. **Generate Master from Base** uses **high** image quality for a full-resolution first Master; **AI Edit** stays **medium** and **Harmonize** is **high**.
-3. **AI Edit** crops the selected mask's bounding box plus about 30% of its dimensions (minimum 72px on each side) for context. It sends only those aligned crops of the current collage and Base, together with the local mask, colored guide and prompt notes. The OpenAI Image Edit request uses **medium** quality and an output resolution proportional to this crop. It does **not** render the full architecture image for a local material variation.
+2a. **Generate Master from Base** uses **high** image quality for a full-resolution first Master; **Advanced Settings** provides Low / Medium / High quality for **AI Edit** (default Medium) and **Harmonize** (default High). Preferences are saved in each `.mosaic` project; older projects use these defaults.
+3. **AI Edit** crops the exact selected mask bounds with 15% padding based on the longest dimension (minimum 48px per side), clipped to the canvas edges. It sends the proportional cropped collage and transparent edit mask, prompt notes and any attached user references. **Preserve Original Geometry** defaults to Off; enable it to include the full original Base as an extra geometry reference. Colored Region Guide images are never sent to OpenAI. Output uses the model's supported `auto` size and is fitted back to the captured crop window.
 4. The returned **crop-only output** is resized to the original crop window and composited into the correct position on a transparent full-size working layer. The original selection mask limits the applied pixels; all pixels outside the selected area remain unchanged. Use **✦ Regen** on an option to retry or regenerate; this does not erase the approved option if generation fails.
-5. **Harmonize** sends the full approved collage and Base (no local crop) at **high** quality to produce a new full Master. The Groups panel retains prior alternatives, and Master 2/3/etc. appear in the Master Versions browser. Previous editable snapshots remain in memory for branching.
+5. **Harmonize** sends the full approved collage and Base (no local crop) at the selected Harmonize quality to produce a new full Master. Base is always included, regardless of the geometry toggle. The Groups panel retains prior alternatives, and Master 2/3/etc. appear in the Master Versions browser. Previous editable snapshots remain in memory for branching.
 
-API-generated images are not perfectly geometry-constrained; masking guarantees outside-region pixels are left untouched by regional edits, but a full-image Harmonize may still change geometry. Region guide overlays are only for reference and can be toggled off.
+Initial Master, AI Edit and Harmonize use `gpt-image-2.6-sunburst` through the Images Edit API. Initial Master always uses High quality.
+
+API-generated images are not perfectly geometry-constrained; masking guarantees outside-region pixels are left untouched by regional edits, but a full-image Harmonize may still change geometry. Region guide overlays are local display aids and can be toggled off.
 
 ### API key and security
 
@@ -77,8 +79,8 @@ API-generated images are not perfectly geometry-constrained; masking guarantees 
 
 Click an existing region or variation in **Layers** to select it. Mosaic activates **Move / Skew** on the canvas:
 
-- Drag inside the outlined patch or its center handle to move the mask and image together.
-- Drag any of the four corner handles independently to skew its shape.
+- Drag inside the outlined mask to move the mask and image together.
+- The outline follows the actual mask. Small handles stay at the clicked polygon vertices and drive the existing warp when dragged; raster masks from older projects recover handles from their boundary.
 - **Reset warp** restores the original location. Undo/redo also includes move and skew.
 - When selecting a moved/skewed option, the current visible mask is reused (not its old location). **Edit Mask** accepts a display-space selection and maps it back to the original source coordinates without losing the warp. Reveal/Erase and Undo/Redo also respect the transformed position.
 - Layer transforms are captured in exports, Harmonized snapshots, and restored history branches.
@@ -122,3 +124,7 @@ The main toolbar is grouped into **Select**, **Edit / Move**, and **Selection Mo
 - Clicking a group heading reuses the **active option's displayed selection**, including its move/skew, on the current image. An imported variation still requires explicit Apply to commit that mask.
 - On desktop, hovering a recognized Region shows a category tooltip and subtle violet boundary. None of these guides enter exported images.
 - Groups and spatial memory remain browser-local. Click the **+ beside Groups** in the right sidebar to add a Group. The old right-side Guide was replaced by a **Help** dialog containing workflow instructions and the advanced harmonization prompt. Desktop drag/drop still moves options between Groups.
+
+## Validation
+
+Run `node --test tests/image-provider.test.cjs` for the server request contract and `node --check <file.js>` for static JavaScript checks. The editor is a static application and has no bundling/build step. `tests/browser-scenarios.js` exercises browser canvas rendering, background generation, quality settings, mask alignment, and project round trips. Run a Node server with the `tests/mock-openai.cjs` preload (for example, `node --require ./tests/mock-openai.cjs local-server.js` when using the local server), load the scenario script into a fresh Mosaic browser tab, then call `await runMosaicBrowserChecks()`. The preload replaces OpenAI responses with generated test images and avoids spending API credits. Live image quality requires an OpenAI API key.

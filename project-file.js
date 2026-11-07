@@ -96,7 +96,7 @@ function projectState(){
   const fields=[
     'reference','master','rawBase','rawMaster','masterIsBase','alignmentTransforms',
     'sources','groups','patches','pendingSourceId','editingPatchId','selectedPatchId',
-    'selectionMask','selectionMode','tool','pendingRevealOnly','serial',
+    'selectionMask','selectionPoints','selectionMode','tool','pendingRevealOnly','serial',
     'draftGroupId','queuedGroupId','selectionGeneration','brushTargetId',
     'undo','redo','zoom','fitZoom'
   ];
@@ -168,7 +168,7 @@ function restoreUI(saved,ui){
   $('projectSize').textContent=hasMaster?canvas.width+' × '+canvas.height:'';
   if(hasMaster)core.updateZoomFit();
   if(hasMaster&&Number.isFinite(saved.zoom)&&saved.zoom>0){
-    const z=Math.max(.08,Math.min(4,saved.zoom));
+    const z=Math.max(.01,Math.min(4,saved.zoom));
     state.zoom=z;
     $('canvasWrap').style.width=Math.round(canvas.width*z)+'px';
     $('canvasWrap').style.height=Math.round(canvas.height*z)+'px';
@@ -201,6 +201,7 @@ async function loadProjectFile(file){
       throw Error('Invalid Master canvas.');
     if(!saved.master&&!saved.reference)throw Error('Project contains no images.');
     Object.assign(state,saved);
+    state.selectionPoints=Array.isArray(saved.selectionPoints)?saved.selectionPoints:[];
     state.queue=restoredQueue;
     state.busy=false;state.before=false;state.transformDrag=null;state.drawing=false;
     state.lasso=[];state.hoverPoint=null;state.pointerStart=null;

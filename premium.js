@@ -4,7 +4,14 @@ if (!core) throw new Error('Mosaic core must load before Premium');
 const {state, canvas, makeCanvas, uid, render, renderGroups, resetSelection, assignGroup, maskBoundingBox, toast, message} = core;
 const $ = id => document.getElementById(id);
 const esc = core.escapeHTML;
+const DEFAULT_SETTINGS={preserveOriginalGeometry:false,regionQuality:'medium',harmonizeQuality:'high'};
+function generationSettings(value={}){
+  const quality=(value,fallback)=>['low','medium','high'].includes(value)?value:fallback;
+  return {preserveOriginalGeometry:value?.preserveOriginalGeometry===true,
+    regionQuality:quality(value?.regionQuality,'medium'),harmonizeQuality:quality(value?.harmonizeQuality,'high')};
+}
 const premium = {
+  settings:{...DEFAULT_SETTINGS},
   projectPrompt: '', root: null, serial: 0, expanded: new Set(),
   previewNode: null, uploadPatch: null, lastRequest: null,
   originalMaster: null, initialMaster: null, masterVersions: [], regenerateFrom: null, branchFrom: null, regionSerial: 0, showGuides: false, generationQueue: Promise.resolve()
@@ -298,21 +305,20 @@ function encodeRequest(prompt,patch=null,masterSource=null,extraReferences=[]){
   for(const maxSize of [1350,1120,900]){
     const scale=Math.min(1,maxSize/Math.max(canvas.width,canvas.height));
     const w=Math.max(128,Math.round(canvas.width*scale)),h=Math.max(128,Math.round(canvas.height*scale));
-    const payload={collage:resizedFrame(collage,w,h),base:resizedFrame(state.reference||premium.initialMaster||state.master,w,h),
+    const payload={collage:resizedFrame(collage,w,h),quality:patch?premium.settings.regionQuality:premium.settings.harmonizeQuality,
       projectPrompt:premium.projectPrompt,prompt,regions:annotationNotes(patch?.id),references:patch?.referenceImages||extraReferences};
+    if(!patch||premium.settings.preserveOriginalGeometry)payload.base=resizedFrame(state.reference||premium.initialMaster||state.master,w,h);
     if(patch){
       payload.mask=transparentEditMask(patch.mask,w,h);
-      const guide=cloneCanvas(collage);paintGuides(guide.getContext('2d'));
-      payload.guide=resizedFrame(guide,w,h);
     }
     if(JSON.stringify(payload).length<3550000)return payload;
   }
   throw Error('Image is too large for the server. Try a smaller Base image.');
 }
 function regionalCropWindow(mask){
-  const bounds=maskBoundingBox(mask);
+  const bounds=core.exactMaskBoundingBox(mask);
   if(!bounds)throw Error('Select a visible part of the image before generating.');
-  const context=Math.max(72,Math.ceil(Math.max(bounds.w,bounds.h)*.30));
+  const context=Math.max(48,Math.ceil(Math.max(bounds.w,bounds.h)*.15));
   const x=Math.max(0,Math.floor(bounds.x-context));
   const y=Math.max(0,Math.floor(bounds.y-context));
   const right=Math.min(canvas.width,Math.ceil(bounds.x+bounds.w+context));
@@ -337,33 +343,26 @@ function cropFrame(source,window,w,h,mask=false){
   return frame.toDataURL(mask?'image/png':'image/jpeg',mask?undefined:.78);
 }
 function encodeRegionalCrop(patch){
-  const visualMask=core.displayedPatchMask(patch);
+  const visualMask=cloneCanvas(core.displayedPatchMask(patch));
   const region=regionalCropWindow(visualMask);
   const collage=currentComposite(),base=state.reference||premium.initialMaster||state.master;
-  const guide=cloneCanvas(collage);
-  paintGuides(guide.getContext('2d'));
   for(const maxDimension of [1152,960,768]){
-    const scale=Math.min(1,maxDimension/Math.max(region.w,region.h));
+    const scale=Math.max(128/Math.min(region.w,region.h),Math.min(1,maxDimension/Math.max(region.w,region.h)));
     const w=Math.max(128,Math.round(region.w*scale));
     const h=Math.max(128,Math.round(region.h*scale));
     const payload={
       collage:cropFrame(collage,region,w,h),
-      base:cropFrame(base,region,w,h),
       mask:cropFrame(visualMask,region,w,h,true),
-      guide:cropFrame(guide,region,w,h),
+      quality:premium.settings.regionQuality,
       projectPrompt:premium.projectPrompt,
       prompt:patch.prompt,
       regions:annotationNotes(patch.id),
-      references:patch.referenceImages||[],
-      cropSize: (() => {
-        // GPT Image 2.5 supports custom sizes in multiples of 16.
-        // Keep local output proportional to this crop, not to the full canvas.
-        const factor=Math.max(1,512/Math.min(w,h));
-        const rw=Math.round(Math.min(1536,w*factor)/16)*16;
-        const rh=Math.round(Math.min(1536,h*factor)/16)*16;
-        return rw/rh>3||rh/rw>3?'auto':rw+'x'+rh;
-      })()
+      references:patch.referenceImages||[]
     };
+    if(premium.settings.preserveOriginalGeometry){
+      const baseScale=Math.min(1,maxDimension/Math.max(base.width,base.height));
+      payload.base=resizedFrame(base,Math.max(128,Math.round(base.width*baseScale)),Math.max(128,Math.round(base.height*baseScale)));
+    }
     if(JSON.stringify(payload).length<3550000)return {payload,region,visibleMask:visualMask};
   }
   throw Error('Selection crop is too large. Try fewer reference images or a smaller Base.');
@@ -411,7 +410,7 @@ async function generateRegion(patchId,regenerate=false){
   let capture;
   try{capture=encodeRegionalCrop(patch)}
   catch(error){patch.generating=false;renderGroups();toast('Local AI edit: '+error.message);return}
-  const initialCorners=JSON.stringify(patch.corners||null);
+  const submittedPatch={bbox:{...patch.bbox},corners:patch.corners?.map(point=>({...point}))||null};
   const generationId=patch.sourceId;
   const canvasSize={width:canvas.width,height:canvas.height};
   const run=async()=>{
@@ -423,9 +422,16 @@ async function generateRegion(patchId,regenerate=false){
       const image=await fromGeneratedJPEG(answer.image,{width:region.w,height:region.h});
       const existing=state.patches.get(patchId);
       if(!existing||!state.sources.has(generationId)||existing.sourceId!==generationId
-        ||canvas.width!==canvasSize.width||canvas.height!==canvasSize.height)return;
-      const result=makeCanvas(canvasSize.width,canvasSize.height);
-      result.getContext('2d').drawImage(image,region.x,region.y,region.w,region.h);
+        ||canvas.width!==canvasSize.width||canvas.height!==canvasSize.height){
+        if(existing)existing.generating=false;renderGroups();return;
+      }
+      const placed=makeCanvas(canvasSize.width,canvasSize.height),placedContext=placed.getContext('2d');
+      placedContext.drawImage(image,region.x,region.y,region.w,region.h);
+      placedContext.globalCompositeOperation='destination-in';
+      placedContext.drawImage(visibleMask,0,0);
+      // Restore source coordinates before applying the option's existing warp.
+      // A move/skew made while this request was queued remains in effect.
+      const result=core.unwarpPatchSelection(placed,submittedPatch);
       // Always fork on regeneration to preserve shared source images and older options.
       if(regenerate){
         const id=uid('ai_source');
@@ -435,14 +441,7 @@ async function generateRegion(patchId,regenerate=false){
         const source=state.sources.get(existing.sourceId);
         source.canvas=result;source.name='AI region '+patch.regionNumber;
       }
-      if(existing.corners?.length
-        && state.editingPatchId!==patchId
-        && JSON.stringify(existing.corners)===initialCorners){
-        existing.mask=cloneCanvas(visibleMask);
-        existing.bbox=maskBoundingBox(existing.mask);
-        existing.corners=null;
-        core.invalidateDisplayedMask(existing);
-      }
+      core.invalidateDisplayedMask(existing);
       existing.awaitingResult=false;
       if(!existing.manualName&&!existing.semanticNamed)existing.name=core.optionNameFromPrompt(existing.prompt,'AI edit '+(patch.regionNumber||''));
       existing.generating=false;
@@ -500,7 +499,7 @@ async function suggestSemanticName(patchId,prompt){
     }
   }catch(error){/* Local semantic naming remains active if the optional model is offline. */}
 }
-function createRegionRequest(prompt,referenceImages=[],selectedMask=state.selectionMask,groupId=null) {
+function createRegionRequest(prompt,referenceImages=[],selectedMask=state.selectionMask,groupId=null,selectedPoints=state.selectionPoints) {
   const bbox = maskBoundingBox(selectedMask);
   if (!bbox) {toast('Selection has no pixels.');return;}
   const mask = cloneCanvas(selectedMask);
@@ -509,7 +508,7 @@ function createRegionRequest(prompt,referenceImages=[],selectedMask=state.select
   const text = prompt.trim();
   const source = {id: sourceId, name: 'AI request', canvas: base};
   const regionNumber=++premium.regionSerial,color=REGION_COLORS[(regionNumber-1)%REGION_COLORS.length];
-  const patch = {id: uid('ai_patch'), sourceId, mask, bbox, regionNumber, color,
+  const patch = {id: uid('ai_patch'), sourceId, mask, bbox, maskPoints:selectedPoints?.map(point=>({...point}))||[],regionNumber, color,
     name: core.optionNameFromPrompt(text,'AI edit '+regionNumber), manualName:false, prompt: text, referenceImages, awaitingResult: true,
     groupId:groupId||state.draftGroupId||null,
     projectPrompt: premium.projectPrompt,
@@ -535,12 +534,13 @@ async function generateSelection(prompt,groupId=null,referenceFiles=[]){
   const bbox=maskBoundingBox(state.selectionMask);
   if(!bbox){toast('Select a region before generating.');return}
   const savedMask=cloneCanvas(state.selectionMask),generation=state.selectionGeneration;
+  const savedPoints=state.selectionPoints?.map(point=>({...point}))||[];
   const requestedGroupId=groupId||state.draftGroupId||null;
   try{
     const referenceImages=await prepareReferenceImages(referenceFiles);
     if(generation!==state.selectionGeneration){toast('The project changed. Please select the region again.');return}
     const targetGroup=requestedGroupId&&state.groups.some(g=>g.id===requestedGroupId)?requestedGroupId:null;
-    const patchId=createRegionRequest(prompt,referenceImages,savedMask,targetGroup);
+    const patchId=createRegionRequest(prompt,referenceImages,savedMask,targetGroup,savedPoints);
     if(patchId)void generateRegion(patchId);
   }catch(error){toast('Reference upload: '+error.message)}
 }
@@ -842,7 +842,7 @@ function encodeMasterRequest(prompt,referenceImages){
     const factor=Math.min(1,maxSize/Math.max(base.width,base.height));
     const w=Math.max(128,Math.round(base.width*factor)),h=Math.max(128,Math.round(base.height*factor));
     const encoded=resizedFrame(base,w,h);
-    const payload={base:encoded,collage:encoded,projectPrompt:prompt,prompt,references:referenceImages,regions:[]};
+    const payload={base:encoded,collage:encoded,quality:'high',projectPrompt:prompt,prompt,references:referenceImages,regions:[]};
     if(JSON.stringify(payload).length<3550000)return payload;
   }
   throw Error('Base and references are too large. Try smaller images.');
@@ -938,6 +938,7 @@ $('masterGenerateForm').addEventListener('submit',event=>void generateMaster(eve
 
 function exportProjectState(){
   return {
+    settings:{...premium.settings},
     projectPrompt:premium.projectPrompt,
     root:premium.root,
     serial:premium.serial,
@@ -954,6 +955,8 @@ function exportProjectState(){
 }
 function restoreProjectState(snapshot){
   const data=snapshot||{};
+  premium.settings=generationSettings(data.settings);
+  syncGenerationSettings();
   premium.projectPrompt=String(data.projectPrompt||'');
   premium.root=data.root||null;
   premium.serial=Number(data.serial)||0;
@@ -981,6 +984,16 @@ window.MosaicPremium = {
   drawArchivePreview, isPreviewing, renderHistory, handleGroupEvent,
   originalImage, exportPrompt, drawRegionGuides, classifyArea
 };
+function syncGenerationSettings(){
+  $('preserveOriginalGeometry').checked=premium.settings.preserveOriginalGeometry;
+  $('regionRenderQuality').value=premium.settings.regionQuality;
+  $('harmonizeQuality').value=premium.settings.harmonizeQuality;
+}
+for(const id of ['preserveOriginalGeometry','regionRenderQuality','harmonizeQuality'])$(id).addEventListener('change',()=>{
+  premium.settings=generationSettings({preserveOriginalGeometry:$('preserveOriginalGeometry').checked,
+    regionQuality:$('regionRenderQuality').value,harmonizeQuality:$('harmonizeQuality').value});
+});
+syncGenerationSettings();
 for (const id of ['editProjectPromptBtn', 'projectPromptToolbarBtn']) $(id).addEventListener('click', () => {
   $('projectPromptInput').value = premium.projectPrompt;
   showDialog('projectPromptDialog');

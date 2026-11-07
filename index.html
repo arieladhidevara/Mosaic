@@ -64,6 +64,16 @@
 
       <aside class="right-sidebar" id="inspectorPanel">
         <div class="inspector-bar"><span id="inspectorHeading">GROUPS</span><button id="helpBtn" type="button" class="btn btn-quiet compact" title="Mosaic help and shortcuts">? Help</button><button id="inspectorToggle" class="icon-btn small" type="button" aria-expanded="true" aria-label="Minimize Groups panel" title="Minimize Groups panel">−</button></div><section id="sourceEditorPanel" class="source-editor-panel hidden"><div class="eyebrow">IMAGE POSITION</div><h2 id="sourceEditTitle">Edit image</h2><p>Drag the image or its corner handles. The 20% opacity overlay lets you see alignment against the image below.</p><label>Overlay opacity <input id="sourceEditOpacity" type="range" min="5" max="80" value="20" step="5"/><output id="sourceEditOpacityValue">20%</output></label><label>Scale <input id="sourceEditScale" type="range" min="20" max="300" value="100" step="1"/><output id="sourceEditScaleValue">100%</output></label><label>Rotation <input id="sourceEditRotation" type="range" min="-180" max="180" value="0" step="1"/><output id="sourceEditRotationValue">0°</output></label><div class="source-edit-coordinates"><label>X <input id="sourceEditX" type="number" value="0" step="1"/></label><label>Y <input id="sourceEditY" type="number" value="0" step="1"/></label></div><div class="source-edit-actions"><button id="sourceEditReset" type="button" class="btn btn-quiet compact">Reset position</button><button id="sourceEditCancel" type="button" class="btn btn-outline compact">Cancel</button><button id="sourceEditApply" type="button" class="btn btn-primary compact">Apply</button></div></section>
+        <details id="advancedSettings" class="advanced-settings">
+          <summary>Advanced Settings</summary>
+          <div class="advanced-settings-body">
+            <label class="geometry-setting"><span>Preserve Original Geometry</span><span class="switch"><input id="preserveOriginalGeometry" type="checkbox" role="switch"/><span aria-hidden="true"></span></span></label>
+            <small>Use Base as an extra geometry reference for region edits. Harmonize always includes Base.</small>
+            <label for="regionRenderQuality">Region Render Quality</label><select id="regionRenderQuality"><option value="low">Low</option><option value="medium" selected>Medium</option><option value="high">High</option></select>
+            <label for="harmonizeQuality">Harmonize Quality</label><select id="harmonizeQuality"><option value="low">Low</option><option value="medium">Medium</option><option value="high" selected>High</option></select>
+            <small>Initial Master: High. Settings are saved with this project.</small>
+          </div>
+        </details>
         <section id="groupsPanel" class="groups-panel"><div class="section-heading"><div><div class="eyebrow">02 · COMPOSITION</div><h2>Groups <span id="groupCount" class="count-tag">0</span></h2></div><button id="addRegionBtn" aria-label="Add new group" type="button" title="Add new Group" class="icon-btn small">＋</button></div>
         <input id="variantInput" type="file" accept="image/*" multiple hidden/>
         <div class="sidebar-hint">Select an area → <strong>AI Edit</strong> to generate, or <strong>Apply</strong> to keep a variation.</div>

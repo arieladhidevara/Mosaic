@@ -481,3 +481,16 @@
 .harmonize-reference-row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:7px}
 .harmonize-reference-row .reference-upload-action{margin:0}
 .harmonize-reference-row .reference-previews{flex:1}
+
+/* Fit uses the viewport's actual padding, with a small gutter at every size. */
+.canvas-viewport{padding:10px}
+.canvas-header{flex-shrink:0}
+@media(min-width:731px) and (max-width:999px){.main-panel:has(.toolbar-section-title) .canvas-viewport,.main-panel:has(.toolbar-section-title) .canvas-foot{margin-left:154px}}
+.advanced-settings{flex:none;border-bottom:1px solid var(--border);font-size:11px}
+.advanced-settings>summary{padding:11px 13px;color:#c9c5eb;cursor:pointer;font-weight:700}
+.advanced-settings-body{display:grid;gap:8px;padding:0 13px 13px;max-height:300px;overflow:auto}
+.advanced-settings-body small{color:var(--muted);font-size:10px;line-height:1.5}
+.advanced-settings-body select{width:100%;border:1px solid #454956;border-radius:6px;background:#242731;color:var(--ink);padding:6px;font:inherit}
+.geometry-setting{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.geometry-setting .switch input:focus-visible+span{outline:2px solid #c0b8ff;outline-offset:3px}
+.right-sidebar.is-collapsed .advanced-settings,.right-sidebar.source-editor-active .advanced-settings{display:none}
