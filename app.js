@@ -63,6 +63,7 @@ function showQuickPrompt(point=state.lastCanvasPointer){
   const left=Math.max(0,r.left)+margin,right=Math.min(window.innerWidth,r.right)-margin;
   const top=Math.max(0,r.top)+margin,bottom=Math.min(window.innerHeight,r.bottom)-margin;
   form.style.maxWidth=Math.max(120,right-left)+'px';
+  form.style.maxHeight=Math.max(120,bottom-top)+'px';
   form.classList.remove('hidden');
   const bounds=form.getBoundingClientRect(),w=bounds.width,h=bounds.height;
   const pointerX=point?.clientX??r.left+r.width/2,pointerY=point?.clientY??r.top+r.height/2;
