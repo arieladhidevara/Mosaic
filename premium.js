@@ -535,10 +535,11 @@ async function generateSelection(prompt,groupId=null,referenceFiles=[]){
   const bbox=maskBoundingBox(state.selectionMask);
   if(!bbox){toast('Select a region before generating.');return}
   const savedMask=cloneCanvas(state.selectionMask),generation=state.selectionGeneration;
+  const requestedGroupId=groupId||state.draftGroupId||null;
   try{
     const referenceImages=await prepareReferenceImages(referenceFiles);
     if(generation!==state.selectionGeneration){toast('The project changed. Please select the region again.');return}
-    const targetGroup=groupId&&state.groups.some(g=>g.id===groupId)?groupId:null;
+    const targetGroup=requestedGroupId&&state.groups.some(g=>g.id===requestedGroupId)?requestedGroupId:null;
     const patchId=createRegionRequest(prompt,referenceImages,savedMask,targetGroup);
     if(patchId)void generateRegion(patchId);
   }catch(error){toast('Reference upload: '+error.message)}
@@ -558,7 +559,8 @@ async function attachAIResult(file) {
     patch.awaitingResult = false;
     if(!patch.manualName&&!patch.semanticNamed)patch.name = core.optionNameFromPrompt(patch.prompt,file.name.replace(/\.[^.]+$/,''));
     const group = state.groups.find(g => g.patchIds.includes(patch.id));
-    if (group) group.active = patch.id;
+    // Keep the user's currently selected Group option as-is. The generated
+    // layer is updated in place; an import must never steal the active option.
     // Uploading a replacement result must not interrupt a live mask edit.
     renderGroups();
     render();
@@ -864,7 +866,9 @@ async function createMasterFromBase(prompt,files,button,afterSuccess){
     if(!await window.MosaicAuth.ensure())return;
     const images=await prepareReferenceImages(files);
     const request=encodeMasterRequest(prompt,images);
-    message('Generating Master from Base…');
+    // Never keep a modal blocking canvas tools while a full Master generates.
+    if($('masterGenerateDialog').open)$('masterGenerateDialog').close();
+    message('Generating Master in the background. You can keep editing masks.');
     const reply=await window.MosaicAuth.request('/api/ai/master',request);
     if(state.reference!==baseAtRequest
       ||(state.master!==masterAtRequest&&!state.masterIsBase)){
