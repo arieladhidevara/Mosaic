@@ -102,7 +102,7 @@ function handleGroupEvent(e){
       if(window.MosaicAuth?.isReady()){
         list.querySelectorAll('.region-option-prompt').forEach(el=>el.remove());
         const field=document.createElement('form');field.className='region-option-prompt';
-        field.innerHTML='<input type="text" maxlength="250" aria-label="New material or edit prompt" placeholder="e.g. Black, Walnut, Terrazzo" required><label class="reference-upload-action">＋ Ref<input class="region-reference-input" type="file" accept="image/png,image/jpeg,image/webp" multiple hidden></label><span class="reference-previews region-inline-previews"></span><button type="submit">✦ Generate</button>';
+        field.innerHTML='<input type="text" maxlength="250" aria-label="New material or edit prompt" placeholder="e.g. Black, Walnut, Terrazzo" required><button class="reference-upload-action region-reference-button" type="button" aria-label="Attach reference images to this Group option">＋ Ref</button><input class="region-reference-input" type="file" accept="image/png,image/jpeg,image/webp" multiple hidden><span class="reference-previews region-inline-previews"></span><button type="submit">✦ Generate</button>';
         list.querySelector('.region-group[data-group="'+group.id+'"] .group-options')?.prepend(field);
         field.addEventListener('click',event=>event.stopPropagation());
         const references=window.MosaicPremium?.bindInlineReferencePrompt?.(field);

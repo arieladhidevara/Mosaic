@@ -555,7 +555,17 @@ function drawOverlay(){ox.clearRect(0,0,overlay.width,overlay.height);drawDraftP
 }
 function escapeHTML(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]))}
 function renderGroups(){
-  const list=$('groupList');$('groupCount').textContent=state.groups.length;updateSourceActions();
+  const list=$('groupList');
+  // Async AI status/semantic naming refreshes the Groups panel while people
+  // type an inline prompt. Preserve the actual form node, its attached files,
+  // paste handlers and caret instead of destroying it with innerHTML.
+  const liveForm=list.querySelector('.region-option-prompt');
+  const liveGroup=liveForm?.closest('.region-group[data-group]')?.dataset.group;
+  const liveFocus=liveForm?.contains(document.activeElement)?document.activeElement:null;
+  const caret=liveFocus&&typeof liveFocus.selectionStart==='number'
+    ?[liveFocus.selectionStart,liveFocus.selectionEnd]:null;
+  if(liveForm)liveForm.remove();
+  $('groupCount').textContent=state.groups.length;updateSourceActions();
   $('pendingBanner').classList.toggle('hidden',!state.pendingSourceId);
   if(state.pendingSourceId){const source=state.sources.get(state.pendingSourceId);$('pendingName').textContent='● Editing: '+(source?.name||'New variation')}
   if(!state.groups.length){
@@ -572,6 +582,18 @@ function renderGroups(){
     const originalRow=g.hasHarmonizedMaster?'':`<div class="variant-row ${g.active===null?'selected':''}" data-action="choose" data-group="${g.id}" data-patch="master"><span class="variant-dot"></span><span class="variant-text">Original Master</span></div>`;
     return `<div class="region-group" data-group="${g.id}"><div class="group-head" data-action="focus" data-group="${g.id}"><span class="group-icon">▧</span><span class="group-name">${escapeHTML(g.name)}</span><span class="group-count">${g.patchIds.length} options</span><button type="button" class="variant-action group-add-option" data-region-action="add-option" title="Add an option to this region" aria-label="Add region option">＋</button></div><div class="group-options">${order.map(optionRow).join('')}${originalRow}</div></div>`;
   }).join('');
+  if(liveForm&&liveGroup){
+    const section=[...list.querySelectorAll('.region-group[data-group]')]
+      .find(group=>group.dataset.group===liveGroup);
+    const slot=section?.querySelector('.group-options');
+    if(slot){
+      slot.prepend(liveForm);
+      if(liveFocus){
+        liveFocus.focus({preventScroll:true});
+        if(caret)try{liveFocus.setSelectionRange(...caret)}catch{/* Not a text input. */}
+      }
+    }
+  }
   window.MosaicRegions?.decorate();window.MosaicPremium?.decorateActive?.();updateSourceActions();
 }
 function editExisting(pid){if(state.pendingSourceId){toast('Apply or discard your new image before editing saved variants.');return}const patch=state.patches.get(pid);if(!patch)return;state.editingPatchId=pid;state.selectedPatchId=pid;resetSelection();state.selectionMask.getContext('2d').drawImage(displayedPatchMask(patch),0,0);setMode('add');selectTool('lasso');updateSelectionOutline();updateApplyButton();message('Editing a saved mask. Refine it, then click Update mask to commit changes.')}
