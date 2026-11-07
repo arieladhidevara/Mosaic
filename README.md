@@ -1,6 +1,6 @@
 # Mosaic — AI Collage Workspace
 
-Mosaic is a manual-first architectural AI collage editor with optional single-account Premium image generation powered by OpenAI. Choose exactly which parts to keep from multiple AI-generated variations, group alternatives by masked location, and export a ready-to-harmonize ZIP for ChatGPT or another image model.
+Mosaic is a manual-first architectural AI collage editor with optional bring-your-own-key image generation powered by OpenAI. Choose exactly which parts to keep from multiple AI-generated variations, group alternatives by masked location, and export a ready-to-harmonize ZIP for ChatGPT or another image model.
 
 ## Workflow
 
@@ -13,7 +13,7 @@ Mosaic is a manual-first architectural AI collage editor with optional single-ac
 7. Use **Compare master**: hold the button with a mouse to compare temporarily; on touch devices tap once to view master and again to return.
 8. Export a ZIP with `01_Base.png`, `02_Final_Collage.png`, and `03_Harmonization_Prompt.txt`.
 
-The prompt can also be copied directly from the interface. Manual image processing is local; Premium edits and harmonization use authenticated serverless OpenAI API routes.
+The prompt can also be copied directly from the interface. Manual image processing is local; AI edits and harmonization use same-origin serverless OpenAI API routes with the user's own OpenAI API key.
 
 ## Important notes
 
@@ -50,9 +50,9 @@ The public GitHub repository `arieladhidevara/Mosaic` is connected to the Mosaic
 
 MIT License.
 
-## Premium AI workflow (OpenAI via authenticated backend)
+## AI workflow (OpenAI API key only)
 
-Premium is a private, **single-account** feature (no public signup or billing). The username is `arieladhidevara`. The password is never stored in GitHub. Before login will work, configure the Vercel server environment variables listed below.
+**No Mosaic username, password or account is required.** Click **✦ Add API key** in the toolbar and enter your OpenAI API key (or select any AI Generate action to open the key dialog automatically). The API key is validated for format locally and checked by OpenAI when you run a request.
 
 1. Upload **Base**. Enter the first prompt below the Base card, with up to three optional visual reference images; Generate creates the first Master as a separate image. Alternatively upload Master manually. Base remains the camera/geometry reference.
 2. Draw a Lasso, Rectangle or Oval selection, click **Area**, and enter the instruction for that region. Each requested area receives a new colored contour and numbered label. Multiple areas can have different prompts.
@@ -63,21 +63,15 @@ Premium is a private, **single-account** feature (no public signup or billing). 
 
 API-generated images are not perfectly geometry-constrained; masking guarantees outside-region pixels are left untouched by regional edits, but a full-image Harmonize may still change geometry. Region guide overlays are only for reference and can be toggled off.
 
-### Activation / security
+### API key and security
 
-Required Vercel environment variables, set for Production (and Preview if using previews):
-
-- `MOSAIC_ADMIN_USERNAME=arieladhidevara`
-- `MOSAIC_PASSWORD_HASH` — run `node scripts/hash-password.cjs` locally, type the admin password (hidden), and paste the generated `scrypt:...` value into Vercel.
-- `MOSAIC_SESSION_SECRET` — generate a strong random value with `node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"`.
-
-Never commit the real values. Redeploy to apply newly configured variables. Login uses a secure HTTP-only signed session cookie with an eight-hour expiry. There is an in-memory login attempt throttle, but for a public website you should also enable distributed rate limiting in Vercel Firewall.
-
-The OpenAI API key is entered during Premium login and is kept **only in the current tab's JavaScript memory**; it is forwarded over HTTPS to the authenticated server function on each generation and then to OpenAI. It is not stored in the project history, cookies, localStorage, repository or environment variables. Refreshing the tab requires re-entering the key. ChatGPT subscription billing and OpenAI API usage are separate.
-
-Endpoints: `/api/login`, `/api/session`, `/api/logout`, `/api/ai/master`, `/api/ai/edit`, `/api/ai/harmonize`, `/api/ai/classify`, and `/api/ai/option-name`. AI routes require a valid Premium session and the user's OpenAI API key. Up to three optional image references per generation are resized and validated. Browser state is not persisted.
-
-Use Vercel to run Premium; a plain local static file server runs only the manual editor.
+- **No Mosaic admin credentials, cookie sessions, signup, or server environment variables are needed.** Remove-key control disconnects the current tab.
+- OpenAI API key entry uses a masked input, stays only in the current browser tab's JavaScript memory and disappears after a refresh or tab close. It is **never** stored in cookies, `localStorage`, GitHub, the project file or a server environment variable.
+- On each AI action, the browser sends the key in the HTTPS POST body to the Mosaic same-origin serverless function. That function checks the request origin, validates the key's format, and forwards it to OpenAI. The app never embeds or shares an API key in its source code.
+- This is **BYOK**: every user uses their own API key and is responsible for their OpenAI API charges. ChatGPT subscriptions do not include OpenAI API credit.
+- Because Mosaic runs on a publicly accessible URL, anyone who supplies a valid OpenAI API key can use the AI endpoints. Use Vercel Firewall / rate limiting to reduce resource abuse. **Only enter your API key in a deployment you trust.**
+- Supported endpoints: `/api/ai/master`, `/api/ai/edit`, `/api/ai/harmonize`, `/api/ai/classify`, `/api/ai/option-name`. Legacy `/api/login`, `/api/session`, `/api/logout`, and admin password setup have been removed.
+- Up to 3 reference images per generation are resized and validated before they are sent. Running the UI from a static file server allows manual editing; AI functions require a deployed Node.js serverless runtime.
 
 ## Move & Skew layers
 
@@ -112,7 +106,7 @@ The original Base geometry is preserved separately from the working Master.
 
 - Click **Save project** to download a versioned, lossless JSON-based `.mosaic` file. It includes Base, working Master, original uploads, source layers, Groups, Option names/prompts, saved selections, moved/skewed masks, current draft selection, Undo/Redo, queued image files, Master Versions and editable Harmonize history.
 - Click **Open project** to restore a previously saved file and resume editing. Imported images are decoded and validated before the current project is replaced. Files over **300 MB** are rejected; large multi-version projects may create correspondingly large files.
-- Save/Open is local and does not require an AI API request. **Premium passwords and OpenAI API keys are never written into project files**; the user signs in again to use AI.
+- Save/Open is local and does not require an AI API request. **OpenAI API keys are never written into project files**; the user re-enters a key after refresh to use AI.
 - Finished composite export remains separate from project save: use **Export package** for the approved flat images/ZIP, or **Save project** to continue editing later.
 
 ## UX notes (November 2026)
@@ -122,7 +116,7 @@ The main toolbar is grouped into **Select**, **Edit / Move**, and **Selection Mo
 ## Semantic Groups and spatial memory
 
 - The first completed lasso, rectangle, oval, or Magic Wand selection creates a reusable named Group. Groups can also be explicitly created using **+** before selecting any pixels. Their reusable union mask is stored separately from individual option masks.
-- With Premium login and a user-provided OpenAI API key, Mosaic automatically classifies the highlighted crop using the gpt-4.1-mini vision model through /api/ai/classify. This incurs separate API charges. No hidden calls are made while logged out.
+- When an OpenAI API key has been added, Mosaic automatically classifies the highlighted crop using the gpt-4.1-mini vision model through /api/ai/classify. This incurs separate API charges. No model calls are made before an API key has been added.
 - Without a key, the default category is Region. It can be changed manually, inferred from a subsequent edit prompt, or identified explicitly with the ✦ button. Model categories are suggestions, not guaranteed object detection.
 - Each Option has **Edit, Rename, Delete, and ✦ Regen** actions. Local parsing derives concise names (e.g. “Make it black” → “Black”), with optional Premium semantic naming. Manually edited names take precedence.
 - Clicking a group heading reuses the **active option's displayed selection**, including its move/skew, on the current image. An imported variation still requires explicit Apply to commit that mask.
