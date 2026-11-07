@@ -505,6 +505,12 @@ function activeTransformPatch(){
   const patch=state.patches.get(state.selectedPatchId);
   return patch&&state.groups.some(g=>g.active===patch.id)?patch:null;
 }
+function deselectCanvasRegion(){
+  state.selectedPatchId=null;state.queuedGroupId=null;
+  resetSelection();overlay.style.cursor='default';
+  $('resetTransformBtn').classList.add('hidden');
+  renderGroups();render();
+}
 function beginTransform(e,p){
   if(state.pendingSourceId||state.editingPatchId||window.MosaicPremium?.isPreviewing())return false;
   let patch=activeTransformPatch(),hit=patch&&transformHit(p,patch);
@@ -515,9 +521,10 @@ function beginTransform(e,p){
       patch=other;hit=found;state.selectedPatchId=patch.id;renderGroups();break;
     }
   }
-  if(!patch||!hit)return false;
+  if(!patch||!hit){deselectCanvasRegion();return false}
   const initial=copyCorners(patchCorners(patch));
   state.transformDrag={patchId:patch.id,hit,start:p,initial,moved:false};
+  $('resetTransformBtn').classList.remove('hidden');
   overlay.setPointerCapture(e.pointerId);
   overlay.style.cursor=hit.kind==='corner'?'crosshair':'grabbing';
   drawOverlay();return true;
@@ -670,7 +677,7 @@ function groupEvent(e){if(window.MosaicRegions?.handleGroupEvent(e))return;if(wi
   if(action==='edit'){editExisting(pid);return}
   if(action==='choose'&&group){if(state.pendingSourceId){toast('Apply or discard the new image first.');return}state.editingPatchId=null;resetSelection();group.active=pid==='master'?null:pid;refreshGroupFootprint(group);state.selectedPatchId=group.active;if(group.active)selectTool('transform');renderGroups();render();return}
   if(action==='delete'&&group){if(state.pendingSourceId){toast('Finish the new image before removing variants.');return}group.patchIds=group.patchIds.filter(x=>x!==pid);state.patches.delete(pid);if(group.active===pid)group.active=group.patchIds.at(-1)||null;if(state.editingPatchId===pid)state.editingPatchId=null;if(state.selectedPatchId===pid)state.selectedPatchId=null;if(!group.patchIds.length)state.groups=state.groups.filter(g=>g.id!==group.id);else refreshGroupFootprint(group);resetSelection();renderGroups();render();toast('Variant removed.')}}
-function selectTool(tool){if(window.MosaicSourceEditor?.isEditing())return;clearDraft();hideQuickPrompt();state.tool=tool;if(state.pendingSourceId&&tool==='reveal'){state.pendingRevealOnly=true;render()}$('resetTransformBtn').classList.toggle('hidden',tool!=='transform');
+function selectTool(tool){if(window.MosaicSourceEditor?.isEditing())return;clearDraft();hideQuickPrompt();state.tool=tool;if(state.pendingSourceId&&tool==='reveal'){state.pendingRevealOnly=true;render()}$('resetTransformBtn').classList.toggle('hidden',tool!=='transform'||!activeTransformPatch());
   $('viewport').classList.toggle('is-selecting',['lasso','rect','ellipse','wand','reveal','erase'].includes(tool));
   $('wandOptions').classList.toggle('hidden',tool!=='wand');
   $('brushOptions').classList.toggle('hidden',tool!=='reveal'&&tool!=='erase');
@@ -876,13 +883,13 @@ function updateZoomFit(){if(!state.master)return;const v=$('viewport'),style=get
 function setZoom(z){state.zoom=clamp(z,.01,4);$('canvasWrap').style.width=Math.round(canvas.width*state.zoom)+'px';$('canvasWrap').style.height=Math.round(canvas.height*state.zoom)+'px';canvas.style.width=overlay.style.width='100%';canvas.style.height=overlay.style.height='100%';$('zoomValue').textContent=Math.round(state.zoom*100)+'%';drawOverlay()}
 function canMask(){return Boolean(state.pendingSourceId||state.editingPatchId||(['lasso','rect','ellipse','wand'].includes(state.tool)&&window.MosaicPremium?.canSelectArea()))}
 function pointerDown(e){if(!state.master||state.busy||state.before||e.button!==0&&e.pointerType==='mouse')return;
-  if(state.tool==='transform'){const p=canvasPoint(e);beginTransform(e,p);return}
+  if(state.tool==='transform'){const p=canvasPoint(e,false);beginTransform(e,p);return}
   if(state.tool==='pan'){state.panAnchor={x:e.clientX,y:e.clientY,left:$('viewport').scrollLeft,top:$('viewport').scrollTop};e.currentTarget.setPointerCapture(e.pointerId);return}
   state.lastCanvasPointer={clientX:e.clientX,clientY:e.clientY};
   if(state.tool==='select'){
-    const region=findRegionAt(canvasPoint(e));
+    const region=findRegionAt(canvasPoint(e,false));
     if(region){selectGroupMask(region);showQuickPrompt(state.lastCanvasPointer);message('Selected '+region.name+'. '+(state.pendingSourceId?'Press Enter to keep this area.':'Generate an option or refine the selection.'))}
-    else{hideQuickPrompt();message('Click a saved Group, or draw one using Lasso / Rect / Oval / Wand.')}
+    else{if(!state.pendingSourceId&&!state.editingPatchId)deselectCanvasRegion();else hideQuickPrompt();message('Click a saved Group, or draw one using Lasso / Rect / Oval / Wand.')}
     return;
   }
   if(state.tool==='reveal'||state.tool==='erase'){
@@ -912,7 +919,7 @@ function pointerMove(e){
   // latest pointer *move*, not only pointerdown/up, for prompt anchoring.
   if(Number.isFinite(e.clientX)&&Number.isFinite(e.clientY))
     state.lastCanvasPointer={clientX:e.clientX,clientY:e.clientY};
-  window.MosaicRegions?.onPointerMove(e);if(state.tool==='transform'){if(state.transformDrag){moveTransform(canvasPoint(e))}else{const patch=activeTransformPatch(),hit=patch&&transformHit(canvasPoint(e),patch);overlay.style.cursor=hit?(hit.kind==='corner'?'crosshair':'move'):'default'}return}if(state.tool==='pan'&&state.panAnchor){$('viewport').scrollLeft=state.panAnchor.left-(e.clientX-state.panAnchor.x);$('viewport').scrollTop=state.panAnchor.top-(e.clientY-state.panAnchor.y);return}
+  window.MosaicRegions?.onPointerMove(e);if(state.tool==='transform'){if(state.transformDrag){moveTransform(canvasPoint(e))}else{const patch=activeTransformPatch(),hit=patch&&transformHit(canvasPoint(e,false),patch);overlay.style.cursor=hit?(hit.kind==='corner'?'crosshair':'move'):'default'}return}if(state.tool==='pan'&&state.panAnchor){$('viewport').scrollLeft=state.panAnchor.left-(e.clientX-state.panAnchor.x);$('viewport').scrollTop=state.panAnchor.top-(e.clientY-state.panAnchor.y);return}
   const p=canvasPoint(e,!['lasso','rect','ellipse'].includes(state.tool));
   if(state.tool==='lasso'){if(!state.drawing){if(state.lasso.length){state.hoverPoint=p;drawOverlay()}return}
     const threshold=5/state.zoom;
@@ -923,7 +930,7 @@ function pointerMove(e){
   if(!state.drawing)return;
   if(state.tool==='rect'||state.tool==='ellipse'){state.shapeEnd=p;state.constrainShape=e.shiftKey;drawOverlay()}
   else if(state.tool==='reveal'||state.tool==='erase')paint(e,false)}
-function pointerUp(e){if(state.tool==='transform'){endTransform();return}if(state.tool==='pan'){state.panAnchor=null;return}if(!state.drawing)return;
+function pointerUp(e){if(state.tool==='transform'){if(state.transformDrag)endTransform();return}if(state.tool==='pan'){state.panAnchor=null;return}if(!state.drawing)return;
   const p=canvasPoint(e,!['lasso','rect','ellipse'].includes(state.tool)),tool=state.tool;state.lastCanvasPointer={clientX:e.clientX,clientY:e.clientY};state.drawing=false;state.lastPoint=null;
   if(tool==='lasso'){if(state.dragFreehand){const last=state.lasso.at(-1);if(Math.hypot(p.x-last.x,p.y-last.y)>0.1/state.zoom)state.lasso.push(p);updateMaskWithLasso()}
     else if(state.pointerStart){const first=state.lasso[0],nearFirst=state.lasso.length>=3&&Math.hypot(p.x-first.x,p.y-first.y)<=10/state.zoom;

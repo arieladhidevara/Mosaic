@@ -77,6 +77,42 @@ window.runMosaicBrowserChecks=async function(){
       $('undoBtn').click();assert(!selected.corners,'Undo did not restore the polygon transform');
     }finally{core.overlay.setPointerCapture=capture}
     checks.push('Selection: mask contour, clicked vertex handles, handle drag, transform undo');
+    const clickAt=(x,y)=>{
+      const rect=core.overlay.getBoundingClientRect();
+      const event=new PointerEvent('pointerdown',{bubbles:true,pointerId:8,pointerType:'mouse',button:0,
+        clientX:rect.left+x/canvas.width*rect.width,clientY:rect.top+y/canvas.height*rect.height});
+      core.overlay.dispatchEvent(event);
+      core.overlay.dispatchEvent(new PointerEvent('pointerup',{bubbles:true,pointerId:8,pointerType:'mouse',button:0,
+        clientX:event.clientX,clientY:event.clientY}));
+    };
+    const originalPixels=pixels(),groupId=selected.groupId,maskBefore=selected.mask.toDataURL();
+    // This point is inside the polygon's bounding box, but outside its mask.
+    clickAt(595,430);
+    assert(state.selectedPatchId===null&&state.boundaryCanvas===null,'Outside click kept the transform selection active');
+    assert($('resetTransformBtn').classList.contains('hidden'),'Outside click kept transform controls visible');
+    assert(!state.transformDrag,'Outside click started a transform');
+    assert(core.overlay.style.cursor==='default','Outside click kept the move cursor active');
+    assert(state.groups.find(g=>g.id===groupId)?.active===selected.id&&selected.mask.toDataURL()===maskBefore,'Deselecting changed the saved layer or mask');
+    assert(pixels().every((value,index)=>value===originalPixels[index]),'Deselecting changed composition pixels');
+    core.selectTool('select');clickAt(350,300);
+    assert(state.draftGroupId===groupId&&state.boundaryCanvas,'Clicking the mask did not select it again');
+    clickAt(900,600);
+    assert(state.draftGroupId===null&&state.boundaryCanvas===null&&!core.maskBoundingBox(state.selectionMask),'Blank click kept the saved group selection active');
+    assert($('quickAreaPromptForm').classList.contains('hidden'),'Blank click left the selection prompt open');
+    // Padding must not get clamped to a selected pixel at the image edge.
+    const edgeMask=makeCanvas(canvas.width,canvas.height);edgeMask.getContext('2d').fillRect(0,100,50,80);
+    const edgePatch={id:core.uid('edge_patch'),sourceId:selected.sourceId,mask:edgeMask,bbox:{x:0,y:100,w:50,h:80},name:'Edge selection'};
+    const edgeGroup=core.assignGroup(edgePatch);core.resetSelection();state.selectedPatchId=edgePatch.id;core.selectTool('transform');
+    clickAt(-25/state.zoom,140);
+    assert(state.selectedPatchId===null&&!state.transformDrag,'Viewport padding selected an edge mask');
+    core.selectTool('select');clickAt(-25/state.zoom,140);
+    assert(state.draftGroupId===null&&!state.boundaryCanvas,'Viewport padding selected an edge group');
+    // Keep an unfinished import's mask safe when the user clicks blank space.
+    state.pendingSourceId=selected.sourceId;state.selectionMask.getContext('2d').drawImage(selected.mask,0,0);core.updateSelectionOutline();
+    clickAt(900,600);assert(core.maskBoundingBox(state.selectionMask),'Blank click discarded an unfinished import mask');
+    state.pendingSourceId=null;core.resetSelection();
+    assert(edgeGroup.active===edgePatch.id,'Deselecting hid an approved option');
+    checks.push('Outside clicks: deselect mask and handles, preserve saved pixels/layers, reselect inside, ignore viewport padding, protect unfinished imports');
     // A tiny edge selection exercises the 48px minimum and canvas clipping.
     initialize();core.resetSelection();state.selectionMask.getContext('2d').fillRect(0,0,8,10);core.updateSelectionOutline();
     await ai.generateSelection('Tiny red corner');await wait(finished,'edge selection');
