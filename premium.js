@@ -787,8 +787,9 @@ function wireReferencePasteDrop(form,addFiles){
   });
 }
 for(const [scope,[inputId]] of Object.entries(referenceInputIds)){
-  if(scope==='quick'){
-    $('quickAreaReferenceButton').addEventListener('click',event=>{
+  const pickerButton={quick:'quickAreaReferenceButton',welcome:'welcomeBaseReferenceButton'}[scope];
+  if(pickerButton){
+    $(pickerButton).addEventListener('click',event=>{
       event.preventDefault();event.stopPropagation();$(inputId).click();
     });
   }
@@ -918,9 +919,18 @@ async function generateMaster(event){
     $('masterGenerateDialog').close();clearReferenceFiles('master');
   });
 }
+// Compact Base prompt: Enter submits. The icon only opens the reference picker.
+$('welcomeBasePromptInput').addEventListener('keydown',event=>{
+  if(event.key==='Enter'&&!event.isComposing){
+    event.preventDefault();
+    const button=$('welcomeBaseGenerateSubmit');
+    if(!button.disabled)$('welcomeBasePromptForm').requestSubmit();
+  }
+});
 $('welcomeBasePromptForm').addEventListener('submit',event=>{
   event.preventDefault();
-  const button=event.currentTarget.querySelector('button[type="submit"]');
+  const button=$('welcomeBaseGenerateSubmit');
+  if(button.disabled)return; // Ignore repeated Enter while a Master is generating.
   void createMasterFromBase($('welcomeBasePromptInput').value,getReferenceFiles('welcome'),button,()=>clearReferenceFiles('welcome'));
 });
 $('generateMasterBtn').addEventListener('click',openMasterGenerate);
