@@ -66,7 +66,14 @@ function showQuickPrompt(point=state.lastCanvasPointer){
   form.style.maxHeight=Math.max(120,bottom-top)+'px';
   form.classList.remove('hidden');
   const bounds=form.getBoundingClientRect(),w=bounds.width,h=bounds.height;
-  const pointerX=point?.clientX??r.left+r.width/2,pointerY=point?.clientY??r.top+r.height/2;
+  // Keyboard completion and programmatic selection fall back to the actual
+  // selection on canvas rather than an arbitrary corner of the viewport.
+  const selection=maskBoundingBox(state.selectionMask);
+  const canvasRect=overlay.getBoundingClientRect();
+  const selectedX=canvasRect.left+(selection.x+selection.w/2)/canvas.width*canvasRect.width;
+  const selectedY=canvasRect.top+(selection.y+selection.h/2)/canvas.height*canvasRect.height;
+  const pointerX=Number.isFinite(point?.clientX)?point.clientX:selectedX;
+  const pointerY=Number.isFinite(point?.clientY)?point.clientY:selectedY;
   const x=Math.max(left,Math.min(right,Math.max(left,pointerX)));
   const y=Math.max(top,Math.min(bottom,Math.max(top,pointerY)));
   // Prefer just below/right of the cursor, then flip above/left near edges.
@@ -842,7 +849,12 @@ function pointerDown(e){if(!state.master||state.busy||state.before||e.button!==0
   else if(state.tool==='rect'||state.tool==='ellipse'){state.shapeStart=p;state.shapeEnd=p;state.constrainShape=e.shiftKey;drawOverlay()}
   else if(state.tool==='reveal'||state.tool==='erase'){snapshotSelection();state.lastPoint=null;paint(e,true)}
 }
-function pointerMove(e){window.MosaicRegions?.onPointerMove(e);if(state.tool==='transform'){if(state.transformDrag){moveTransform(canvasPoint(e))}else{const patch=activeTransformPatch(),hit=patch&&transformHit(canvasPoint(e),patch);overlay.style.cursor=hit?(hit.kind==='corner'?'crosshair':'move'):'default'}return}if(state.tool==='pan'&&state.panAnchor){$('viewport').scrollLeft=state.panAnchor.left-(e.clientX-state.panAnchor.x);$('viewport').scrollTop=state.panAnchor.top-(e.clientY-state.panAnchor.y);return}
+function pointerMove(e){
+  // A lasso can finish via Enter or clicking its starting point. Remember the
+  // latest pointer *move*, not only pointerdown/up, for prompt anchoring.
+  if(Number.isFinite(e.clientX)&&Number.isFinite(e.clientY))
+    state.lastCanvasPointer={clientX:e.clientX,clientY:e.clientY};
+  window.MosaicRegions?.onPointerMove(e);if(state.tool==='transform'){if(state.transformDrag){moveTransform(canvasPoint(e))}else{const patch=activeTransformPatch(),hit=patch&&transformHit(canvasPoint(e),patch);overlay.style.cursor=hit?(hit.kind==='corner'?'crosshair':'move'):'default'}return}if(state.tool==='pan'&&state.panAnchor){$('viewport').scrollLeft=state.panAnchor.left-(e.clientX-state.panAnchor.x);$('viewport').scrollTop=state.panAnchor.top-(e.clientY-state.panAnchor.y);return}
   const p=canvasPoint(e,!['lasso','rect','ellipse'].includes(state.tool));
   if(state.tool==='lasso'){if(!state.drawing){if(state.lasso.length){state.hoverPoint=p;drawOverlay()}return}
     const threshold=5/state.zoom;
