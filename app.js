@@ -56,10 +56,25 @@ function hideQuickPrompt(){document.getElementById('quickAreaPromptForm')?.class
 function showQuickPrompt(point=state.lastCanvasPointer){
   if(!state.master||!state.selectionMask||!maskBoundingBox(state.selectionMask)||state.pendingSourceId||state.editingPatchId)return;
   const form=$('quickAreaPromptForm'),vp=$('viewport'),r=vp.getBoundingClientRect();
-  const x=(point?.clientX??r.left+r.width/2)-r.left+12,y=(point?.clientY??r.top+r.height/2)-r.top+12;
-  form.style.left=Math.max(6,Math.min(x,r.width-280))+'px';
-  form.style.top=Math.max(6,Math.min(y,r.height-190))+'px';
+  // The prompt is position:fixed, so work in actual screen coordinates.
+  // The previous code clamped to the left/top of the viewport, which could
+  // put the prompt hundreds of pixels away from the clicked mask.
+  const margin=10,gap=12;
+  const left=Math.max(0,r.left)+margin,right=Math.min(window.innerWidth,r.right)-margin;
+  const top=Math.max(0,r.top)+margin,bottom=Math.min(window.innerHeight,r.bottom)-margin;
+  form.style.maxWidth=Math.max(120,right-left)+'px';
+  form.style.maxHeight=Math.max(120,bottom-top)+'px';
   form.classList.remove('hidden');
+  const bounds=form.getBoundingClientRect(),w=bounds.width,h=bounds.height;
+  const pointerX=point?.clientX??r.left+r.width/2,pointerY=point?.clientY??r.top+r.height/2;
+  const x=Math.max(left,Math.min(right,Math.max(left,pointerX)));
+  const y=Math.max(top,Math.min(bottom,Math.max(top,pointerY)));
+  // Prefer just below/right of the cursor, then flip above/left near edges.
+  // Clamp only as a final safeguard if the viewport is smaller than the form.
+  const wantedX=x+gap+w<=right?x+gap:x-gap-w;
+  const wantedY=y+gap+h<=bottom?y+gap:y-gap-h;
+  form.style.left=Math.max(left,Math.min(wantedX,Math.max(left,right-w)))+'px';
+  form.style.top=Math.max(top,Math.min(wantedY,Math.max(top,bottom-h)))+'px';
   window.MosaicPremium?.clearReferenceFiles?.('quick');
   $('quickAreaPromptInput').value='';
   $('quickAreaPromptInput').focus({preventScroll:true});
