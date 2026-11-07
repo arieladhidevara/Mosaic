@@ -855,7 +855,10 @@ async function createMasterFromBase(prompt,files,button,afterSuccess){
   if(!state.reference||state.busy)return;
   prompt=String(prompt||'').trim();
   if(!prompt)return toast('Describe your desired Master image first.');
-  if(state.groups.length&&!window.confirm('Replace the current working image and existing regions?'))return;
+  // Generating a replacement Master must never delete the existing region work.
+  // The new Master is composited behind the user's live Groups and mask.
+  const baseAtRequest=state.reference;
+  const masterAtRequest=state.master;
   if(button){button.disabled=true;button.dataset.originalLabel=button.textContent;button.textContent='Generating…'}
   try{
     if(!await window.MosaicAuth.ensure())return;
@@ -863,15 +866,45 @@ async function createMasterFromBase(prompt,files,button,afterSuccess){
     const request=encodeMasterRequest(prompt,images);
     message('Generating Master from Base…');
     const reply=await window.MosaicAuth.request('/api/ai/master',request);
-    const generated=await fromGeneratedJPEG(reply.image,state.reference);
+    if(state.reference!==baseAtRequest
+      ||(state.master!==masterAtRequest&&!state.masterIsBase)){
+      toast('The working project changed during generation; the current work was preserved.');
+      return;
+    }
+    const working=state.master;
+    const sameAspect=working
+      && Math.abs(working.width/working.height-baseAtRequest.width/baseAtRequest.height)<.02;
+    const generated=await fromGeneratedJPEG(reply.image,sameAspect?working:baseAtRequest);
     premium.projectPrompt=prompt;
-    core.setMaster(generated,'Master · AI');
-    premium.originalMaster=cloneCanvas(state.reference);
+    if(working){
+      if(generated.width!==canvas.width||generated.height!==canvas.height){
+        addMasterVersion(generated,'AI generated · not applied',prompt);
+        toast('New Master saved in versions, but aspect ratio differs. Current mask is preserved.');
+      }else{
+        const isFirstMaster=state.masterIsBase||!premium.masterVersions.length;
+        state.master=generated;state.rawMaster=generated;state.masterIsBase=false;
+        const version=addMasterVersion(generated,'AI generated',prompt);
+        if(isFirstMaster)premium.initialMaster=cloneCanvas(generated);
+        premium.originalMaster=cloneCanvas(baseAtRequest);
+        core.setSourcePreview('masterPreview',generated);
+        $('masterTitle').textContent='Master '+version+' · AI';
+        $('masterInfo').textContent=generated.width+' × '+generated.height+' · AI generated';
+        $('masterStatus').textContent='✓';
+        $('masterZone').classList.add('ready');
+        $('projectName').textContent='Master '+version+' · AI';
+        renderGroups();render();
+        message('Master '+version+' updated behind your existing Groups and active mask.');
+        toast('Generated Master in the background; masking stays available.');
+      }
+    }else{
+      core.setMaster(generated,'Master · AI');
+      premium.originalMaster=cloneCanvas(baseAtRequest);
+      message('AI Master ready. Select regions to edit, or add another image.');
+      toast('Generated Master from Base.');
+    }
     updateIntent();
     afterSuccess?.();
     core.updateSourceActions();render();
-    message('AI Master ready. Select regions to edit, or add another image.');
-    toast('Generated Master from Base.');
   }catch(error){toast('Master generation: '+error.message);message('Base image preserved. Retry when ready.')}
   finally{if(button){button.disabled=false;button.textContent=button.dataset.originalLabel||'✦ Generate Master'}}
 }
