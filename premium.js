@@ -438,9 +438,10 @@ async function generateRegion(patchId,regenerate=false){
       existing.generating=false;
       const group=state.groups.find(g=>g.patchIds.includes(patchId));
       if(group)core.refreshGroupFootprint(group);
-      state.selectedPatchId=patchId;core.selectTool('transform');
+      // Async output updates the layer underneath whichever tool, mask or editor
+      // the user is working with. Never steal focus or select another option.
       renderGroups();render();
-      message('Local edit complete. The rest of the composition was not regenerated.');
+      message('Local edit complete in the background. Your current mask is unchanged.');
       toast('Generated medium-quality crop; restored to its exact selected position.');
     }catch(error){
       patch.generating=false;renderGroups();
@@ -489,7 +490,7 @@ async function suggestSemanticName(patchId,prompt){
     }
   }catch(error){/* Local semantic naming remains active if the optional model is offline. */}
 }
-function createRegionRequest(prompt,referenceImages=[],selectedMask=state.selectionMask) {
+function createRegionRequest(prompt,referenceImages=[],selectedMask=state.selectionMask,groupId=null) {
   const bbox = maskBoundingBox(selectedMask);
   if (!bbox) {toast('Selection has no pixels.');return;}
   const mask = cloneCanvas(selectedMask);
@@ -500,17 +501,20 @@ function createRegionRequest(prompt,referenceImages=[],selectedMask=state.select
   const regionNumber=++premium.regionSerial,color=REGION_COLORS[(regionNumber-1)%REGION_COLORS.length];
   const patch = {id: uid('ai_patch'), sourceId, mask, bbox, regionNumber, color,
     name: core.optionNameFromPrompt(text,'AI edit '+regionNumber), manualName:false, prompt: text, referenceImages, awaitingResult: true,
+    groupId:groupId||state.draftGroupId||null,
     projectPrompt: premium.projectPrompt,
     request: {baseImage: base, reference: state.reference, mask, prompt: text}};
   state.sources.set(sourceId, source);
-  const group = assignGroup(patch);
+  const selectedBefore=state.selectedPatchId;
+  assignGroup(patch);
   void suggestSemanticName(patch.id,text);
-  state.selectedPatchId = null;
-  state.editingPatchId = null;
-  resetSelection();
+  // The submitted mask is already an independent snapshot on patch.mask.
+  // Keep the live selection and mask editor intact so another area can be
+  // painted while this background AI request runs.
+  state.selectedPatchId=selectedBefore;
   renderGroups();
   render();
-  message('Region '+regionNumber+' assigned '+color+'. Sending to AI.');
+  message('Region '+regionNumber+' queued in background. Keep editing your mask.');
   toast('AI region '+regionNumber+' queued.');
   return patch.id;
 }
@@ -524,8 +528,8 @@ async function generateSelection(prompt,groupId=null,referenceFiles=[]){
   try{
     const referenceImages=await prepareReferenceImages(referenceFiles);
     if(generation!==state.selectionGeneration){toast('The project changed. Please select the region again.');return}
-    if(groupId){const g=state.groups.find(g=>g.id===groupId);if(g)state.draftGroupId=g.id}
-    const patchId=createRegionRequest(prompt,referenceImages,savedMask);
+    const targetGroup=groupId&&state.groups.some(g=>g.id===groupId)?groupId:null;
+    const patchId=createRegionRequest(prompt,referenceImages,savedMask,targetGroup);
     if(patchId)void generateRegion(patchId);
   }catch(error){toast('Reference upload: '+error.message)}
 }
@@ -545,11 +549,10 @@ async function attachAIResult(file) {
     if(!patch.manualName&&!patch.semanticNamed)patch.name = core.optionNameFromPrompt(patch.prompt,file.name.replace(/\.[^.]+$/,''));
     const group = state.groups.find(g => g.patchIds.includes(patch.id));
     if (group) group.active = patch.id;
-    state.selectedPatchId = patch.id;
-    core.selectTool('transform');
+    // Uploading a replacement result must not interrupt a live mask edit.
     renderGroups();
     render();
-    toast('Generated result masked automatically and added to its region group.');
+    toast('Generated result updated in the background. Current mask stays editable.');
   } catch (error) {toast('Could not attach result: ' + error.message);}
 }
 async function openHarmonize() {
@@ -722,6 +725,11 @@ function clearReferenceFiles(scope){
 function wireReferencePasteDrop(form,addFiles){
   if(!form)return;
   form.classList.add('reference-prompt-target');
+  // The floating prompt lives inside #viewport. A bubbling pointerdown there
+  // used to trigger canvas selection, which closed the form before a file
+  // picker could open. Keep the entire prompt interactive in place.
+  for(const name of ['pointerdown','pointermove','pointerup','pointercancel','dblclick'])
+    form.addEventListener(name,event=>event.stopPropagation());
   form.addEventListener('paste',event=>{
     const images=incomingImageFiles(event);
     if(!images.length)return; // Ordinary text pasting remains unchanged.
@@ -751,6 +759,11 @@ function wireReferencePasteDrop(form,addFiles){
   });
 }
 for(const [scope,[inputId]] of Object.entries(referenceInputIds)){
+  if(scope==='quick'){
+    $('quickAreaReferenceButton').addEventListener('click',event=>{
+      event.preventDefault();event.stopPropagation();$(inputId).click();
+    });
+  }
   $(inputId).addEventListener('change',event=>{
     ingestReferences([...event.target.files],referenceState[scope],()=>renderReferenceFiles(scope));
     event.target.value='';
@@ -764,7 +777,11 @@ for(const [scope,[inputId]] of Object.entries(referenceInputIds)){
 }
 function bindInlineReferencePrompt(form){
   const input=form.querySelector('.region-reference-input');
+  const button=form.querySelector('.region-reference-button');
   const previews=form.querySelector('.region-inline-previews');
+  button?.addEventListener('click',event=>{
+    event.preventDefault();event.stopPropagation();input.click();
+  });
   const refs=[];
   const render=()=>renderThumbnails(previews,refs,index=>{refs.splice(index,1);render()});
   input.addEventListener('change',event=>{
