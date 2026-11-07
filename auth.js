@@ -46,12 +46,12 @@ form.addEventListener('submit',event=>{
   const nextKey=$('apiKeyInput').value.trim();
   if(!validKey(nextKey)){$('apiKeyError').textContent='Enter a valid OpenAI API key starting with sk-.';return}
   key=nextKey;
-  form.reset();dialog.close();updateButton();complete(true);
+  form.reset();complete(true);dialog.close();updateButton();
 });
 dialog.addEventListener('close',()=>complete(false));
 $('apiKeyCancelBtn').addEventListener('click',()=>dialog.close());
 $('apiKeyRemoveBtn').addEventListener('click',()=>{
-  key='';form.reset();dialog.close();updateButton();complete(false);
+  key='';form.reset();complete(false);dialog.close();updateButton();
 });
 button.addEventListener('click',openKeyDialog);
 window.MosaicAuth={ensure,request,status:async()=>Boolean(key),isReady:()=>Boolean(key)};
