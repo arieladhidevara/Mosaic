@@ -54,7 +54,7 @@ MIT License.
 
 **No Mosaic username, password or account is required.** Click **✦ Add API key** in the toolbar and enter your OpenAI API key (or select any AI Generate action to open the key dialog automatically). The API key is validated for format locally and checked by OpenAI when you run a request.
 
-1. Upload **Base**. Enter the first prompt below the Base card, with up to three optional visual reference images; Generate creates the first Master as a separate image. Alternatively upload Master manually. Base remains the camera/geometry reference.
+1. Upload **Base**. A compact prompt bar appears under Base: type the first prompt and press **Enter** to generate a Master, or click the image icon to attach up to 3 visual references. Paste (Ctrl/Cmd+V) or drag image references into the bar too; small thumbnails appear only when attached. Alternatively upload Master manually. Base remains the camera/geometry reference.
 2. Draw a Lasso, Rectangle or Oval selection, click **Area**, and enter the instruction for that region. Each requested area receives a new colored contour and numbered label. Multiple areas can have different prompts.
 2a. **Generate Master from Base** uses **high** image quality for a full-resolution first Master; **AI Edit** stays **medium** and **Harmonize** is **high**.
 3. **AI Edit** crops the selected mask's bounding box plus about 30% of its dimensions (minimum 72px on each side) for context. It sends only those aligned crops of the current collage and Base, together with the local mask, colored guide and prompt notes. The OpenAI Image Edit request uses **medium** quality and an output resolution proportional to this crop. It does **not** render the full architecture image for a local material variation.
