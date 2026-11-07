@@ -99,8 +99,7 @@ function handleGroupEvent(e){
     e.stopPropagation();
     if(action.dataset.regionAction==='add-option'){
       selectGroupMask(group);
-      if(window.MosaicAuth?.isReady()){
-        list.querySelectorAll('.region-option-prompt').forEach(el=>el.remove());
+      list.querySelectorAll('.region-option-prompt').forEach(el=>el.remove());
         const field=document.createElement('form');field.className='region-option-prompt';
         field.innerHTML='<input type="text" maxlength="250" aria-label="New material or edit prompt" placeholder="e.g. Black, Walnut, Terrazzo" required><button class="reference-upload-action region-reference-button" type="button" aria-label="Attach reference images to this Group option">＋ Ref</button><input class="region-reference-input" type="file" accept="image/png,image/jpeg,image/webp" multiple hidden><span class="reference-previews region-inline-previews"></span><button type="submit">✦ Generate</button>';
         list.querySelector('.region-group[data-group="'+group.id+'"] .group-options')?.prepend(field);
@@ -115,10 +114,6 @@ function handleGroupEvent(e){
           field.remove();if(prompt)void window.MosaicPremium?.generateSelection?.(prompt,group.id,images);
         });
         field.querySelector('input').focus({preventScroll:true});
-      }else{
-        state.queuedGroupId=group.id;core.toast('Choose another image, then select its area and click Apply.');
-        document.getElementById('variantInput').click();
-      }
       return true;
     }
     if(action.dataset.regionAction==='rename-group'){
