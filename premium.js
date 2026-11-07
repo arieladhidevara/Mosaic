@@ -585,6 +585,11 @@ async function harmonizeWithAI(prompt,sourceVersion=null) {
   if(state.groups.some(g=>state.patches.get(g.active)?.awaitingResult)){toast('Finish pending region edits first.');return}
   const a=$('harmonizeBtn'),b=$('harmonizeSidebarBtn');a.disabled=true;b.disabled=true;
   const flattened = currentComposite();
+  const baseAtRequest=state.master;
+  const generationAtRequest=state.selectionGeneration;
+  // Freeze the approved graph at submission time for accurate archive history.
+  // Any painting after this point belongs to the active working session.
+  const submittedGraph=copyGraph(state.groups,state.patches,state.sources);
   let finalImage;
   try{
     message(sourceVersion?'Regenerating from Master '+sourceVersion.number+'…':'Generating harmonized architecture image with OpenAI…');
@@ -594,18 +599,27 @@ async function harmonizeWithAI(prompt,sourceVersion=null) {
   }catch(error){toast('Harmonize failed: '+error.message);message('Your original collage is unchanged. Please retry.');return}
   finally{a.disabled=false;b.disabled=false}
   clearReferenceFiles('harmonize');
-  const graph = copyGraph(state.groups, state.patches, state.sources);
+  if(state.selectionGeneration!==generationAtRequest||state.master!==baseAtRequest){
+    // A different Master/project was loaded while the request was processing.
+    // Never overwrite its layers, masks or history with a stale AI result.
+    toast('Harmonize finished, but Master changed during generation. The current work was kept.');
+    return;
+  }
+  const editingInProgress=Boolean(state.pendingSourceId||state.editingPatchId
+    ||state.drawing||state.lasso.length
+    ||(state.selectionMask&&maskBoundingBox(state.selectionMask)));
+  const graph = submittedGraph;
   const number = ++premium.serial;
   const masterVersion=addMasterVersion(finalImage,sourceVersion?'Regenerated':'Harmonized',prompt,sourceVersion?.number||null);
   const node = {
-    id: uid('harmonized'), number, base: cloneCanvas(state.master),
+    id: uid('harmonized'), number, base: cloneCanvas(baseAtRequest),
     groups: graph.groups, patches: graph.patches, sources: graph.sources,
     output: cloneCanvas(finalImage), prompt, parent: premium.root,
     branchedFrom: premium.branchFrom, aiGenerated: true
   };
   premium.root = node;
   premium.expanded.add(node.id);
-  premium.previewNode = null;
+  if(!editingInProgress)premium.previewNode = null;
   premium.lastRequest = {
     originalBase: state.reference||premium.initialMaster||state.master, collage: cloneCanvas(sourceVersion?.image||flattened),
     prompt, snapshotId: node.id
@@ -628,22 +642,24 @@ async function harmonizeWithAI(prompt,sourceVersion=null) {
     }
     const nextId=uid('master_version');
     state.patches.set(nextId,{id:nextId,sourceId,mask:cloneCanvas(mask),bbox:maskBoundingBox(mask),name:'Master '+masterVersion,manualName:true,isMasterVersion:true,masterVersion,groupId:group.id});
-    group.patchIds.push(nextId);group.active=nextId;group.hasHarmonizedMaster=true;
+    group.patchIds.push(nextId);
+    // A newly rendered Master is available as an option without replacing
+    // the option whose mask the user is currently drawing or refining.
+    if(!editingInProgress)group.active=nextId;
+    group.hasHarmonizedMaster=true;
   }
-  state.pendingSourceId = null;
-  state.editingPatchId = null;
-  state.selectedPatchId = null;
-  state.undo = [];
-  state.redo = [];
+  // Preserve pending imports, selection canvas, in-progress lasso, mask editor,
+  // undo/redo stack, tool and keyboard focus across the background Master update.
   premium.branchFrom = node.id;
-  resetSelection();
   $('masterTitle').textContent = 'Master ' + masterVersion + ' · AI';
   $('masterInfo').textContent = canvas.width + ' × ' + canvas.height + ' · working image';core.setSourcePreview('masterPreview',finalImage);
   $('projectName').textContent = 'Harmonized ' + number + ' · AI render';
   renderGroups();
   render();
-  message('Master '+masterVersion+' is active. Earlier Masters remain available in the expandable source list.');
-  refreshMasterBrowser();toast('Master '+masterVersion+' saved in the version list. Previous region options are preserved.');
+  message(editingInProgress
+    ?'Master '+masterVersion+' updated in the background. Your mask editing remains active.'
+    :'Master '+masterVersion+' is active. Earlier Masters remain available in the expandable source list.');
+  refreshMasterBrowser();toast('Master '+masterVersion+' saved. Current mask and earlier region options are preserved.');
 }
 function getMasterVersions(){return [...premium.masterVersions]}
 function initialMasterImage(){return premium.masterVersions[0]?.image||premium.initialMaster}
