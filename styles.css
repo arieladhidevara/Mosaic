@@ -117,15 +117,15 @@
 @media(max-width:1120px){.workspace.inspector-collapsed{grid-template-columns:240px minmax(360px,1fr)}}
 @media(max-width:730px){.workspace.inspector-collapsed{grid-template-columns:minmax(0,1fr)}.tool[data-tool="transform"]{flex:none}}
 
-/* Private Premium login and region guide controls */
-#premiumLoginDialog input{width:100%;box-sizing:border-box;margin:7px 0 15px;background:#191d26;color:#f4f1ff;border:1px solid #495065;border-radius:8px;padding:12px 13px;font:inherit}
-#premiumLoginDialog input:focus{outline:2px solid #9c89ed;outline-offset:2px}
-#premiumLoginDialog label{display:block;font-weight:650;font-size:12px;margin-top:6px}
-#premiumLoginDialog .private-key-note{font-size:11px;color:#9da3b0;line-height:1.55}
-#premiumLoginDialog .premium-login-error{color:#ff9c91;font-size:12px;min-height:18px}
+/* OpenAI API key entry and region guide controls */
+#apiKeyDialog input{width:100%;box-sizing:border-box;margin:7px 0 15px;background:#191d26;color:#f4f1ff;border:1px solid #495065;border-radius:8px;padding:12px 13px;font:inherit}
+#apiKeyDialog input:focus{outline:2px solid #9c89ed;outline-offset:2px}
+#apiKeyDialog label{display:block;font-weight:650;font-size:12px;margin-top:6px}
+#apiKeyDialog .private-key-note{font-size:11px;color:#9da3b0;line-height:1.55}
+#apiKeyDialog .premium-login-error{color:#ff9c91;font-size:12px;min-height:18px}
 #premiumStatusBtn.premium-active{color:#b4a5ff}
 #regionGuidesBtn[aria-pressed="true"]{color:#c3b6ff;background:rgba(152,121,240,.12)}
-#premiumLoginDialog .dialog-actions{flex-wrap:wrap}
+#apiKeyDialog .dialog-actions{flex-wrap:wrap}
 
 /* V0.3 – outside-image lasso drafts and contextual Magic Wand */
 .canvas-wrap .selection-draft{position:absolute;inset:0;width:100%;height:100%;overflow:visible;pointer-events:none;z-index:3}
@@ -263,17 +263,7 @@
 .group-add-option{font-size:17px!important;color:#b9adff!important}
 @media(max-width:730px){.welcome-choice{padding:20px 12px}.welcome-drop-grid{gap:9px}.start-drop-zone{min-height:180px;padding:15px 7px}.start-drop-zone strong{font-size:17px}.start-drop-zone small{font-size:10px}.quick-area-prompt{width:240px}}
 
-/* Manual Free: clean masking tools, Premium adds generation UI only when connected. */
-body:not(.premium-ready) .base-prompt-shortcut,
-body:not(.premium-ready) #promptAreaBtn,
-body:not(.premium-ready) #harmonizeBtn,
-body:not(.premium-ready) #harmonizeSidebarBtn,
-body:not(.premium-ready) .group-details [data-region-action="identify"]{display:none!important}
-body:not(.premium-ready) .inspector-advanced{display:none}
-body:not(.premium-ready) .right-sidebar .inspector-top li:nth-child(2),
-body:not(.premium-ready) .right-sidebar .inspector-top li:nth-child(3){display:none}
-body:not(.premium-ready) .right-sidebar .inspector-bottom{display:none}
-
+/* AI actions are always discoverable. They request an API key when invoked. */
 /* Source alignment + AI reference imagery */
 .source-actions{margin:10px 16px 0;display:flex;flex-direction:column;gap:7px}
 .source-actions .btn{justify-content:center;min-height:35px;white-space:normal;font-size:11px}
