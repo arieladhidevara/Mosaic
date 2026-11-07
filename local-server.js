@@ -1,0 +1,164 @@
+const http = require('node:http');
+const fs = require('node:fs');
+const path = require('node:path');
+
+const ROOT = __dirname;
+const HOST = process.env.HOST || '127.0.0.1';
+const PORT = Number(process.env.PORT || 8000);
+const MAX_BODY_BYTES = 5 * 1024 * 1024;
+
+const apiRoutes = new Map([
+  ['/api/ai/master', require('./api/ai/master')],
+  ['/api/ai/edit', require('./api/ai/edit')],
+  ['/api/ai/harmonize', require('./api/ai/harmonize')],
+  ['/api/ai/classify', require('./api/ai/classify')],
+  ['/api/ai/option-name', require('./api/ai/option-name')],
+]);
+
+const publicFiles = new Set([
+  'index.html',
+  'styles.css',
+  'auth.js',
+  'app.js',
+  'premium.js',
+  'regions.js',
+  'source-editor.js',
+  'sources.js',
+  'project-file.js',
+  'assets/mosaic-logo.svg',
+]);
+
+const contentTypes = {
+  '.html': 'text/html; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8',
+  '.svg': 'image/svg+xml; charset=utf-8',
+};
+
+function jsonResponse(res) {
+  res.status = function status(code) {
+    res.statusCode = code;
+    return res;
+  };
+  res.json = function json(body) {
+    if (!res.headersSent) res.setHeader('Content-Type', 'application/json; charset=utf-8');
+    res.end(JSON.stringify(body));
+    return res;
+  };
+}
+
+function readJsonBody(req) {
+  return new Promise((resolve, reject) => {
+    let size = 0;
+    let tooLarge = false;
+    const chunks = [];
+
+    req.on('data', chunk => {
+      if (tooLarge) return;
+      size += chunk.length;
+      if (size > MAX_BODY_BYTES) {
+        tooLarge = true;
+        chunks.length = 0;
+        return;
+      }
+      chunks.push(chunk);
+    });
+    req.on('end', () => {
+      if (tooLarge) {
+        const error = new Error('Request is too large. Try a smaller canvas.');
+        error.statusCode = 413;
+        reject(error);
+        return;
+      }
+      try {
+        const raw = Buffer.concat(chunks).toString('utf8');
+        resolve(raw ? JSON.parse(raw) : {});
+      } catch {
+        const error = new Error('Invalid JSON request.');
+        error.statusCode = 400;
+        reject(error);
+      }
+    });
+    req.on('error', reject);
+  });
+}
+
+async function serveApi(req, res, handler) {
+  jsonResponse(res);
+  try {
+    req.body = await readJsonBody(req);
+    await handler(req, res);
+  } catch (error) {
+    if (res.writableEnded) return;
+    res.status(error.statusCode || 500).json({
+      error: error.statusCode ? error.message : 'Local API server error.',
+    });
+  }
+}
+
+function serveStatic(req, res, pathname) {
+  if (req.method !== 'GET' && req.method !== 'HEAD') {
+    res.statusCode = 405;
+    res.setHeader('Allow', 'GET, HEAD');
+    res.end('Method not allowed');
+    return;
+  }
+
+  const fileName = pathname === '/' ? 'index.html' : pathname.slice(1);
+  if (!publicFiles.has(fileName)) {
+    res.statusCode = 404;
+    res.end('Not found');
+    return;
+  }
+
+  const filePath = path.join(ROOT, fileName);
+  fs.stat(filePath, (error, stat) => {
+    if (error || !stat.isFile()) {
+      res.statusCode = 404;
+      res.end('Not found');
+      return;
+    }
+
+    res.statusCode = 200;
+    res.setHeader('Content-Type', contentTypes[path.extname(fileName)] || 'application/octet-stream');
+    res.setHeader('Content-Length', stat.size);
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Cache-Control', 'no-cache');
+    if (req.method === 'HEAD') {
+      res.end();
+      return;
+    }
+    fs.createReadStream(filePath).pipe(res);
+  });
+}
+
+const server = http.createServer(async (req, res) => {
+  let pathname;
+  try {
+    pathname = new URL(req.url, `http://${req.headers.host || `${HOST}:${PORT}`}`).pathname;
+  } catch {
+    res.statusCode = 400;
+    res.end('Bad request');
+    return;
+  }
+
+  const handler = apiRoutes.get(pathname);
+  if (handler) {
+    await serveApi(req, res, handler);
+    return;
+  }
+  serveStatic(req, res, pathname);
+});
+
+server.requestTimeout = 300_000;
+server.headersTimeout = 305_000;
+
+server.listen(PORT, HOST, () => {
+  console.log(`Mosaic local server: http://${HOST}:${PORT}`);
+  console.log('Open the URL above, then add your OpenAI API key in the Mosaic toolbar.');
+});
+
+server.on('error', error => {
+  console.error(`Local server failed: ${error.message}`);
+  process.exitCode = 1;
+});

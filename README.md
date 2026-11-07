@@ -24,15 +24,22 @@ The prompt can also be copied directly from the interface. Manual image processi
 - Live project data is kept **in browser memory** and refresh clears unsaved changes. Use **Save project** before leaving and **Open project** to restore it. No backend database/persistence or synchronization is required.
 - Final AI harmonization is done manually and can still reinterpret visual references.
 
-## Run
+## Run locally
 
-Static HTML, JavaScript and CSS. Open `index.html` or serve from the directory:
+Node.js 18 or newer is required. The included local server serves both the static
+editor and the `/api/ai/*` routes that connect to OpenAI:
 
 ```bash
-python3 -m http.server 8000
+npm start
 ```
 
-Open http://localhost:8000.
+Open http://127.0.0.1:8000, click **✦ Add API key**, and enter your OpenAI API
+key. No `.env` file or npm dependency installation is required. The key stays in
+the current browser tab and is forwarded only by the local same-origin server for
+each OpenAI request.
+
+You can still open `index.html` directly for manual editing, but AI features need
+the Node.js server (or a Vercel deployment) because `/api/ai/*` must run server-side.
 
 ## Deploy to Vercel
 

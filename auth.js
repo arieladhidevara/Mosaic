@@ -5,7 +5,9 @@ let key='',pending=null,finishPending=null;
 const validKey=value=>/^sk-[\w-]{15,300}$/.test(value);
 function updateButton(){
   const ready=Boolean(key);
-  button.textContent=ready?'✦ API key added':'✦ Add API key';
+  button.textContent=ready?'API ✓':'API';
+  button.title=ready?'OpenAI API key connected':'Connect OpenAI API key';
+  button.setAttribute('aria-label',button.title);
   button.classList.toggle('premium-active',ready);
   document.body.classList.toggle('premium-ready',ready);
 }

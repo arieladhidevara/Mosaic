@@ -1,0 +1,13 @@
+{
+  "name": "mosaic",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Local server for the Mosaic AI collage workspace",
+  "scripts": {
+    "start": "node local-server.js",
+    "dev": "node local-server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

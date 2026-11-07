@@ -26,15 +26,13 @@ function decorate(){
     if(label)label.textContent=g.name;
     head.append(makeButton('✎','rename-group','Rename group'));
     const details=document.createElement('div');details.className='group-details';
-    const badge=document.createElement('span');badge.className='group-badge';
-    badge.textContent=g.classificationPending?'Identifying…':g.category&&g.category!=='Region'?g.category:'Uncategorized';
     const select=document.createElement('select');select.className='group-category';
     select.dataset.regionCategory=g.id;select.title='Set object category';select.setAttribute('aria-label','Object category');
     for(const category of CATEGORIES){
       const option=document.createElement('option');option.value=category;option.textContent=category==='Region'?'Uncategorized':category;
       option.selected=category===(g.category||'Region');select.append(option);
     }
-    details.append(badge,select,makeButton('✦','identify','Identify object with AI'),makeButton('×','remove-group','Delete group and its options'));
+    details.append(select,makeButton('✦','identify','Identify object with AI'),makeButton('×','remove-group','Delete group and its options'));
     head.after(details);
     for(const row of section.querySelectorAll('.variant-row[data-patch]')){
       if(row.dataset.patch==='master')continue;
@@ -42,6 +40,11 @@ function decorate(){
       if(!patch)continue;
       const text=row.querySelector('.variant-text');
       if(text)text.textContent=patch.name;
+      const edit=row.querySelector('[data-action="edit-image"]');if(edit)edit.textContent='✎';
+      const rename=row.querySelector('[data-region-action="rename-option"]');if(rename)rename.textContent='Aa';
+      const remove=row.querySelector('[data-action="delete"]');if(remove)remove.textContent='×';
+      const regen=row.querySelector('[data-region-action="regen-option"]');
+      if(regen){regen.textContent=patch.generating?'…':'↻';regen.disabled=Boolean(patch.generating)}
       row.draggable=true;row.title='Drag to another Group, or right-click / long-press to move';
       // Exactly four primary actions are authored by app.js.
       // Drag/drop between Groups remains available without extra buttons.
@@ -105,7 +108,6 @@ function handleGroupEvent(e){
         list.querySelector('.region-group[data-group="'+group.id+'"] .group-options')?.prepend(field);
         field.addEventListener('click',event=>event.stopPropagation());
         const references=window.MosaicPremium?.bindInlineReferencePrompt?.(field);
-        field.insertAdjacentHTML('beforeend','<small class="reference-paste-hint">Paste image (Ctrl/Cmd+V), or drag & drop it into this prompt.</small>');
         field.addEventListener('submit',event=>{
           event.preventDefault();event.stopPropagation();
           const prompt=field.querySelector('input[type="text"]').value.trim();

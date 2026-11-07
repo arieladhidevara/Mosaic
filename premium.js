@@ -52,6 +52,48 @@ function updateIntent() {
   $('projectPromptSummary').textContent = premium.projectPrompt || 'No project prompt yet. Edit to set design intent.';
   core.promptText();
 }
+let aiProgressSerial=0;
+function masterProgressHost(){
+  let host=$('masterProgressList');
+  if(host)return host;
+  host=document.createElement('div');host.id='masterProgressList';host.className='master-progress-list';
+  host.setAttribute('aria-live','polite');host.setAttribute('aria-label','Master generation progress');
+  $('masterVersionsPanel').before(host);return host;
+}
+function beginAIProgress(label,detail='Preparing request…',target={scope:'master'}){
+  const id=String(++aiProgressSerial),patch=target.patchId?state.patches.get(target.patchId):null;
+  let item,percent,track,fill,description;
+  if(!patch){
+    item=document.createElement('section');const title=document.createElement('strong');percent=document.createElement('span');
+    const heading=document.createElement('div');track=document.createElement('div');fill=document.createElement('div');description=document.createElement('small');
+    item.className='ai-progress-item master-progress-item';item.dataset.progressId=id;
+    heading.className='ai-progress-heading';title.textContent=label;percent.className='ai-progress-percent';
+    track.className='ai-progress-track';track.setAttribute('role','progressbar');track.setAttribute('aria-label',label);
+    track.setAttribute('aria-valuemin','0');track.setAttribute('aria-valuemax','100');
+    fill.className='ai-progress-fill';description.className='ai-progress-detail';
+    heading.append(title,percent);track.append(fill);item.append(heading,track,description);masterProgressHost().append(item);
+  }
+  let value=6,settled=false,currentDetail=detail;
+  const set=(next,nextDetail,status='')=>{
+    value=Math.max(value,Math.min(100,Math.round(next)));if(nextDetail)currentDetail=nextDetail;
+    if(patch){patch.aiProgress={id,label,detail:currentDetail,value,status};renderGroups();return}
+    item.classList.toggle('success',status==='success');item.classList.toggle('error',status==='error');
+    fill.style.width=value+'%';percent.textContent=value+'%';description.textContent=currentDetail;track.setAttribute('aria-valuenow',String(value));
+  };
+  set(value,detail);
+  const timer=setInterval(()=>{if(value<88)set(value+Math.max(1,Math.round((90-value)*.07)))},1100);
+  const finish=(kind,nextDetail)=>{
+    if(settled)return;settled=true;clearInterval(timer);set(100,nextDetail,kind);
+    setTimeout(()=>{
+      if(patch){if(patch.aiProgress?.id===id){delete patch.aiProgress;renderGroups()}}
+      else item.remove();
+    },2600);
+  };
+  return {update:(next,nextDetail)=>{if(!settled)set(next,nextDetail)},done:nextDetail=>finish('success',nextDetail||'Done.'),fail:nextDetail=>finish('error',nextDetail||'Failed.')};
+}
+const welcomeGenerateButton=$('welcomeBaseGenerateSubmit');
+welcomeGenerateButton.classList.remove('sr-only');welcomeGenerateButton.classList.add('welcome-prompt-generate-button');
+welcomeGenerateButton.removeAttribute('tabindex');welcomeGenerateButton.removeAttribute('aria-hidden');welcomeGenerateButton.textContent='✦ Generate';
 function onReferenceLoaded() {
   // A Base upload is only a reference. Never silently promote it to Master.
   if(state.reference&&state.master){
@@ -140,9 +182,19 @@ function drawArchivePreview(context) {
 function activePatchMarkup(){
   // Keep the four option controls stable even when a generation is pending.
   for(const patch of state.patches.values()){
-    if(!patch.awaitingResult&&!patch.generating)continue;
+    if(!patch.awaitingResult&&!patch.generating&&!patch.aiProgress)continue;
     const row=$('groupList').querySelector('.variant-row[data-action="choose"][data-patch="'+patch.id+'"]');
-    row?.classList.add('awaiting-ai');
+    if(!row)continue;row.classList.add('awaiting-ai');
+    const progress=patch.aiProgress;if(!progress)continue;
+    row.classList.add('has-ai-progress');
+    const box=document.createElement('div');box.className='option-ai-progress '+(progress.status||'');
+    const meta=document.createElement('div');meta.className='option-ai-progress-meta';
+    const label=document.createElement('span');label.textContent=progress.detail;
+    const percent=document.createElement('span');percent.textContent=progress.value+'%';meta.append(label,percent);
+    const bar=document.createElement('div');bar.className='ai-progress-track';bar.setAttribute('role','progressbar');
+    bar.setAttribute('aria-valuemin','0');bar.setAttribute('aria-valuemax','100');bar.setAttribute('aria-valuenow',String(progress.value));
+    const progressFill=document.createElement('div');progressFill.className='ai-progress-fill';progressFill.style.width=progress.value+'%';
+    bar.append(progressFill);box.append(meta,bar);row.append(box);
   }
 }
 function groupMarkup(group, node) {
@@ -274,8 +326,10 @@ function coloredContour(mask,color){
   oc.putImageData(image,0,0);contourCache.set(mask,{color,canvas:out});return out;
 }
 function activeAIRegions(){return state.groups.map(g=>state.patches.get(g.active)).filter(p=>p?.color)}
-function paintGuides(target){
-  for(const p of activeAIRegions()){
+function paintGuides(target,extraPatch=null){
+  const regions=activeAIRegions();
+  if(extraPatch?.color&&!regions.includes(extraPatch))regions.push(extraPatch);
+  for(const p of regions){
     target.save();target.imageSmoothingEnabled=false;target.globalAlpha=.98;
     target.drawImage(coloredContour(p.mask,p.color),0,0,canvas.width,canvas.height);
     const x=Math.min(canvas.width-20,Math.max(15,p.bbox.x+12)),y=Math.max(17,p.bbox.y-7);
@@ -298,7 +352,10 @@ function transparentEditMask(source,w,h){
   return out.toDataURL('image/png');
 }
 function annotationNotes(targetId){
-  return activeAIRegions().map(p=>({color:p.color,prompt:p.prompt,active:p.id===targetId}));
+  const regions=activeAIRegions();
+  const target=state.patches.get(targetId);
+  if(target?.color&&!regions.includes(target))regions.push(target);
+  return regions.map(p=>({color:p.color,prompt:p.prompt,active:p.id===targetId}));
 }
 function encodeRequest(prompt,patch=null,masterSource=null,extraReferences=[]){
   const collage=masterSource||currentComposite();
@@ -404,27 +461,40 @@ async function classifyArea(mask){
 async function generateRegion(patchId,regenerate=false){
   const patch=state.patches.get(patchId);
   if(!patch||patch.generating||(!regenerate&&!patch.awaitingResult))return;
+  const groupAtStart=state.groups.find(group=>group.patchIds.includes(patchId));
+  const activeAtStart=groupAtStart?.active??null;
+  const progress=beginAIProgress(
+    regenerate?'Regenerate · '+patch.name:'AI Edit · Region '+(patch.regionNumber||''),
+    'Preparing selected area…',
+    {patchId}
+  );
   patch.generating=true;renderGroups();
   // Freeze exactly the collage, crop and mask that were submitted. Subsequent
   // drawing/editing must not change a queued request's target or alignment.
   let capture;
   try{capture=encodeRegionalCrop(patch)}
-  catch(error){patch.generating=false;renderGroups();toast('Local AI edit: '+error.message);return}
+  catch(error){patch.generating=false;renderGroups();progress.fail('Could not prepare the selected area.');toast('Local AI edit: '+error.message);return}
   const submittedPatch={bbox:{...patch.bbox},corners:patch.corners?.map(point=>({...point}))||null};
   const generationId=patch.sourceId;
   const canvasSize={width:canvas.width,height:canvas.height};
+  progress.update(14,'Queued for generation…');
   const run=async()=>{
     try{
+      progress.update(20,'Checking OpenAI connection…');
       if(!await window.MosaicAuth.ensure())throw Error('OpenAI API key entry canceled.');
       const {payload,region,visibleMask}=capture;
       message('Generating only the selected area with nearby architectural context…');
+      progress.update(30,'OpenAI is generating the selected area…');
       const answer=await window.MosaicAuth.request('/api/ai/edit',payload);
+      progress.update(82,'Image received. Decoding result…');
       const image=await fromGeneratedJPEG(answer.image,{width:region.w,height:region.h});
       const existing=state.patches.get(patchId);
       if(!existing||!state.sources.has(generationId)||existing.sourceId!==generationId
         ||canvas.width!==canvasSize.width||canvas.height!==canvasSize.height){
-        if(existing)existing.generating=false;renderGroups();return;
+        if(existing)existing.generating=false;renderGroups();
+        progress.done('Finished, but the project changed; current work was kept.');return;
       }
+      progress.update(92,'Applying result to the selected mask…');
       const placed=makeCanvas(canvasSize.width,canvasSize.height),placedContext=placed.getContext('2d');
       placedContext.drawImage(image,region.x,region.y,region.w,region.h);
       placedContext.globalCompositeOperation='destination-in';
@@ -446,14 +516,24 @@ async function generateRegion(patchId,regenerate=false){
       if(!existing.manualName&&!existing.semanticNamed)existing.name=core.optionNameFromPrompt(existing.prompt,'AI edit '+(patch.regionNumber||''));
       existing.generating=false;
       const group=state.groups.find(g=>g.patchIds.includes(patchId));
-      if(group)core.refreshGroupFootprint(group);
+      const activateResult=Boolean(group&&group.active===activeAtStart);
+      if(group){
+        if(activateResult)group.active=patchId;
+        core.refreshGroupFootprint(group);
+      }
       // Async output updates the layer underneath whichever tool, mask or editor
       // the user is working with. Never steal focus or select another option.
       renderGroups();render();
-      message('Local edit complete in the background. Your current mask is unchanged.');
-      toast('Generated medium-quality crop; restored to its exact selected position.');
+      message(activateResult
+        ?'AI edit applied to the selected mask. Your current tool and mask remain active.'
+        :'AI edit is ready as a saved option. Your newer option choice was preserved.');
+      toast(activateResult
+        ?'Generated result is now visible inside the selected mask.'
+        :'Generated result is ready in its Group options.');
+      progress.done(activateResult?'AI edit applied to the mask.':'AI edit saved as an option.');
     }catch(error){
       patch.generating=false;renderGroups();
+      progress.fail(error.message||'AI edit failed.');
       toast('Local AI edit: '+error.message);
       message('The current approved image was preserved. Retry from its option.');
     }
@@ -515,7 +595,12 @@ function createRegionRequest(prompt,referenceImages=[],selectedMask=state.select
     request: {baseImage: base, reference: state.reference, mask, prompt: text}};
   state.sources.set(sourceId, source);
   const selectedBefore=state.selectedPatchId;
-  assignGroup(patch);
+  const activeBefore=new Map(state.groups.map(group=>[group.id,group.active]));
+  const group=assignGroup(patch);
+  // Keep the approved option visible while OpenAI works. generateRegion will
+  // activate this new option when its pixels are ready, unless the user makes
+  // another option choice in the meantime.
+  group.active=activeBefore.has(group.id)?activeBefore.get(group.id):null;
   void suggestSemanticName(patch.id,text);
   // The submitted mask is already an independent snapshot on patch.mask.
   // Keep the live selection and mask editor intact so another area can be
@@ -586,6 +671,10 @@ async function harmonizeWithAI(prompt,sourceVersion=null) {
   if(state.pendingSourceId||state.editingPatchId){toast('Apply or discard your unfinished patch before generating.');return}
   if(state.groups.some(g=>state.patches.get(g.active)?.awaitingResult)){toast('Finish pending region edits first.');return}
   const a=$('harmonizeBtn'),b=$('harmonizeSidebarBtn');a.disabled=true;b.disabled=true;
+  const progress=beginAIProgress(
+    sourceVersion?'Regenerate Master '+sourceVersion.number:'Harmonize Master',
+    'Preparing the approved composition…'
+  );
   const flattened = currentComposite();
   const baseAtRequest=state.master;
   const generationAtRequest=state.selectionGeneration;
@@ -595,16 +684,21 @@ async function harmonizeWithAI(prompt,sourceVersion=null) {
   let finalImage;
   try{
     message(sourceVersion?'Regenerating from Master '+sourceVersion.number+'…':'Generating harmonized architecture image with OpenAI…');
+    progress.update(16,'Preparing reference images…');
     const references=await prepareReferenceImages(getReferenceFiles('harmonize'));
+    progress.update(30,'OpenAI is generating the full image…');
     const answer=await window.MosaicAuth.request('/api/ai/harmonize',encodeRequest(prompt,null,sourceVersion?.image,references));
+    progress.update(82,'Image received. Decoding result…');
     finalImage=await fromGeneratedJPEG(answer.image);
-  }catch(error){toast('Harmonize failed: '+error.message);message('Your original collage is unchanged. Please retry.');return}
+    progress.update(92,'Applying the new Master…');
+  }catch(error){progress.fail(error.message||'Harmonize failed.');toast('Harmonize failed: '+error.message);message('Your original collage is unchanged. Please retry.');return}
   finally{a.disabled=false;b.disabled=false}
   clearReferenceFiles('harmonize');
   if(state.selectionGeneration!==generationAtRequest||state.master!==baseAtRequest){
     // A different Master/project was loaded while the request was processing.
     // Never overwrite its layers, masks or history with a stale AI result.
     toast('Harmonize finished, but Master changed during generation. The current work was kept.');
+    progress.done('Finished; current Master was kept.');
     return;
   }
   const editingInProgress=Boolean(state.pendingSourceId||state.editingPatchId
@@ -662,6 +756,7 @@ async function harmonizeWithAI(prompt,sourceVersion=null) {
     ?'Master '+masterVersion+' updated in the background. Your mask editing remains active.'
     :'Master '+masterVersion+' is active. Earlier Masters remain available in the expandable source list.');
   refreshMasterBrowser();toast('Master '+masterVersion+' saved. Current mask and earlier region options are preserved.');
+  progress.done('Master '+masterVersion+' is ready.');
 }
 function getMasterVersions(){return [...premium.masterVersions]}
 function initialMasterImage(){return premium.masterVersions[0]?.image||premium.initialMaster}
@@ -862,24 +957,31 @@ async function createMasterFromBase(prompt,files,button,afterSuccess){
   // The new Master is composited behind the user's live Groups and mask.
   const baseAtRequest=state.reference;
   const masterAtRequest=state.master;
+  let progress;
   if(button){button.disabled=true;button.dataset.originalLabel=button.textContent;button.textContent='Generating…'}
   try{
     if(!await window.MosaicAuth.ensure())return;
+    progress=beginAIProgress('Generate Master','Preparing Base and references…');
+    progress.update(16,'Preparing reference images…');
     const images=await prepareReferenceImages(files);
     const request=encodeMasterRequest(prompt,images);
     // Never keep a modal blocking canvas tools while a full Master generates.
     if($('masterGenerateDialog').open)$('masterGenerateDialog').close();
     message('Generating Master in the background. You can keep editing masks.');
+    progress.update(30,'OpenAI is generating the Master image…');
     const reply=await window.MosaicAuth.request('/api/ai/master',request);
+    progress.update(82,'Image received. Decoding result…');
     if(state.reference!==baseAtRequest
       ||(state.master!==masterAtRequest&&!state.masterIsBase)){
       toast('The working project changed during generation; the current work was preserved.');
+      progress.done('Finished; current project was kept.');
       return;
     }
     const working=state.master;
     const sameAspect=working
       && Math.abs(working.width/working.height-baseAtRequest.width/baseAtRequest.height)<.02;
     const generated=await fromGeneratedJPEG(reply.image,sameAspect?working:baseAtRequest);
+    progress.update(92,'Applying the generated Master…');
     premium.projectPrompt=prompt;
     if(working){
       if(generated.width!==canvas.width||generated.height!==canvas.height){
@@ -910,7 +1012,8 @@ async function createMasterFromBase(prompt,files,button,afterSuccess){
     updateIntent();
     afterSuccess?.();
     core.updateSourceActions();render();
-  }catch(error){toast('Master generation: '+error.message);message('Base image preserved. Retry when ready.')}
+    progress.done('Master is ready.');
+  }catch(error){progress?.fail(error.message||'Master generation failed.');toast('Master generation: '+error.message);message('Base image preserved. Retry when ready.')}
   finally{if(button){button.disabled=false;button.textContent=button.dataset.originalLabel||'✦ Generate Master'}}
 }
 async function generateMaster(event){

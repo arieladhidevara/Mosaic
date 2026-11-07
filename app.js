@@ -167,32 +167,42 @@ function updateGroupCategory(group,category,source='vision'){
   renderGroups();drawOverlay();
 }
 function matchingGroup(mask){
-  // Compare filled pixels, not only bounding boxes. Dissimilar shapes never auto-group.
+  // Auto-group only near-identical masks. At least 85% of BOTH filled masks
+  // must overlap, so a small mask inside a much larger one is not considered
+  // the same region.
   const box=maskBoundingBox(mask);if(!box)return null;
   const size=180,small=makeCanvas(size,size),c=small.getContext('2d',{willReadFrequently:true});
   c.drawImage(mask,0,0,size,size);
   const alpha=c.getImageData(0,0,size,size).data;
   const boxArea=box.w*box.h;
-  let best=null,bestScore=.54;
+  let best=null,bestScore=.85;
   for(const group of state.groups){
     if(!group.patchIds.length||!group.area)continue;
     const gb=group.area,bIoU=bboxIoU(box,gb);
     const ratio=Math.min(boxArea,gb.w*gb.h)/Math.max(boxArea,gb.w*gb.h);
     const distance=Math.hypot((box.x+box.w/2-gb.x-gb.w/2)/canvas.width,(box.y+box.h/2-gb.y-gb.h/2)/canvas.height);
-    if(bIoU<.45||ratio<.55||distance>.09)continue;
+    if(bIoU<.65||ratio<.7||distance>.07)continue;
     const other=makeCanvas(size,size),oc=other.getContext('2d',{willReadFrequently:true});
     oc.drawImage(groupMask(group),0,0,size,size);
     const beta=oc.getImageData(0,0,size,size).data;
-    let intersection=0,union=0,areaA=0,areaB=0;
+    let intersection=0,areaA=0,areaB=0;
     for(let i=3;i<alpha.length;i+=4){
       const x=alpha[i]>100,y=beta[i]>100;
-      if(x)areaA++;if(y)areaB++;if(x&&y)intersection++;if(x||y)union++;
+      if(x)areaA++;if(y)areaB++;if(x&&y)intersection++;
     }
-    if(!union||!areaA||!areaB)continue;
-    const iou=intersection/union,coverage=intersection/Math.min(areaA,areaB),score=.8*iou+.2*coverage;
-    if(iou>=.54&&coverage>=.73&&score>bestScore){best=group;bestScore=score}
+    if(!areaA||!areaB)continue;
+    const overlapA=intersection/areaA,overlapB=intersection/areaB,score=Math.min(overlapA,overlapB);
+    if(score>=.85&&score>=bestScore){best=group;bestScore=score}
   }
   return best;
+}
+
+function releaseDraftGroupForNewSelection(){
+  if(state.selectionMode!=='new'||state.editingPatchId)return;
+  const draft=state.groups.find(group=>group.id===state.draftGroupId);
+  const keepEmptyDraft=Boolean(draft&&!draft.patchIds.length&&(draft.manualName||state.queuedGroupId===draft.id));
+  if(draft&&!draft.patchIds.length&&!keepEmptyDraft)state.groups=state.groups.filter(group=>group!==draft);
+  if(!keepEmptyDraft)state.draftGroupId=null;
 }
 function identifyGroup(group,mask,login=false){
   if(!window.MosaicPremium?.classifyArea)return;
@@ -737,7 +747,7 @@ function applyMagicWand(p){
   snapshotSelection();
   const mc=state.selectionMask.getContext('2d');
   mc.save();
-  if(state.selectionMode==='new'){state.selectionPoints=[];mc.clearRect(0,0,canvas.width,canvas.height)}
+  if(state.selectionMode==='new'){state.selectionPoints=[];releaseDraftGroupForNewSelection();mc.clearRect(0,0,canvas.width,canvas.height)}
   mc.globalCompositeOperation=state.selectionMode==='subtract'?'destination-out':'source-over';
   mc.imageSmoothingEnabled=false;
   mc.drawImage(region,0,0,canvas.width,canvas.height);
@@ -748,7 +758,7 @@ function applyMagicWand(p){
 function snapshotSelection(){if(!state.selectionMask)return;state.undo.push({type:'selection',points:copyCorners(state.selectionPoints),image:state.selectionMask.getContext('2d').getImageData(0,0,canvas.width,canvas.height)});if(state.undo.length>12)state.undo.shift();state.redo=[]}
 function snapshotPatch(p){state.undo.push({type:'patch',patchId:p.id,points:copyCorners(p.maskPoints),image:p.mask.getContext('2d').getImageData(0,0,canvas.width,canvas.height)});if(state.undo.length>12)state.undo.shift();state.redo=[]}
 function commitMaskPath(trace,points=[]){if(!state.selectionMask)return;const m=state.selectionMask.getContext('2d');snapshotSelection();m.save();
-  if(state.selectionMode==='new'){m.clearRect(0,0,canvas.width,canvas.height)}
+  if(state.selectionMode==='new'){releaseDraftGroupForNewSelection();m.clearRect(0,0,canvas.width,canvas.height)}
   m.globalCompositeOperation=state.selectionMode==='subtract'?'destination-out':'source-over';m.fillStyle='#ffffff';m.beginPath();trace(m);m.closePath();m.fill();m.restore();
   state.selectionPoints=state.selectionMode==='new'?copyCorners(points):[...(state.selectionPoints||[]),...copyCorners(points)];
   state.pendingRevealOnly=Boolean(state.pendingSourceId);updateSelectionOutline();prepareSelectionGroup();updateApplyButton();render();message(state.pendingSourceId?'Click Apply to keep the selected part of the new image.':'Selection ready. Describe an AI edit or add another image.');showQuickPrompt()}
@@ -773,7 +783,7 @@ function exactMaskBoundingBox(mask){
 }
 function maskBoundingBox(mask){const w=Math.min(250,mask.width),h=Math.max(1,Math.round(w*mask.height/mask.width)),t=makeCanvas(w,h),tx=t.getContext('2d',{willReadFrequently:true});tx.drawImage(mask,0,0,w,h);const d=tx.getImageData(0,0,w,h).data;let minX=w,minY=h,maxX=-1,maxY=-1;for(let i=0;i<w*h;i++)if(d[i*4+3]>80){const x=i%w,y=Math.floor(i/w);minX=Math.min(minX,x);minY=Math.min(minY,y);maxX=Math.max(maxX,x);maxY=Math.max(maxY,y)}return maxX<0?null:{x:minX/w*canvas.width,y:minY/h*canvas.height,w:(maxX-minX+1)/w*canvas.width,h:(maxY-minY+1)/h*canvas.height}}
 function applySelection(){if(state.lasso.length){if(!updateMaskWithLasso()){toast('Add at least three lasso points, then click the first point or double-click to close.');return}}if(!state.selectionMask)return;const bbox=maskBoundingBox(state.selectionMask);if(!bbox){toast('Draw or brush a selection first.');return}
-  if(state.pendingSourceId){const src=state.sources.get(state.pendingSourceId),mask=makeCanvas(canvas.width,canvas.height);mask.getContext('2d').drawImage(state.selectionMask,0,0);const patch={id:uid('patch'),sourceId:src.id,mask,bbox,maskPoints:copyCorners(state.selectionPoints),name:optionNameFromPrompt(src.name,src.name),manualName:false},group=assignGroup(patch);state.pendingSourceId=null;state.editingPatchId=null;resetSelection();state.undo=[];state.redo=[];toast(`Saved as ${group.name}. Similar masks become alternatives.`);message('Selection saved. Upload another image or switch variants on the left.');renderGroups();render();window.MosaicPremium?.onPatchApplied();loadNextVariant();return}
+  if(state.pendingSourceId){const src=state.sources.get(state.pendingSourceId),mask=makeCanvas(canvas.width,canvas.height);mask.getContext('2d').drawImage(state.selectionMask,0,0);const patch={id:uid('patch'),sourceId:src.id,mask,bbox,maskPoints:copyCorners(state.selectionPoints),name:optionNameFromPrompt(src.name,src.name),manualName:false},group=assignGroup(patch);state.pendingSourceId=null;state.editingPatchId=null;resetSelection();state.undo=[];state.redo=[];toast(`Saved as ${group.name}. Masks need 85% overlap to share a Group.`);message('Selection saved. Upload another image or switch options in Groups.');renderGroups();render();window.MosaicPremium?.onPatchApplied();loadNextVariant();return}
   if(state.editingPatchId){
     const patch=state.patches.get(state.editingPatchId);if(!patch)return;
     snapshotPatch(patch);
@@ -976,7 +986,7 @@ async function exportZip(){
     setTimeout(()=>URL.revokeObjectURL(url),1500);
     toast('Exported approved collage on the latest Master, plus Base and prompt.');
   }catch(e){toast('Export failed: '+e.message)}
-  finally{btn.disabled=false;btn.innerHTML='<span class="icon">↧</span> Export package'}
+  finally{btn.disabled=false;btn.innerHTML='<span class="icon">↧</span><span class="export-label">Export</span>'}
 }
 // File inputs and editing controls.
 $('referenceInput').addEventListener('change',async e=>{await importReference(e.target.files[0]);e.target.value=''});
@@ -1015,6 +1025,40 @@ $('commitBtn').addEventListener('click',applySelection);
 $('undoBtn').addEventListener('click',()=>historyStep(state.undo,state.redo));$('redoBtn').addEventListener('click',()=>historyStep(state.redo,state.undo));
 $('clearSelectionBtn').addEventListener('click',()=>{resetSelection();render();message('Selection cleared.')});
 $('resetTransformBtn').addEventListener('click',resetPatchTransform);
+const workspace=document.querySelector('.workspace'),inspectorPanel=$('inspectorPanel'),inspectorResizeHandle=$('inspectorResizeHandle');
+let inspectorResizeState=null;
+function inspectorWidthBounds(){
+  return {min:220,max:Math.max(220,Math.min(520,workspace.getBoundingClientRect().width-420))};
+}
+function setInspectorWidth(width,refit=false){
+  const bounds=inspectorWidthBounds(),next=clamp(width,bounds.min,bounds.max);
+  workspace.style.setProperty('--inspector-width',next+'px');
+  inspectorResizeHandle.setAttribute('aria-valuemin',String(bounds.min));
+  inspectorResizeHandle.setAttribute('aria-valuemax',String(bounds.max));
+  inspectorResizeHandle.setAttribute('aria-valuenow',String(Math.round(next)));
+  if(refit&&state.master)requestAnimationFrame(updateZoomFit);
+}
+inspectorResizeHandle.addEventListener('pointerdown',event=>{
+  if(inspectorPanel.classList.contains('is-collapsed')||window.innerWidth<=730)return;
+  inspectorResizeState={x:event.clientX,width:inspectorPanel.getBoundingClientRect().width,fit:Boolean(state.master&&Math.abs(state.zoom-state.fitZoom)<.001)};
+  inspectorResizeHandle.setPointerCapture(event.pointerId);document.body.classList.add('inspector-resizing');event.preventDefault();
+});
+inspectorResizeHandle.addEventListener('pointermove',event=>{
+  if(!inspectorResizeState)return;
+  setInspectorWidth(inspectorResizeState.width+inspectorResizeState.x-event.clientX,inspectorResizeState.fit);
+});
+function finishInspectorResize(event){
+  if(!inspectorResizeState)return;
+  inspectorResizeState=null;document.body.classList.remove('inspector-resizing');
+  if(event?.pointerId!=null&&inspectorResizeHandle.hasPointerCapture(event.pointerId))inspectorResizeHandle.releasePointerCapture(event.pointerId);
+}
+inspectorResizeHandle.addEventListener('pointerup',finishInspectorResize);
+inspectorResizeHandle.addEventListener('pointercancel',finishInspectorResize);
+inspectorResizeHandle.addEventListener('keydown',event=>{
+  if(!['ArrowLeft','ArrowRight'].includes(event.key)||inspectorPanel.classList.contains('is-collapsed'))return;
+  event.preventDefault();const direction=event.key==='ArrowLeft'?1:-1;
+  setInspectorWidth(inspectorPanel.getBoundingClientRect().width+direction*(event.shiftKey?40:16),true);
+});
 $('inspectorToggle').addEventListener('click',()=>{
   const panel=$('inspectorPanel'),collapsed=panel.classList.toggle('is-collapsed'),toggle=$('inspectorToggle');
   document.querySelector('.workspace').classList.toggle('inspector-collapsed',collapsed);
@@ -1025,7 +1069,7 @@ $('inspectorToggle').addEventListener('click',()=>{
   const wasFit=state.master&&Math.abs(state.zoom-state.fitZoom)<.001;
   if(wasFit)requestAnimationFrame(updateZoomFit);
 });
-$('zoomIn').addEventListener('click',()=>setZoom(state.zoom*1.25));$('zoomOut').addEventListener('click',()=>setZoom(state.zoom/1.25));$('zoomFit').addEventListener('click',updateZoomFit);
+$('zoomIn').addEventListener('click',()=>setZoom(state.zoom*1.25));$('zoomOut').addEventListener('click',()=>setZoom(state.zoom/1.25));$('zoomFit').addEventListener('click',updateZoomFit);$('zoomValue').addEventListener('click',updateZoomFit);
 const compare=$('beforeBtn');let compareTap=false;
 compare.addEventListener('pointerdown',e=>{if(e.pointerType==='touch'||window.matchMedia('(hover: none)').matches){compareTap=true;return}compareTap=false;state.before=true;compare.classList.add('comparing');render()});
 compare.addEventListener('click',()=>{if(compareTap){state.before=!state.before;compare.classList.toggle('comparing',state.before);render();compareTap=false}});
@@ -1034,7 +1078,7 @@ window.addEventListener('pointerup',e=>{if(e.pointerType==='mouse'&&!compareTap&
 // Touch and mouse drawing both use Pointer Events.
 for(const type of ['pointerdown','pointermove','pointerup','pointercancel'])$('viewport').addEventListener(type,{pointerdown:pointerDown,pointermove:pointerMove,pointerup:pointerUp,pointercancel:pointerCancel}[type]);
 $('viewport').addEventListener('dblclick',e=>{if(state.tool==='lasso'&&state.lasso.length>=3){e.preventDefault();updateMaskWithLasso()}});
-window.addEventListener('keydown',onKeys);window.addEventListener('resize',()=>state.master&&updateZoomFit());
+window.addEventListener('keydown',onKeys);window.addEventListener('resize',()=>{if(window.innerWidth>730&&!inspectorPanel.classList.contains('is-collapsed'))setInspectorWidth(inspectorPanel.getBoundingClientRect().width);if(state.master)updateZoomFit()});
 for(const id of ['copyPromptBtn','copyPromptSecondary'])$(id).addEventListener('click',async()=>{try{await navigator.clipboard.writeText(promptText());toast('Prompt copied.')}catch{toast('Clipboard unavailable. Select prompt from the panel.')}});
 const viewport=$('viewport');viewport.addEventListener('pointerleave',()=>window.MosaicRegions?.clearHover());viewport.addEventListener('dragover',e=>{e.preventDefault();viewport.classList.add('dropping')});viewport.addEventListener('dragleave',()=>viewport.classList.remove('dropping'));viewport.addEventListener('drop',async e=>{e.preventDefault();viewport.classList.remove('dropping');const files=[...e.dataTransfer.files].filter(f=>f.type.startsWith('image/'));if(!state.master){if(files[0])await importReference(files[0]);if(files.length>1)await importVariants(files.slice(1))}else await importVariants(files)});
 window.MosaicCore = {state,canvas,overlay,ctx,makeCanvas,uid,toast,message,promptText,loadFileToCanvas,setMaster,setSourcePreview,updateSourceActions,render,composeApprovedCanvas,renderGroups,drawPatch,selectTool,setMode,updateApplyButton,maskBoundingBox,assignGroup,resetSelection,updateSelectionOutline,updateMaskWithLasso,updateZoomFit,escapeHTML,categoryFromText,updateGroupCategory,optionNameFromPrompt,prepareSelectionGroup,groupMask,selectGroupMask,CATEGORIES,showQuickPrompt,hideQuickPrompt,createBlankRegion,moveOptionToGroup,displayedPatchMask,renderedPatchLayer,refreshGroupFootprint,invalidateDisplayedMask,exactMaskBoundingBox,unwarpPatchSelection,patchControlPoints,displayedMaskPoint};

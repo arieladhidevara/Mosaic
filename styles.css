@@ -203,7 +203,7 @@
 }
 
 /* Final fit / usability refinements */
-@media(min-width:731px){
+@media(min-width:1000px){
   #quickMasterBtn,#quickRevitBtn,.premium-pill,.local-tag{display:none}
   .workspace{grid-template-columns:250px minmax(360px,1fr) 248px}
   .workspace.inspector-collapsed{grid-template-columns:250px minmax(360px,1fr) 44px}
@@ -348,7 +348,30 @@
 .welcome-base-prompt .welcome-compact-previews{display:flex;gap:6px;padding:8px 5px 3px;border-top:1px solid #353b49;min-width:0}
 .welcome-base-prompt .welcome-compact-previews:empty{display:none}
 .welcome-base-prompt .welcome-compact-previews .reference-thumb{width:36px;height:36px;border-radius:7px;border-color:#5e6678}
-.welcome-base-prompt button[type="submit"].sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;border:0;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap}
+.welcome-base-prompt .welcome-prompt-generate-button{flex:0 0 auto;min-height:35px;margin-right:3px;padding:7px 11px;border:1px solid #8f83dd;border-radius:9px;background:#6557ad;color:#fff;font:750 11px/1 'DM Sans',system-ui,sans-serif;cursor:pointer;white-space:nowrap;transition:background .15s,border-color .15s,transform .15s}
+.welcome-base-prompt .welcome-prompt-generate-button:hover{background:#796bc4;border-color:#b7adf2;transform:translateY(-1px)}
+.welcome-base-prompt .welcome-prompt-generate-button:focus-visible{outline:2px solid #c0b8ff;outline-offset:2px}
+.welcome-base-prompt .welcome-prompt-generate-button:disabled{cursor:wait;opacity:.65;transform:none}
+.master-progress-list{display:flex;flex-direction:column;gap:6px;margin:8px 11px 2px}
+.master-progress-list:empty{display:none}
+.ai-progress-item{padding:9px 10px;border:1px solid #56516f;border-radius:8px;background:#20212a;color:#f5f3ff;transition:border-color .2s,opacity .2s,transform .2s}
+.master-progress-item{box-shadow:none}
+.ai-progress-item.success{border-color:#4f8165}.ai-progress-item.error{border-color:#a45a66}
+.ai-progress-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:7px}
+.ai-progress-heading strong{font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ai-progress-percent{font-size:10px;font-variant-numeric:tabular-nums;color:#bbb5e8;flex:none}
+.ai-progress-track{height:7px;overflow:hidden;border-radius:999px;background:#353544;box-shadow:inset 0 1px 2px #0008}
+.ai-progress-fill{height:100%;width:6%;border-radius:inherit;background:linear-gradient(90deg,#7567c8,#b3a9ff,#7567c8);background-size:180% 100%;animation:ai-progress-shimmer 1.25s linear infinite;transition:width .45s ease}
+.ai-progress-item.success .ai-progress-fill{background:#72bc91;animation:none}.ai-progress-item.error .ai-progress-fill{background:#d36b7b;animation:none}
+.ai-progress-detail{display:block;margin-top:7px;color:#aeb2c0;font-size:10px;line-height:1.35}
+.option-ai-progress{flex:1 0 100%;min-width:0;padding:3px 0 1px}
+.option-ai-progress-meta{display:flex;justify-content:space-between;gap:8px;margin-bottom:5px;color:#aeb2c0;font-size:9px}
+.option-ai-progress-meta span:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.option-ai-progress .ai-progress-track{height:5px}
+.option-ai-progress.success .ai-progress-fill{background:#72bc91;animation:none}
+.option-ai-progress.error .ai-progress-fill{background:#d36b7b;animation:none}
+@keyframes ai-progress-shimmer{to{background-position:-180% 0}}
+@media(max-width:730px){.welcome-prompt-bar{flex-wrap:wrap}.welcome-base-prompt .welcome-prompt-input{flex-basis:calc(100% - 50px)}.welcome-base-prompt .welcome-prompt-generate-button{width:100%;margin:0}}
 .source-row{display:flex;gap:5px;align-items:center;margin-right:11px}
 .source-row .upload-box{flex:1;min-width:0;margin-right:0}
 .source-edit-button{flex:none;border:1px solid #60578e;background:#302b43;border-radius:6px;color:#d6c9ff;padding:6px 8px;font-size:10px;cursor:pointer;margin-top:8px}
@@ -482,6 +505,183 @@
 .harmonize-reference-row .reference-upload-action{margin:0}
 .harmonize-reference-row .reference-previews{flex:1}
 
+/* Compact workspace: keep controls close to the thing they affect. */
+.left-sidebar .panel-top{padding:14px 16px 5px}
+.left-sidebar .panel-top h2{margin:0;font-size:15px}
+.left-sidebar .section-rule{display:none}
+.left-sidebar .upload-box{padding:10px 9px}
+.left-sidebar .source-thumbnail{width:44px;height:44px}
+.base-prompt-shortcut{padding:7px 16px 2px}
+.tool-row{height:52px;min-height:52px;padding:4px 9px;gap:5px}
+.toolbar-left{gap:6px}
+.toolbar-cluster{flex-direction:row;align-items:center;gap:0}
+.toolbar-caption{display:none}
+.toolbar-divider{height:24px}
+.groups-panel{padding-top:2px}
+.groups-panel .section-heading{padding:7px 12px}
+.groups-panel .section-heading h2{margin:0;font-size:15px}
+.groups-panel .group-list{padding-top:4px}
+.groups-panel .group-details{padding:0 7px 7px}
+.groups-panel .group-category{flex:1;max-width:none}
+.groups-panel .variant-row{padding:7px}
+.groups-panel .variant-action{min-width:27px;min-height:26px;align-items:center;justify-content:center;padding:4px 6px}
+.empty-groups{padding:18px 12px}
+.empty-groups strong{margin:0;color:#8d92a0}
+#canvasMessage{display:none}
+.canvas-foot{height:30px;justify-content:flex-end;padding:0 12px}
+.right-sidebar .inspector-bottom{display:none}
+.right-sidebar.source-editor-active #addRegionBtn,
+.right-sidebar.is-collapsed #groupCount{display:none}
+
+@media(hover:hover) and (pointer:fine){
+  .groups-panel .variant-row .variant-action{width:0;min-width:0;padding-inline:0;border-width:0;opacity:0;overflow:hidden;pointer-events:none}
+  .groups-panel .variant-row:hover .variant-action,
+  .groups-panel .variant-row:focus-within .variant-action{width:auto;min-width:27px;padding-inline:6px;border-width:1px;opacity:1;pointer-events:auto}
+}
+
+/* Compact project actions and progressive-disclosure canvas tools. */
+.topbar{height:60px;padding-inline:18px}
+.workspace{height:calc(100vh - 60px)}
+.topbar-actions{gap:6px}
+.brand-logo{display:block;width:31px;height:31px;flex:none;border-radius:8px;box-shadow:0 0 18px #7b2df12b}
+.topbar-icon-action{display:grid;place-items:center;width:38px;height:38px;padding:0;border:1px solid #383b45;border-radius:9px;background:#24272f;color:#e8e9ef;font-size:15px;cursor:pointer}
+.topbar-icon-action:hover{border-color:#716aa0;background:#30323f;color:#fff}
+#apiKeyStatusBtn{min-width:48px;padding-inline:9px}
+#apiKeyStatusBtn.premium-active{background:#262b31;color:#9cd3af}
+#exportBtn{min-height:38px;padding-inline:12px}
+
+.tool-row{position:relative;z-index:15;height:48px;min-height:48px;overflow:visible}
+.toolbar-left{overflow:visible}
+.toolbar-history{display:flex;align-items:center;gap:2px}
+.toolbar-history .icon-btn{width:29px;height:30px}
+.canvas-actions{gap:2px}
+.canvas-actions .vert-line{display:none}
+.zoom-fit-value{border:0;border-radius:6px;background:transparent;padding:5px;color:#b1b4c1;cursor:pointer}
+.zoom-fit-value:hover{background:#292c35;color:#fff}
+.selection-toolset .tool{width:33px;justify-content:center;padding-inline:7px}
+.selection-toolset .tool span{display:none}
+.selection-toolset .tool.active{width:auto}
+.selection-toolset .tool.active span{display:inline}
+.toolbar-more{position:relative;flex:none}
+.toolbar-more>summary{list-style:none;min-width:58px;justify-content:center}
+.toolbar-more>summary::-webkit-details-marker{display:none}
+.toolbar-more[open]>summary,.toolbar-more:has(.tool.active)>summary{color:#ddd9ff;background:#363348}
+.toolbar-popover{position:absolute;z-index:30;top:calc(100% + 8px);left:0;width:252px;padding:9px;border:1px solid #444756;border-radius:11px;background:#1d2027;box-shadow:0 18px 50px #000b}
+.toolbar-popover-section{padding:7px}
+.toolbar-popover-section+ .toolbar-popover-section{border-top:1px solid #30333d}
+.toolbar-popover-section>small{display:block;margin:0 0 7px;color:#858b9a;font-size:9px;font-weight:800;letter-spacing:.9px;text-transform:uppercase}
+.toolbar-popover .toolset{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px}
+.toolbar-popover .tool{width:100%;justify-content:flex-start;padding:7px 8px}
+.toolbar-popover .selection-modes{display:grid;grid-template-columns:repeat(3,1fr);width:100%}
+.toolbar-popover .mode{padding-inline:4px}
+.toolbar-popover .toolbar-utility{display:block}
+.toolbar-popover-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px}
+.toolbar-popover-actions .btn{width:100%;padding:7px 6px;font-size:10px}
+.toolbar-popover-actions #projectPromptToolbarBtn{display:none}
+
+@media(max-width:900px){
+  .selection-toolset .tool span{display:none!important}
+  .selection-toolset .tool.active{width:33px}
+  .toolbar-right{gap:2px}
+  .toolbar-history{display:none}
+}
+@media(max-width:560px){
+  .topbar{padding-inline:10px}
+  #apiKeyStatusBtn{min-width:40px;padding-inline:6px}
+  .topbar-icon-action{width:34px;height:34px}
+  #exportBtn .export-label{display:none}
+  #exportBtn{width:36px;padding:0}
+  .selection-toolset .tool[data-tool="ellipse"],.selection-toolset .tool[data-tool="wand"]{display:none}
+}
+
+/* Desktop tool rail and resizable Groups inspector. */
+.workspace{--inspector-width:248px}
+.right-sidebar{position:relative}
+.inspector-resize-handle{position:absolute;z-index:20;top:0;bottom:0;left:0;width:7px;cursor:col-resize;touch-action:none;outline:0}
+.inspector-resize-handle::after{content:'';position:absolute;top:0;bottom:0;left:0;width:1px;background:#2a2d35;transition:width .15s,background .15s}
+.inspector-resize-handle:hover::after,.inspector-resize-handle:focus-visible::after,.inspector-resizing .inspector-resize-handle::after{width:3px;background:#8f86df}
+.inspector-resizing{cursor:col-resize!important;user-select:none}
+.inspector-resizing *{cursor:col-resize!important}
+.right-sidebar.is-collapsed .inspector-resize-handle{display:none}
+
+@media(min-width:1130px){
+  .workspace{grid-template-columns:250px minmax(360px,1fr) var(--inspector-width)}
+  .workspace.inspector-collapsed{grid-template-columns:250px minmax(360px,1fr) 44px}
+}
+@media(min-width:731px) and (max-width:1129px){
+  .workspace{grid-template-columns:185px minmax(275px,1fr) var(--inspector-width)}
+  .workspace.inspector-collapsed{grid-template-columns:185px minmax(275px,1fr) 44px}
+}
+@media(min-width:731px){
+  .main-panel{position:relative}
+  .tool-row{position:absolute;z-index:16;top:52px;bottom:30px;left:0;width:154px;height:auto;min-height:0;display:flex;flex-direction:column;align-items:stretch;gap:10px;padding:10px 8px;overflow-x:hidden;overflow-y:auto;border-right:1px solid #2d3039;border-bottom:0;background:#17191f}
+  .canvas-viewport,.canvas-foot{margin-left:154px}
+  .toolbar-left,.toolbar-right{display:flex;flex:none;flex-direction:column;align-items:stretch;width:100%;gap:10px;padding:0;border:0;overflow:visible}
+  .toolbar-section{display:flex;flex-direction:column;gap:5px;padding-bottom:9px;border-bottom:1px solid #2e313a}
+  .toolbar-section-title{display:block;padding:0 7px;color:#777f91;font-size:9px;font-weight:800;letter-spacing:1px;text-transform:uppercase}
+  .tool-row .toolset{display:flex;flex-direction:column;gap:2px;width:100%}
+  .tool-row .tool{width:100%;justify-content:flex-start;padding:7px 8px}
+  .tool-row .tool span,.selection-toolset .tool span,.selection-toolset .tool.active span{display:inline!important}
+  .selection-toolset .tool,.selection-toolset .tool.active{width:100%}
+  .tool-row .selection-modes{display:grid;grid-template-columns:1fr;width:100%;gap:2px;padding:3px}
+  .tool-row .mode{text-align:left;padding:6px 8px}
+  .toolbar-context{display:block;width:100%}
+  .toolbar-context .wand-options,.toolbar-context .brush-size{flex-wrap:wrap;width:100%;padding:5px 7px}
+  .toolbar-context input{flex:1;min-width:62px;max-width:100%}
+  .toolbar-actions{gap:6px}
+  .toolbar-history{display:grid;grid-template-columns:repeat(3,1fr);gap:3px}
+  .toolbar-history .icon-btn{width:100%;height:30px;border:1px solid #333743;background:#20232a}
+  .toolbar-actions>.btn{width:100%;justify-content:flex-start;padding:7px 8px}
+  .toolbar-actions #projectPromptToolbarBtn{display:none}
+  .toolbar-primary{display:flex;flex-direction:column;gap:5px;width:100%;padding-top:1px}
+  .toolbar-primary .btn{width:100%;justify-content:center;min-height:34px}
+}
+
+@media(max-width:999px){
+  .toolbar-section-title{display:none}
+  .toolbar-section{display:flex;align-items:center}
+  .tool-row{overflow-x:auto;overflow-y:hidden}
+  .layer-toolset .tool span{display:none}
+  .toolbar-actions{display:none}
+  .canvas-viewport,.canvas-foot{margin-left:0}
+}
+
+@media(max-width:730px){
+  .inspector-resize-handle{display:none}
+}
+
+/* Sources live under Groups; the workspace now has only canvas + inspector. */
+@media(min-width:1130px){
+  .workspace{grid-template-columns:minmax(520px,1fr) var(--inspector-width)}
+  .workspace.inspector-collapsed{grid-template-columns:minmax(520px,1fr) 44px}
+}
+@media(min-width:731px) and (max-width:1129px){
+  .workspace{grid-template-columns:minmax(380px,1fr) var(--inspector-width)}
+  .workspace.inspector-collapsed{grid-template-columns:minmax(380px,1fr) 44px}
+}
+.right-sidebar .sources-panel{display:block;flex:0 1 auto;min-height:214px;max-height:43%;padding:0 0 10px;border:0;border-top:1px solid #30333c;background:#17191f;overflow-y:auto}
+.right-sidebar .sources-panel .panel-top{padding:11px 13px 2px}
+.right-sidebar .sources-panel .panel-top h2{font-size:13px}
+.right-sidebar .sources-panel .source-row{margin-right:7px}
+.right-sidebar .sources-panel .upload-box{margin:6px 8px 0;padding:8px}
+.right-sidebar .sources-panel .source-thumbnail{width:40px;height:40px}
+.right-sidebar .sources-panel .source-edit-button{margin-top:6px}
+.right-sidebar .sources-panel .master-versions{margin:8px 8px 1px}
+.right-sidebar .sources-panel .source-actions{margin:8px 8px 0}
+.right-sidebar .sources-panel .base-prompt-shortcut{padding:7px 8px 0}
+.right-sidebar.source-editor-active .sources-panel{display:none!important}
+
+@media(max-width:730px){
+  .right-sidebar{overflow-y:auto}
+  .right-sidebar .groups-panel{flex:0 0 auto;min-height:210px}
+  .right-sidebar .sources-panel{display:block!important;flex:none;min-height:210px;max-height:none}
+}
+
+/* Help stays available without occupying the Groups header. */
+.right-sidebar #helpBtn,.right-sidebar.source-editor-active #helpBtn{position:fixed;z-index:46;right:12px;bottom:12px;display:grid!important;place-items:center;width:28px;min-width:28px;height:28px;padding:0!important;border:1px solid #414550;border-radius:50%;background:#20232a;color:#aeb3c0;font-size:12px;line-height:1;box-shadow:0 5px 18px #0007}
+.right-sidebar #helpBtn:hover{border-color:#8d84dc;background:#302d43;color:#fff}
+.right-sidebar #helpBtn:focus-visible{outline:2px solid #aaa2f4;outline-offset:2px}
+
 /* Fit uses the viewport's actual padding, with a small gutter at every size. */
 .canvas-viewport{padding:10px}
 .canvas-header{flex-shrink:0}
@@ -494,3 +694,16 @@
 .geometry-setting{display:flex;align-items:center;justify-content:space-between;gap:8px}
 .geometry-setting .switch input:focus-visible+span{outline:2px solid #c0b8ff;outline-offset:3px}
 .right-sidebar.is-collapsed .advanced-settings,.right-sidebar.source-editor-active .advanced-settings{display:none}
+
+/* Small green accents borrowed from the Mosaic mark. */
+:root{--mosaic-green:#43efa0;--mosaic-green-soft:rgba(67,239,160,.13);--mosaic-green-border:rgba(67,239,160,.42)}
+.brand-dot{color:var(--mosaic-green)}
+.status-mark{background:var(--mosaic-green);box-shadow:0 0 0 4px var(--mosaic-green-soft)}
+.tool.active{color:#f3fff9;background:linear-gradient(90deg,rgba(126,109,225,.2),var(--mosaic-green-soft));box-shadow:inset 2px 0 0 var(--mosaic-green)}
+.variant-row.selected .variant-dot{border-color:var(--mosaic-green);background:#17251f}
+.upload-box.ready{border-color:var(--mosaic-green-border);box-shadow:inset 0 0 0 1px rgba(67,239,160,.05)}
+#addRegionBtn:hover{border-color:var(--mosaic-green-border);color:var(--mosaic-green);background:var(--mosaic-green-soft)}
+#commitBtn:not(:disabled){border-color:var(--mosaic-green-border);background:linear-gradient(135deg,#aaa6ff,#5ce5aa);color:#101b17;box-shadow:0 0 18px rgba(67,239,160,.11)}
+.ai-progress-fill{background:linear-gradient(90deg,#7567c8,#8e8cf1,var(--mosaic-green));background-size:180% 100%}
+.inspector-resize-handle:hover::after,.inspector-resize-handle:focus-visible::after,.inspector-resizing .inspector-resize-handle::after{background:var(--mosaic-green)}
+.right-sidebar #helpBtn:hover{border-color:var(--mosaic-green-border);background:#20342d;color:var(--mosaic-green)}
