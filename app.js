@@ -438,7 +438,7 @@ function patchTexture(patch, source) {
   tc.drawImage(source.canvas,-x,-y);
   tc.globalCompositeOperation='destination-in';
   // Feather only composited cutout alpha (not mask geometry or marching ants).
-  tc.filter='blur(1.4px)';
+  tc.filter='blur(1.8px)';
   tc.drawImage(patch.mask,-x,-y);
   tc.filter='none';
   const out={image,x,y,key,mask:patch.mask,source:source.canvas};
@@ -649,7 +649,7 @@ function render(){
     if(state.pendingRevealOnly&&state.selectionMask){
       const temp=makeCanvas(canvas.width,canvas.height),tc=temp.getContext('2d');
       tc.drawImage(pending.canvas,0,0);tc.globalCompositeOperation='destination-in';
-      tc.filter='blur(1.4px)';tc.drawImage(state.selectionMask,0,0);tc.filter='none';ctx.drawImage(temp,0,0);
+      tc.filter='blur(1.8px)';tc.drawImage(state.selectionMask,0,0);tc.filter='none';ctx.drawImage(temp,0,0);
     }else{ctx.save();ctx.globalAlpha=.84;ctx.drawImage(pending.canvas,0,0);ctx.restore()}
   }
   drawOverlay();
@@ -663,18 +663,22 @@ function vectorLayer(id){
   let layer=$(id);if(!layer){layer=svgNode('g',{id});$('selectionDraft').prepend(layer)}
   layer.replaceChildren();return layer;
 }
-function drawVectorPaths(layer,paths,{color='#f3efff',fill='none',width=1.5,dashed=false}={}){
+function drawVectorPaths(layer,paths,{color='#f3efff',fill='none',width=.95,dashed=false}={}){
   const d=paths.filter(path=>path.length>=3).map(path=>path.map((point,index)=>(index?'L':'M')+point.x+' '+point.y).join(' ')+' Z').join(' ');
   const attributes={d,fill,'fill-rule':'evenodd',stroke:color,'stroke-width':width,'vector-effect':'non-scaling-stroke','stroke-linejoin':'round'};
-  if(dashed){layer.append(svgNode('path',{...attributes,stroke:'#17151e','stroke-width':width+1}));attributes['stroke-dasharray']='5 4'}
+  if(dashed){layer.append(svgNode('path',{...attributes,stroke:'#17151e','stroke-width':width+.3,opacity:.22}));attributes['stroke-dasharray']='4 6'}
   layer.append(svgNode('path',attributes));
 }
 function updateSelectionOutline(){state.boundaryCanvas=!state.selectionOverlayHidden&&state.selectionMask&&maskBoundingBox(state.selectionMask)?state.selectionMask:null;drawOverlay()}
 function drawOverlay(){ox.clearRect(0,0,overlay.width,overlay.height);drawDraftPreview();window.MosaicPremium?.positionCanvasProgress?.();
-  const vectors=vectorLayer('selectionOutlineVectors');vectorLayer('regionGuideVectors');
+  const vectors=vectorLayer('selectionOutlineVectors');
+  vectors.classList.toggle('is-quiet',Boolean(state.selectionOverlayHidden));
+  vectorLayer('regionGuideVectors');
   if(state.before||window.MosaicPremium?.isPreviewing()){maskAddButton.hidden=maskRemoveButton.hidden=true;clearHover();return}
   window.MosaicPremium?.drawRegionGuides();
-  if(state.boundaryCanvas&&!state.selectionOverlayHidden)drawVectorPaths(vectors,ensureSelectionPaths(),{dashed:true});
+  if(state.selectionOverlayHidden&&state.selectionMask&&state.selectionPaths?.length)
+    drawVectorPaths(vectors,state.selectionPaths,{color:'#d6c8fb',width:.7,dashed:true});
+  else if(state.boundaryCanvas)drawVectorPaths(vectors,ensureSelectionPaths(),{dashed:true});
   const chosen=state.tool==='transform' && !state.pendingSourceId && !state.editingPatchId && activeTransformPatch();
   if(chosen){
     drawVectorPaths(vectors,patchSelectionPaths(chosen),{dashed:true});
@@ -698,7 +702,7 @@ function cutoutThumbnail(image,mask){
   t.imageSmoothingEnabled=true;t.imageSmoothingQuality='high';
   t.drawImage(image,b.x,b.y,b.w,b.h,dx,dy,dw,dh);
   t.globalCompositeOperation='destination-in';
-  t.filter='blur(.5px)';
+  t.filter='blur(.8px)';
   t.drawImage(mask,b.x,b.y,b.w,b.h,dx,dy,dw,dh);
   t.filter='none';t.globalCompositeOperation='source-over';
   return thumb.toDataURL('image/png');
