@@ -4,8 +4,13 @@ mozAI is a manual-first architectural AI collage editor with optional bring-your
 
 ## Workflow
 
+Open the public welcome page and choose **Continue as guest** for manual editing,
+local project files and PNG export, or **Sign in to Pro**. AI actions request an
+invited account only when needed. Email/password and Google share the existing
+Supabase membership checks. Signing in from the editor preserves its canvas.
+
 1. Upload a **Base image**. mozAI stays on onboarding until you **upload a Master**, **generate a Master from the inline prompt**, or deliberately click **Continue with Base only**. Just uploading Base never silently starts the editor or creates Master. Clicking Generate opens the main canvas immediately with Base and centered generation progress; the Base fades into the generated Master when it is ready. Mask editing remains available while generating.
-2. Upload your own **Master image**, generate a Master with Premium, or click **Continue with Base only** to start a local manual working draft. The draft is not registered as an uploaded/generated Master, and a real Master can still be added later (with confirmation if it would replace existing Group work).
+2. Upload your own **Master image**, generate a Master with Pro, or click **Continue with Base only** to start a local manual working draft. The draft is not registered as an uploaded/generated Master, and a real Master can still be added later (with confirmation if it would replace existing Group work).
 3. Upload one or more AI images. Each becomes a temporary top layer, one at a time.
 4. Choose **Line**, **Rect**, **Oval**, or **Magic Wand**. Line uses click-to-place polygon points; close at the start, double-click, or press Enter. Start/draw outside the image if needed: the live outline stays visible in the surrounding viewport and the applied selection automatically clips to the image rectangle. Rect/Oval support Shift-constrained shapes. Magic Wand flood-selects connected, similar-colored pixels under the click, with an adjustable **Tolerance** slider. **New / Add / Subtract** work with every selection tool.
 5. Click **Apply** to keep only the selected region of the uploaded image. **Enter** closes an unfinished Line; selection remains a draft until Apply. The unselected pixels are hidden non-destructively.
@@ -33,7 +38,7 @@ editor and the `/api/ai/*` routes that connect to OpenAI:
 npm run dev:local
 ```
 
-Open http://127.0.0.1:8000, click **✦ Add API key**, and enter your OpenAI API
+Open http://127.0.0.1:8000, click **Connect AI**, and enter your OpenAI API
 key. Local auto-login uses an isolated development account; production requires Supabase setup described in [Phase 2 setup](docs/phase2-setup.md). The OpenAI key stays in
 the current browser tab and is forwarded only by the local same-origin server for
 each OpenAI request.
@@ -58,7 +63,14 @@ MIT License.
 
 ## AI workflow (OpenAI API key only)
 
-**No mozAI username, password or account is required.** Click **✦ Add API key** in the toolbar and enter your OpenAI API key (or select any AI Generate action to open the key dialog automatically). The API key is validated for format locally and checked by OpenAI when you run a request.
+Manual editing requires no account. **AI requires an active invited mozAI account
+and your own OpenAI key.** Click **Connect AI** or a Generate action to sign in and
+follow the key setup guide. The connection check calls OpenAI's models endpoint
+without generating an image; it does not establish remaining balance, billing
+status, or permission to use a particular image model. Invited accounts display
+mozAI Pro with **100 demo credits**; Low/Medium/High generations use 1/2/3 demo
+credits after success. These are simulation units, never OpenAI funds, and do not
+limit BYOK generation when depleted. See [onboarding setup](docs/onboarding.md).
 
 1. Upload **Base**. A compact prompt bar appears under Base: type the first prompt and press **Enter** to generate a Master, or click the image icon to attach up to 3 visual references. Paste (Ctrl/Cmd+V) or drag image references into the bar too; small thumbnails appear only when attached. Alternatively upload Master manually. Base remains the camera/geometry reference.
 2. Draw a Line, Rectangle or Oval selection, click **Area**, and enter the instruction for that region. Each requested area receives a new colored contour and numbered label. Multiple areas can have different prompts.
@@ -76,9 +88,9 @@ API-generated images are not perfectly geometry-constrained; masking guarantees 
 - Application login uses verified Supabase sessions and invitation membership. Local auto-login is explicitly enabled with `npm run dev:local` and is blocked on Vercel. The BYOK Remove-key control disconnects only the OpenAI key; it does not sign out of the application.
 - OpenAI API key entry uses a masked input, stays only in the current browser tab's JavaScript memory and disappears after a refresh or tab close. It is **never** stored in cookies, `localStorage`, GitHub, the project file or a server environment variable.
 - On each AI action, the browser sends the key in the HTTPS POST body to the mozAI same-origin serverless function. That function checks the request origin, validates the key's format, and forwards it to OpenAI. The app never embeds or shares an API key in its source code.
-- This is **BYOK**: every user uses their own API key and is responsible for their OpenAI API charges. ChatGPT subscriptions do not include OpenAI API credit.
-- Because mozAI runs on a publicly accessible URL, anyone who supplies a valid OpenAI API key can use the AI endpoints. Use Vercel Firewall / rate limiting to reduce resource abuse. **Only enter your API key in a deployment you trust.**
-- Supported endpoints: `/api/ai/master`, `/api/ai/edit`, `/api/ai/harmonize`, `/api/ai/classify`, `/api/ai/option-name`. Legacy `/api/login`, `/api/session`, `/api/logout`, and admin password setup have been removed.
+- This is **BYOK**: every user uses their own API key and is responsible for their OpenAI API charges. Check actual API billing and any account-specific credit benefits in OpenAI; the mozAI demo balance is independent.
+- A valid OpenAI key alone cannot access AI endpoints: the server also requires a verified Supabase session and active invitation membership. Admin endpoints additionally require a database admin role. **Only enter your API key in a deployment you trust.**
+- AI endpoints: `/api/ai/master`, `/api/ai/edit`, `/api/ai/harmonize`, `/api/ai/classify`, `/api/ai/option-name`, `/api/ai/connection`. Application sessions use `/api/session`; usage uses `/api/credits`. The old shared admin password implementation is no longer used.
 - Up to 3 reference images per generation are resized and validated before they are sent. Running the UI from a static file server allows manual editing; AI functions require a deployed Node.js serverless runtime.
 
 ## Move & Skew layers

@@ -11,6 +11,8 @@ if(process.env.MOSAIC_DEV_AUTH==='true'&&!loopback(HOST)&&HOST!=='localhost')thr
 
 const apiRoutes = new Map([
   ['/api/session', require('./api/session')],
+  ['/api/credits', require('./api/credits')],
+  ['/api/ai/connection', require('./api/ai/connection')],
   ['/api/activity', require('./api/activity')],
   ['/api/admin', require('./api/admin')],
   ['/api/ai/master', require('./api/ai/master')],
@@ -26,6 +28,12 @@ const publicFiles = new Set([
   'auth.js',
   'account.js',
   'account.css',
+  'landing.css',
+  'credits.js',
+  'demo-credits.js',
+  'auth-callback.html',
+  'auth-callback.js',
+  'assets/atelier.svg',
   'admin.html',
   'admin.js',
   'admin.css',

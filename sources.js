@@ -50,7 +50,7 @@ function refresh(){
       '<div class="master-version-actions">'+
       '<button type="button" data-master-action="preview" aria-label="Preview '+label+'">Preview</button>'+
       '<button type="button" data-master-action="save" aria-label="Save '+label+' as PNG">Save</button>'+
-      '<button type="button" data-master-action="regen" aria-label="Regenerate '+label+' using Premium AI" title="Premium AI: create the next Master from this version">✦ Regen</button>'+
+      '<button type="button" data-master-action="regen" aria-label="Regenerate '+label+' using Pro AI" title="Pro AI: create the next Master from this version">✦ Regen</button>'+
       '</div></div>';
   }).join('');
   if(items.length>lastVersionCount&&items.length>1)masterPanel.open=true;

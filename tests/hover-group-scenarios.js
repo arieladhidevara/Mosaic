@@ -53,7 +53,7 @@ window.runHoverGroupChecks=async function(){
     checks.push('Native mask comparison: exactly 85% shares options, 84% separates, containment requires two-way overlap, low-opacity masks and holes are respected');
 
     core.setMaster(frame(),'Generated options');draw();
-    $('apiKeyStatusBtn').click();$('apiKeyInput').value='sk-mozai-group-validation';$('apiKeyForm').requestSubmit();
+    $('apiKeyStatusBtn').click();await wait(()=>$('apiKeyDialog').open);$('apiKeyInput').value='sk-mozai-group-validation';$('apiKeyForm').requestSubmit();await wait(()=>window.MosaicAuth.isReady());
     await ai.generateSelection('Make this wall red');await wait(()=>[...state.patches.values()].every(p=>!p.generating&&!p.awaitingResult));
     assert(state.groups.length===1&&state.groups[0].patchIds.length===1,'First generation did not create one Group and option');
     const group=state.groups[0];group.name='Living room wall';group.manualName=true;core.renderGroups();

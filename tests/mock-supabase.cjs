@@ -6,9 +6,13 @@ process.env.SUPABASE_PUBLISHABLE_KEY='test-publishable-placeholder';
 process.env.SUPABASE_SECRET_KEY='test-server-placeholder';
 const roles={admin:'22222222-2222-4222-8222-222222222222',tester:'33333333-3333-4333-8333-333333333333'};
 const originalFetch=global.fetch;
+const projects=[],generations=[];
 global.fetch=async(url,options={})=>{
   if(!String(url).startsWith(process.env.SUPABASE_URL+'/'))return originalFetch(url,options);
   const route=new URL(url),body=options.body?JSON.parse(options.body):{},headers=options.headers||{};
+  if(route.pathname==='/auth/v1/settings')return Response.json({external:{google:false}});
+  if(route.pathname==='/auth/v1/signup')return Response.json({id:roles.tester,email:body.email});
+  if(route.pathname==='/rest/v1/rpc/mosaic_check_invitation')return Response.json(true);
   if(route.pathname==='/auth/v1/token'){
     const role=route.searchParams.get('grant_type')==='refresh_token'?String(body.refresh_token).replace('refresh_',''):String(body.email).split('@')[0];
     if(!roles[role]||(route.searchParams.get('grant_type')==='password'&&body.password!=='test-only-password'))return Response.json({error:'invalid credentials'},{status:401});
@@ -26,5 +30,17 @@ global.fetch=async(url,options={})=>{
   }
   if(route.pathname==='/rest/v1/rpc/mosaic_admin_overview')return Response.json({users:2,projects:0,generations:0,exports:0,total_tokens:null,usage_records:0,successful_generations:0,failed_generations:0,average_duration_ms:null});
   if(route.pathname==='/rest/v1/rpc/mosaic_record_event')return Response.json(null);
+  if(route.pathname==='/rest/v1/mosaic_projects'){
+    if(options.method==='POST'){projects.push(body);return Response.json(body)}
+    return Response.json(projects.filter(p=>p.id===route.searchParams.get('id')?.slice(3)&&p.user_id===route.searchParams.get('user_id')?.slice(3)));
+  }
+  if(route.pathname==='/rest/v1/mosaic_generations'){
+    if(options.method==='HEAD'){
+      const count=generations.filter(g=>g.user_id===route.searchParams.get('user_id').slice(3)&&g.environment===route.searchParams.get('environment').slice(3)&&g.quality===route.searchParams.get('quality').slice(3)&&g.status==='success').length;
+      return new Response(null,{headers:{'content-range':'0-0/'+count}});
+    }
+    if(options.method==='POST'){generations.push(body);return Response.json(body)}
+    if(options.method==='PATCH'){const row=generations.find(g=>g.id===route.searchParams.get('id').slice(3));if(row)Object.assign(row,body);return Response.json(null)}
+  }
   throw Error('Unexpected test Supabase request: '+route.pathname);
 };

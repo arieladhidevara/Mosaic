@@ -4,7 +4,7 @@ window.runInitialMasterChecks=async function(pausePreview=false){
   const assert=(value,message)=>{if(!value)throw Error(message)};
   const wait=async(predicate)=>{for(let i=0;i<400;i++){if(predicate())return;await new Promise(resolve=>setTimeout(resolve,20))}throw Error('Initial Master flow timed out')};
   assert(!state.master&&!state.reference,'Use a fresh browser tab for onboarding checks');
-  $('apiKeyStatusBtn').click();$('apiKeyInput').value='sk-initial-master-validation';$('apiKeyForm').requestSubmit();
+  $('apiKeyStatusBtn').click();await wait(()=>$('apiKeyDialog').open);$('apiKeyInput').value='sk-initial-master-validation';$('apiKeyForm').requestSubmit();await wait(()=>window.MosaicAuth.isReady());
   const base=makeCanvas(900,600),context=base.getContext('2d');context.fillStyle='#52667f';context.fillRect(0,0,900,600);context.fillStyle='#d8dee9';context.fillRect(160,100,500,280);context.fillStyle='#74859e';context.fillRect(210,160,150,220);context.fillRect(440,160,150,220);
   const file=await new Promise(resolve=>base.toBlob(blob=>resolve(new File([blob],'Initial base.png',{type:'image/png'})),'image/png'));
   const transfer=new DataTransfer();transfer.items.add(file);$('referenceInput').files=transfer.files;$('referenceInput').dispatchEvent(new Event('change'));

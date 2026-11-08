@@ -31,7 +31,7 @@ window.runMosaicBrowserChecks=async function(){
   try{
     assert(same(ai.exportProjectState().settings,{preserveOriginalGeometry:false,regionQuality:'medium',harmonizeQuality:'high'}),'Incorrect default settings');
     assert(!$('advancedSettings').open,'Advanced Settings should start collapsed');
-    $('apiKeyStatusBtn').click();$('apiKeyInput').value='sk-mosaic-browser-validation';$('apiKeyForm').requestSubmit();
+    $('apiKeyStatusBtn').click();await wait(()=>$('apiKeyDialog').open,'key dialog');$('apiKeyInput').value='sk-mosaic-browser-validation';$('apiKeyForm').requestSubmit();await wait(()=>window.MosaicAuth.isReady(),'key validation');
     assert(window.MosaicAuth.isReady(),'Fake key form did not connect');
     for(const quality of ['low','medium','high'])for(const preserve of [false,true]){
       initialize();set('regionRenderQuality',quality);set('preserveOriginalGeometry',preserve);

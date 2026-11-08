@@ -18,7 +18,7 @@ async function env(values,fn){
   try{return await fn()}finally{keys.forEach(k=>{if(before[k]===undefined)delete process.env[k];else process.env[k]=before[k]})}
 }
 function req(overrides={}){return {method:'GET',url:'/api/session',headers:{host:'localhost:8000',origin:'http://localhost:8000'},socket:{remoteAddress:'127.0.0.1',localAddress:'127.0.0.1'},body:{},...overrides}}
-function res(){return {statusCode:200,headers:{},setHeader(k,v){this.headers[k]=v},status(n){this.statusCode=n;return this},json(value){this.body=value;return this}}}
+function res(){return {statusCode:200,headers:{},setHeader(k,v){this.headers[k]=v},getHeader(k){return this.headers[k]},status(n){this.statusCode=n;return this},json(value){this.body=value;return this}}}
 const local={NODE_ENV:'development',MOSAIC_DEV_AUTH:'true'};
 const production={NODE_ENV:'production',SUPABASE_URL:'https://test.supabase.co',SUPABASE_PUBLISHABLE_KEY:'test-public',SUPABASE_SECRET_KEY:'test-server-secret'};
 function productionRequest(body={}){return req({method:'POST',url:'/api/admin',headers:{host:'mosaic.example',origin:'https://mosaic.example',cookie:'__Host-mosaic_session=verified-by-server'},body})}
@@ -158,7 +158,7 @@ test('signup checks invitations before Supabase and requires email confirmation'
   const original=global.fetch;let valid=false,signupCalls=0;
   global.fetch=async url=>{
     if(String(url).endsWith('/rpc/mosaic_check_invitation'))return Response.json(valid);
-    if(String(url).endsWith('/auth/v1/signup')){signupCalls++;return Response.json({id:userId,email:'invited@example.com'})}
+    if(new URL(url).pathname==='/auth/v1/signup'){assert.equal(new URL(url).searchParams.get('redirect_to'),'https://mosaic.example/?confirmed=1');signupCalls++;return Response.json({id:userId,email:'invited@example.com'})}
     throw Error('Unexpected call');
   };
   try{
@@ -178,5 +178,101 @@ test('refresh rotates auth cookies only after checking active membership again',
   try{
     const request=productionRequest({action:'refresh'});request.headers.cookie='__Host-mosaic_session_refresh=old-refresh';const response=res();await session(request,response);
     assert.equal(response.statusCode,200);assert.equal(refreshValue,'old-refresh');assert(response.headers['Set-Cookie'].some(c=>c.includes('new-refresh')));assert.equal(response.body.user.id,userId);
+  }finally{global.fetch=original}
+}));
+
+test('guest access never grants AI, demo usage, activity, or admin API access',async()=>env(production,async()=>{
+  const routes=[require('../api/credits'),require('../api/admin'),require('../api/activity'),...['master','edit','harmonize','classify','option-name','connection'].map(name=>require('../api/ai/'+name))];
+  for(const [index,handler] of routes.entries()){
+    const request=productionRequest({apiKey:'sk-test-only-key-placeholder',role:'admin',userId:userId});delete request.headers.cookie;
+    if(index<2)request.method='GET';
+    const response=res();await handler(request,response);assert.equal(response.statusCode,401);
+  }
+}));
+
+test('Google PKCE is bound to a server cookie and state; verified membership controls access',async()=>env(production,async()=>{
+  const original=global.fetch;let tokenCalls=0,member=false,redeem=false;
+  global.fetch=async(url,options={})=>{
+    const path=new URL(url).pathname;
+    if(path==='/auth/v1/settings')return Response.json({external:{google:true}});
+    if(path==='/auth/v1/token'){
+      tokenCalls++;const body=JSON.parse(options.body);assert.equal(body.auth_code,'test-authorization-code');assert.match(body.code_verifier,/^[\w-]{64}$/);
+      return Response.json({access_token:'google-access',refresh_token:'google-refresh',expires_in:3600});
+    }
+    if(path==='/auth/v1/user')return Response.json({id:userId,email:'google@example.com',email_confirmed_at:'2026-11-07',user_metadata:{role:'admin'}});
+    if(path==='/rest/v1/mosaic_members')return Response.json(member?[{user_id:userId,email:'google@example.com',status:'active',role:'user'}]:[]);
+    if(path==='/rest/v1/rpc/mosaic_redeem_invitation'){redeem=true;assert.equal(JSON.parse(options.body).p_user_id,userId);return Response.json({user_id:userId,email:'google@example.com',status:'active',role:'user'})}
+    throw Error('Unexpected OAuth call');
+  };
+  try{
+    const start=res();await session(productionRequest({action:'oauth_start',invitation:'a'.repeat(43),redirect:'https://evil.example',role:'admin'}),start);
+    assert.equal(start.statusCode,200);const url=new URL(start.body.url),redirect=new URL(url.searchParams.get('redirect_to'));
+    assert.equal(url.origin,'https://test.supabase.co');assert.equal(redirect.origin,'https://mosaic.example');assert.equal(url.searchParams.get('code_challenge_method'),'s256');assert.equal(url.searchParams.get('provider'),'google');
+    const stored=start.headers['Set-Cookie'][0];assert.match(stored,/HttpOnly; SameSite=Lax; Max-Age=600; Secure/);
+    const cookie=stored.split(';')[0],value=JSON.parse(Buffer.from(decodeURIComponent(cookie.split('=')[1]),'base64url').toString());
+    assert.equal(url.searchParams.get('code_challenge'),require('node:crypto').createHash('sha256').update(value.verifier).digest('base64url'));
+    assert.doesNotMatch(JSON.stringify(start.body),/verifier|google-access|google-refresh/);
+    for(const [suppliedCookie,state] of [['',value.state],[cookie,'wrong-state']]){
+      const request=productionRequest({action:'oauth_exchange',code:'test-authorization-code',state});request.headers.cookie=suppliedCookie;
+      const denied=res();await session(request,denied);assert.equal(denied.statusCode,400);
+    }
+    assert.equal(tokenCalls,0,'Unbound callback reached provider');
+    const expired={...value,created:Date.now()-700000};const stale=productionRequest({action:'oauth_exchange',code:'test-authorization-code',state:value.state});stale.headers.cookie='__Host-mosaic_session_oauth='+Buffer.from(JSON.stringify(expired)).toString('base64url');
+    const denied=res();await session(stale,denied);assert.equal(denied.statusCode,400);assert.equal(tokenCalls,0);
+    const request=productionRequest({action:'oauth_exchange',code:'test-authorization-code',state:value.state,userId:'forged',role:'admin'});request.headers.cookie=cookie;
+    const success=res();await session(request,success);assert.equal(success.statusCode,200);assert.equal(success.body.user.id,userId);assert.equal(success.body.user.role,'user');assert(redeem);
+    assert.equal(success.headers['Set-Cookie'].length,3);assert.match(success.headers['Set-Cookie'][2],/Max-Age=0/);assert.doesNotMatch(JSON.stringify(success.body),/google-access|google-refresh/);
+    const withoutInvite=res();await session(productionRequest({action:'oauth_start'}),withoutInvite);
+    const flowCookie=withoutInvite.headers['Set-Cookie'][0].split(';')[0],flow=JSON.parse(Buffer.from(decodeURIComponent(flowCookie.split('=')[1]),'base64url').toString());
+    const uninvited=productionRequest({action:'oauth_exchange',code:'test-authorization-code',state:flow.state});uninvited.headers.cookie=flowCookie;
+    const blocked=res();await session(uninvited,blocked);assert.equal(blocked.statusCode,403);assert.equal(blocked.headers['Set-Cookie'].length,1);assert.match(blocked.headers['Set-Cookie'][0],/oauth=/);
+  }finally{global.fetch=original}
+}));
+
+test('Google unavailable and cross-origin starts fail safely without issuing auth cookies',async()=>env(production,async()=>{
+  const original=global.fetch;let calls=0;global.fetch=async()=>{calls++;return Response.json({external:{google:false}})};
+  try{
+    const denied=productionRequest({action:'oauth_start'});denied.headers.origin='https://evil.example';const blocked=res();await session(denied,blocked);assert.equal(blocked.statusCode,403);assert.equal(calls,0);
+    const response=res();await session(productionRequest({action:'oauth_start'}),response);assert.equal(response.statusCode,503);assert.equal(response.body.code,'GOOGLE_NOT_CONFIGURED');assert.equal(response.headers['Set-Cookie'],undefined);
+  }finally{global.fetch=original}
+}));
+
+test('OpenAI connection validates the supplied key without images, billing access or secret reflection',async()=>env(local,async()=>{
+  const handler=require('../api/ai/connection'),original=global.fetch;let status=200,calls=0;
+  global.fetch=async(url,options)=>{calls++;assert.equal(url,'https://api.openai.com/v1/models');assert.equal(options.headers.Authorization,'Bearer sk-developer-test-only-key');return Response.json({secret:'DO_NOT_REFLECT'},{status})};
+  try{
+    const invalid=res();await handler(req({method:'POST',body:{apiKey:'invalid'}}),invalid);assert.equal(invalid.statusCode,400);assert.equal(calls,0);
+    for(const code of [200,401,403,429,500]){
+      status=code;const response=res();await handler(req({method:'POST',body:{apiKey:'sk-developer-test-only-key'}}),response);
+      assert.equal(response.statusCode,code===200?200:[401,403].includes(code)?400:503);assert.doesNotMatch(JSON.stringify(response.body),/DO_NOT_REFLECT|sk-developer/);
+      if(code===200)assert.deepEqual(response.body,{connected:true,balanceAvailable:false});
+    }
+  }finally{global.fetch=original}
+}));
+
+test('demo credits count successful generations once, across qualities, and reset locally',async()=>{
+  const directory=await fs.mkdtemp(path.join(os.tmpdir(),'mozai-demo-')),file=path.join(directory,'data.json'),localStore=store.createStore(file),actor={...policy.DEV_USER};
+  try{
+    assert.equal((await localStore.demoCredits(actor)).remaining,100);
+    for(const operation of ['master','edit','harmonize'])for(const quality of ['low','medium','high']){
+      const record=await localStore.startGeneration(actor,{operation,quality,model:'test',preserveOriginalGeometry:true});
+      await localStore.finishGeneration(actor,record.id,{status:'success'});await localStore.finishGeneration(actor,record.id,{status:'success'});
+    }
+    const failed=await localStore.startGeneration(actor,{operation:'edit',quality:'high',model:'test'});await localStore.finishGeneration(actor,failed.id,{status:'failed'});
+    await localStore.startGeneration(actor,{operation:'harmonize',quality:'high',model:'test'});
+    const balance=await localStore.demoCredits(actor);assert.equal(balance.used,18);assert.equal(balance.remaining,82);assert.equal(balance.openaiBalance,null);assert.equal(balance.kind,'demo');
+    await localStore.reset(actor);assert.equal((await localStore.demoCredits(actor)).remaining,100);
+  }finally{await fs.rm(file,{force:true});await fs.rmdir(directory)}
+});
+
+test('hosted credit counts are server scoped and unavailable usage is never reported as 100',async()=>env(production,async()=>{
+  const original=global.fetch;let unavailable=false,calls=0;
+  global.fetch=async(url,options)=>{
+    calls++;const query=new URL(url).searchParams;assert.equal(query.get('user_id'),'eq.'+userId);assert.equal(query.get('environment'),'eq.production');assert.equal(query.get('status'),'eq.success');assert.equal(options.method,'HEAD');assert.equal(options.headers.Prefer,'count=exact');
+    return new Response(null,{headers:unavailable?{}:{'content-range':'0-0/'+({low:2,medium:3,high:4}[query.get('quality').slice(3)])}});
+  };
+  try{
+    const actor={id:userId,environment:'production',auth:'supabase'};const balance=await store.demoCredits(actor);assert.equal(balance.used,20);assert.equal(balance.remaining,80);assert.equal(calls,3);
+    unavailable=true;await assert.rejects(store.demoCredits(actor),{code:'USAGE_UNAVAILABLE'});
   }finally{global.fetch=original}
 }));

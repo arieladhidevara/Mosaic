@@ -98,7 +98,8 @@ npm run dev:login
 ```
 
 This overrides `MOSAIC_DEV_AUTH=false`, including if `.env.local` enabled it.
-The editor requires Supabase login and invitation access. Supabase Auth handles
+The public welcome page offers a guest editor. AI and admin operations require
+Supabase login and invitation access. Supabase Auth handles
 password hashing, confirmation, and authentication; Mosaic verifies every session
 with `/auth/v1/user` and checks an active membership from its database. Session
 tokens use HttpOnly, SameSite cookies and Secure `__Host-` cookies on Vercel.
@@ -152,7 +153,8 @@ an in-memory PGlite test database. No live Supabase or OpenAI credentials are us
 The existing browser scenario suites should run against `dev:local`, with
 `tests/mock-openai.cjs` preloaded when testing generated images without API charges.
 
-Production smoke test after configuring Vercel: anonymous editor shows login;
+Production smoke test after configuring Vercel: anonymous visitor sees the public
+welcome page and can enter the manual editor as a guest; AI requests sign-in;
 uninvited user cannot access AI/admin data; invited tester can edit/generate with
 BYOK but cannot read `/api/admin`; admin can view real environment-specific records.
 
@@ -171,3 +173,6 @@ never contact Supabase or OpenAI. Mock OpenAI browser tests store records under
 `.mosaic-dev/browser-tests/` so they do not affect normal developer data.
 Provider references: [Supabase server-side verification](https://supabase.com/docs/reference/javascript/auth-getuser)
 and [RLS and server-only service roles](https://supabase.com/docs/guides/database/postgres/row-level-security).
+
+For Google provider configuration, the public guest flow, BYOK onboarding and
+demo-credit semantics, see [Onboarding and Pro preview](onboarding.md).

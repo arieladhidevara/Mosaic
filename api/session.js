@@ -6,12 +6,14 @@ module.exports=async function(req,res){
   try{
     if(req.method==='GET'){const actor=await accounts.requireUser(req);await seed(actor);return send(res,200,{authenticated:true,user:actor})}
     const body=req.body||{};
+    if(body.action==='oauth_start')return send(res,200,await require('../lib/oauth').start(req,res));
+    if(body.action==='oauth_exchange')return send(res,200,await require('../lib/oauth').exchange(req,res));
     if(body.action==='logout'){
       const token=accounts.cookies(req)[accounts.cookieName()];
       if(token)try{await require('../lib/supabase').call('/auth/v1/logout',{method:'POST',token})}catch{}
       accounts.setSession(res,null);return send(res,200,{authenticated:false});
     }
-    if(body.action==='login'||body.action==='signup')return send(res,200,await accounts.signIn(body,res));
+    if(body.action==='login'||body.action==='signup')return send(res,200,await accounts.signIn(body,res,req.headers.origin));
     if(body.action==='refresh')return send(res,200,await accounts.refresh(req,res));
     if(body.action==='exchange'){
       const actor=await accounts.membership(await accounts.verifiedUser(body.accessToken),body.invitation);

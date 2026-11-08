@@ -31,7 +31,8 @@ window.runLocalAccountChecks=async function(){
 window.runRealLoginChecks=async function(role='tester'){
   const account=window.MosaicAccount,assert=(v,m)=>{if(!v)throw Error(m)};
   await account.ready();assert(!account.current(),'Real-login mode silently authenticated a developer');
-  assert(!document.getElementById('accountGate').hidden,'Real-login mode did not show the login form');
+  assert(!document.getElementById('landing').hidden,'Real-login mode did not show the public landing page');
+  account.login();assert(document.getElementById('accountDialog').open,'Sign-in did not open');
   const form=document.getElementById('accountForm');form.elements.email.value=role+'@example.com';form.elements.password.value='test-only-password';form.requestSubmit();
   for(let i=0;i<300&&!account.current();i++)await new Promise(resolve=>setTimeout(resolve,20));
   assert(account.current()?.email===role+'@example.com','Supabase login did not open the same editor');

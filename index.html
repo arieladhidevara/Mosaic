@@ -4,15 +4,29 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="theme-color" content="#0e1014" />
+  <meta name="referrer" content="no-referrer" />
   <meta name="description" content="mozAI — a smarter workspace for curating AI image variations. Mask the parts you love, group variations by region, and compose your favorite details." />
   <title>mozAI — Compose the best of every image</title>
   <link rel="icon" type="image/svg+xml" href="./assets/mosaic-logo.svg" />
   <link rel="stylesheet" href="./styles.css" />
   <link rel="stylesheet" href="./account.css" />
+  <link rel="stylesheet" href="./landing.css" />
 </head>
 <body class="account-pending">
   <section id="accountGate" class="account-gate" aria-label="Account access"><p>Opening mozAI...</p></section>
-  <noscript>JavaScript is required to sign in and use mozAI.</noscript>
+  <section id="landing" class="landing" aria-label="Welcome to mozAI">
+    <header class="landing-nav"><a class="landing-brand" href="/" aria-label="mozAI home"><img src="./assets/mosaic-logo.svg" width="30" height="30" alt="">mozAI<span>DESIGN WORKSPACE</span></a><nav aria-label="Main navigation"><a href="#workflow">The workflow</a><button data-sign-in type="button" class="landing-signin">Sign in <span aria-hidden="true">↗</span></button></nav></header>
+    <main class="landing-main">
+      <section class="landing-hero">
+        <div class="hero-copy"><div class="hero-eyebrow"><span></span> A NEW PERSPECTIVE ON IMAGE MAKING</div><h1>Your vision.<br><em>Every detail.</em></h1><p class="hero-description">A considered space for architectural images. Explore materials, refine a single detail, and bring every layer together with AI.</p><div class="hero-actions"><button type="button" data-enter-guest class="landing-primary">Continue as guest <span aria-hidden="true">↗</span></button><button type="button" data-sign-in class="landing-secondary">Sign in to Pro</button></div><p class="hero-note">Explore the editor freely. Sign in when you’re ready for AI.</p><div class="hero-proof"><span>Precise selections</span><span>Editable layers</span><span>Your own API key</span></div></div>
+        <div class="hero-studio" aria-label="Illustration of an architectural composition in mozAI"><div class="studio-top"><span class="studio-dot"></span><span>Atelier / Material study</span><span class="studio-live">COMPOSITION 01</span></div><div class="studio-canvas"><img src="./assets/atelier.svg" width="780" height="620" alt="Architectural illustration of a warm interior with a selected wall finish"><div class="studio-selection-label"><i></i>Wall finish <span>02 options</span></div><div class="studio-prompt"><span class="studio-spark">✦</span><div>Warm walnut, softer daylight<small>Change only what you choose.</small></div><span class="studio-prompt-arrow">↗</span></div><span class="studio-caption">ILLUSTRATIVE WORKSPACE</span></div><div class="studio-bottom"><span><i></i> Base</span><span><i></i> Materials</span><span><i></i> Final composition</span><span class="studio-check">✓</span></div><div class="studio-float"><span>✧</span><div>One coherent image.<small>Keep every possibility.</small></div></div></div>
+      </section>
+      <section id="workflow" class="landing-workflow" aria-labelledby="workflowTitle"><div class="workflow-intro"><p class="hero-eyebrow">FROM FIRST IDEA TO FINAL IMAGE</p><h2 id="workflowTitle">Make space for possibilities.</h2></div><div class="workflow-grid"><article><span>01 / START</span><h3>Your image is the beginning.</h3><p>Bring a sketch, render, or photograph. Open a saved project and pick up exactly where you left off.</p></article><article><span>02 / REFINE</span><h3>Give every detail direction.</h3><p>Select an area, test a material, and keep your favorite options. Your layers stay yours to edit.</p></article><article><span>03 / COMPOSE</span><h3>Bring it all together.</h3><p>Harmonize with AI, export the image, or save an editable .moz project for your next iteration.</p></article></div></section>
+      <section class="landing-pro"><div><span class="pro-badge">PRO PREVIEW</span><h2>A little AI.<br>A lot of possibility.</h2><p>Invited members get the complete AI workflow and 100 demo credits to explore the Pro experience. Connect your own OpenAI key when you’re ready.</p><small>Demo credits are a simulation, not OpenAI funds. Actual API usage is billed to your OpenAI account.</small></div><div class="pro-feature-list"><p><span>✦</span> Master generation from your Base</p><p><span>⌁</span> AI edits within precise selections</p><p><span>✧</span> Full-image harmonization</p><button type="button" data-sign-in class="landing-secondary">Have an invitation? Start here <span aria-hidden="true">↗</span></button></div></section>
+      <footer class="landing-footer"><span class="landing-brand">mozAI</span><p>Made for the details that make it yours.</p><button type="button" data-enter-guest>Open the editor ↗</button></footer>
+    </main>
+  </section>
+  <noscript>Enable JavaScript to open the mozAI image editor. Guest editing does not require an account.</noscript>
   <div id="app">
     <header class="topbar">
       <div class="brand" aria-label="mozAI home"><img class="brand-logo" src="./assets/mosaic-logo.svg" alt=""/><span class="brand-name">mozAI</span></div>
@@ -71,16 +85,19 @@
     <div class="dialog-actions"><button class="btn btn-outline" type="button" data-close-dialog="areaPromptDialog">Cancel</button><button class="btn btn-premium" type="submit">Generate masked edit</button></div></form></dialog>
     <dialog id="harmonizeDialog" class="mosaic-dialog"><form method="dialog" id="harmonizeForm"><div class="dialog-eyebrow">✦ OPENAI · HARMONIZE</div><h2>Flatten & harmonize</h2><p>OpenAI harmonizes your current collage using the original Base as the geometry reference. Your earlier editable layers are archived.</p><label for="harmonizePromptInput">Harmonization instructions</label><textarea id="harmonizePromptInput" rows="7"></textarea><div class="harmonize-reference-row"><label class="reference-upload-action">＋ Reference images (up to 3)<input id="harmonizeReferenceInput" type="file" accept="image/png,image/jpeg,image/webp" multiple hidden/></label><div id="harmonizeReferencePreviews" class="reference-previews"></div></div><small class="reference-paste-hint">Paste an image (Ctrl/Cmd+V) or drag one into this prompt to attach it as reference.</small><div class="dialog-actions"><button class="btn btn-outline" type="button" data-close-dialog="harmonizeDialog">Cancel</button><button class="btn btn-premium" type="submit">Generate &amp; harmonize</button></div></form></dialog>
     <dialog id="apiKeyDialog" class="mosaic-dialog"><form id="apiKeyForm">
-      <div class="dialog-eyebrow">✦ OPENAI · BRING YOUR OWN KEY</div><h2>Connect OpenAI API key</h2>
-      <p>No mozAI account or password needed. Add your OpenAI API key to enable Master generation, masked edits, semantic Groups, and Harmonize.</p>
+      <div class="dialog-eyebrow">mozAI PRO · CONNECT YOUR AI</div><h2>Your creative workspace is ready.</h2>
+      <p>One last step for AI: connect your own OpenAI API key. You can skip this and keep editing manually.</p>
+      <ol class="key-setup-steps"><li><span>01</span><div><a href="https://platform.openai.com/settings/organization/billing/overview" target="_blank" rel="noopener noreferrer">Set up OpenAI API billing ↗</a><small>Check your API balance and payment settings in OpenAI.</small></div></li><li><span>02</span><div><a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener noreferrer">Create an API key ↗</a><small>Create a project key. Copy it once and paste it below.</small></div></li><li><span>03</span><div><strong>Connect and create</strong><small>We verify your key without generating an image.</small></div></li></ol>
       <label for="apiKeyInput">OpenAI API key</label><input id="apiKeyInput" type="password" autocomplete="off" spellcheck="false" placeholder="sk-..." required />
-      <p class="private-key-note">Your key stays in this tab's memory only, is sent to mozAI's server securely when making an AI request, and is then forwarded to OpenAI. It is not saved in cookies, browser storage or project files. Refresh to clear it. OpenAI API charges are separate from ChatGPT subscriptions.</p>
+      <p class="private-key-note">Your key stays only in this tab’s memory. It is sent securely through mozAI’s server to OpenAI for requests, but is never saved in our database, logs, browser storage or project files, or shown in the admin portal. Refreshing clears it. OpenAI controls API charges and access; mozAI cannot read your remaining OpenAI balance.</p>
       <p id="apiKeyError" class="premium-login-error" role="alert"></p>
-      <div class="dialog-actions"><button id="apiKeyRemoveBtn" type="button" class="btn btn-quiet hidden">Remove key</button><button id="apiKeyCancelBtn" type="button" class="btn btn-outline">Cancel</button><button id="apiKeySubmitBtn" type="submit" class="btn btn-premium">Use API key</button></div>
+      <div class="dialog-actions"><button id="apiKeyRemoveBtn" type="button" class="btn btn-quiet hidden">Remove key</button><button id="apiKeyCancelBtn" type="button" class="btn btn-outline">Not now</button><button id="apiKeySubmitBtn" type="submit" class="btn btn-premium">Connect securely</button></div>
     </form></dialog>
+    <dialog id="creditsDialog" class="mosaic-dialog credits-dialog" aria-labelledby="creditsHeading"><div class="dialog-eyebrow">mozAI PRO PREVIEW</div><h2 id="creditsHeading">Room to explore.</h2><p>Your demo balance tracks successful generations in mozAI. It is a simulation, not a prepaid balance or an estimate of OpenAI funds.</p><div class="demo-balance"><strong id="demoRemaining">—</strong><span>demo credits remaining <small>of 100 preview credits</small></span></div><p id="creditsError" role="status"></p><div class="credit-rates"><span>Low <strong>1 credit</strong></span><span>Medium <strong>2 credits</strong></span><span>High <strong>3 credits</strong></span></div><p class="credits-explanation">Master always uses High. Region edits and Harmonize follow your quality setting. Failed generations do not reduce the demo balance. When it reaches zero, BYOK generation remains available.</p><a href="https://platform.openai.com/settings/organization/billing/overview" target="_blank" rel="noopener noreferrer" class="billing-link">View your actual OpenAI balance ↗</a><small class="credits-disclaimer">OpenAI bills your API usage separately, including any auxiliary AI requests. Demo credits have no monetary value.</small><div class="dialog-actions"><button id="creditsRefresh" type="button" class="btn btn-outline">Refresh usage</button><button id="creditsClose" type="button" class="btn btn-primary">Back to workspace</button></div></dialog>
     <div id="toast" class="toast hidden" role="status"></div>
   </div>
   <script src="./mask-geometry.js"></script>
+  <script src="./demo-credits.js"></script>
   <script type="module" src="./account.js"></script>
   <script type="module" src="./auth.js"></script>
   <script type="module" src="./app.js"></script>
@@ -89,5 +106,6 @@
   <script type="module" src="./source-editor.js"></script>
   <script type="module" src="./sources.js"></script>
   <script type="module" src="./project-file.js"></script>
+  <script type="module" src="./credits.js"></script>
 </body>
 </html>
