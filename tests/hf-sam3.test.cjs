@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const {validateRequest, parseCompleteEvent, configuredSpace, segmentImage} = require('../lib/hf-sam3');
+const {validateRequest, parseCompleteEvent, configuredSpace, segmentImage, parseAutoCompleteEvent, segmentAllImage} = require('../lib/hf-sam3');
 
 test('validates image and coordinates before sending to HF', () => {
   const image='data:image/jpeg;base64,/9j/4AAQ';
@@ -45,6 +45,45 @@ test('SAM3 performs exactly two calls to fixed Space endpoint',async()=>{
       'https://mozai-example.hf.space/gradio_api/call/segment/job_12'
     ]);
   } finally {
+    global.fetch=oldFetch;
+    if(oldUrl===undefined)delete process.env.MOZAI_HF_SAM3_SPACE_URL;
+    else process.env.MOZAI_HF_SAM3_SPACE_URL=oldUrl;
+  }
+});
+
+test('Auto Create validates the JSON region map returned by Gradio',()=>{
+  const data=JSON.stringify({labels:'data:image/png;base64,AAAA',count:3});
+  const event='event: complete\ndata: '+JSON.stringify([data])+'\n\n';
+  assert.deepEqual(parseAutoCompleteEvent(event),{labels:'data:image/png;base64,AAAA',count:3});
+  assert.throws(()=>parseAutoCompleteEvent('event: complete\ndata: [\"bad\"]\n\n'),/Invalid/);
+  assert.throws(()=>parseAutoCompleteEvent('event: error\ndata: null\n\n'),/failed/);
+  const huge=JSON.stringify({labels:'data:image/png;base64,AAAA',count:65});
+  assert.throws(()=>parseAutoCompleteEvent('event: complete\ndata: '+JSON.stringify([huge])+'\n\n'),/Invalid/);
+});
+
+test('Auto Create calls only the configured Space with one image',async()=>{
+  const oldUrl=process.env.MOZAI_HF_SAM3_SPACE_URL,oldFetch=global.fetch;
+  try {
+    process.env.MOZAI_HF_SAM3_SPACE_URL='https://mozai-example.hf.space';
+    const visited=[];
+    const data=JSON.stringify({labels:'data:image/png;base64,AAAA',count:2});
+    global.fetch=async(url,opts)=>{
+      visited.push({url,opts});
+      if(url.endsWith('/segment_all'))return {ok:true,json:async()=>({event_id:'auto_12'})};
+      return {ok:true,text:async()=>('event: complete\ndata: '+JSON.stringify([data])+'\n\n')};
+    };
+    const image='data:image/jpeg;base64,/9j/4AAQ';
+    assert.deepEqual(await segmentAllImage({mode:'auto',image,width:24,height:20}),{
+      labels:'data:image/png;base64,AAAA',count:2
+    });
+    assert.deepEqual(visited.map(x=>x.url),[
+      'https://mozai-example.hf.space/gradio_api/call/segment_all',
+      'https://mozai-example.hf.space/gradio_api/call/segment_all/auto_12'
+    ]);
+    assert.deepEqual(JSON.parse(visited[0].opts.body),{data:[image]});
+    assert.throws(()=>validateRequest({image,width:24,height:20,x:-1,y:0}),/coordinates/);
+    await assert.rejects(segmentAllImage({mode:'auto',image,width:1025,height:20}),/coordinates/);
+  }finally{
     global.fetch=oldFetch;
     if(oldUrl===undefined)delete process.env.MOZAI_HF_SAM3_SPACE_URL;
     else process.env.MOZAI_HF_SAM3_SPACE_URL=oldUrl;
