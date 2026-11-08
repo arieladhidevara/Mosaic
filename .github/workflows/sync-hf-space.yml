@@ -29,6 +29,10 @@ jobs:
         run: |
           python3 -m pip install --disable-pip-version-check "numpy>=1.26,<2"
           python3 -m unittest discover -s tests -p "test_sam3_mask_utils.py"
+          python3 -m unittest discover -s tests -p "test_sam3_auto_regions.py"
+
+      - name: Validate SAM 3 API bridge
+        run: node --test tests/hf-sam3.test.cjs
 
       - name: Upload SAM 3 inference files (preserve HF Space README and hardware settings)
         env:
@@ -47,7 +51,7 @@ jobs:
           from huggingface_hub import HfApi
 
           folder = Path("integrations/hf-sam3-space")
-          required = ["app.py", "requirements.txt", "mask_utils.py"]
+          required = ["app.py", "requirements.txt", "mask_utils.py", "auto_regions.py"]
           missing = [name for name in required if not (folder / name).is_file()]
           if missing:
               raise SystemExit("Missing Space files: " + ", ".join(missing))

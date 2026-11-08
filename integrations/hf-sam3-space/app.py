@@ -7,12 +7,14 @@ Requires accepted Meta SAM 3 checkpoint access and HF_TOKEN as a Space secret.
 """
 import base64
 import io
+import json
 
 import gradio as gr
 import numpy as np
 import spaces
 import torch
 from PIL import Image
+from auto_regions import build_label_map
 from mask_utils import choose_clicked_mask
 from sam3.model_builder import build_sam3_image_model
 from sam3.model.sam3_image_processor import Sam3Processor
@@ -57,16 +59,59 @@ def segment(image_data_uri: str, x: int, y: int) -> str:
         raise gr.Error("SAM 3 could not isolate that object. Click farther inside its outline or use Color Wand.") from exc
 
 
-demo = gr.Interface(
-    fn=segment,
-    inputs=[
-        gr.Textbox(label="JPEG data URI", lines=2),
-        gr.Number(label="Click X", precision=0),
-        gr.Number(label="Click Y", precision=0),
-    ],
-    outputs=gr.Textbox(label="Transparent PNG mask data URI"),
-    api_name="segment",
-    title="mozAI SAM 3 Smart Wand",
-    description="Input a JPEG data URI and pixel position. This is a private API integration contract, not a public image gallery.",
-)
+@spaces.GPU(duration=60)
+def segment_all(image_data_uri: str) -> str:
+    """Return one grayscale PNG index map for all detected object proposals."""
+    if not isinstance(image_data_uri, str) or not image_data_uri.startswith("data:image/jpeg;base64,"):
+        raise gr.Error("Expected JPEG data URI.")
+    if len(image_data_uri) > 2_500_000:
+        raise gr.Error("Image too large.")
+    try:
+        payload = base64.b64decode(image_data_uri.split(",", 1)[1], validate=True)
+        image = Image.open(io.BytesIO(payload)).convert("RGB")
+        w, h = image.size
+        if not (1 <= w <= 1024 and 1 <= h <= 1024):
+            raise ValueError("Unsupported image dimensions.")
+
+        # Encode the image once. Reuse SAM 3's image features for grid prompts.
+        with torch.inference_mode():
+            image_state = processor.set_image(image)
+
+            def predict_at(px, py):
+                masks, scores, _ = model.predict_inst(
+                    image_state,
+                    point_coords=np.asarray([[px, py]], dtype=np.float32),
+                    point_labels=np.asarray([1], dtype=np.int32),
+                    multimask_output=True,
+                )
+                return masks, scores
+
+            label_map = build_label_map(w, h, predict_at)
+        result = io.BytesIO()
+        Image.fromarray(label_map, mode="L").save(result, format="PNG")
+        data_uri = "data:image/png;base64," + base64.b64encode(result.getvalue()).decode("ascii")
+        return json.dumps({"labels": data_uri, "count": int(np.max(label_map))})
+    except (ValueError, OSError, IndexError) as exc:
+        raise gr.Error("Auto Create could not find distinct objects. Try a clearer render or use Color Wand.") from exc
+
+
+# Both endpoints share an inference model and must not mutate its state concurrently.
+with gr.Blocks(title="mozAI SAM 3") as demo:
+    gr.Markdown("## mozAI SAM 3 — segmentation service")
+    gr.Markdown("Create individual 2D masks or detect a set of candidate objects.")
+    source = gr.Textbox(label="JPEG data URI", lines=2)
+    with gr.Row():
+        x_input = gr.Number(label="Click X", precision=0)
+        y_input = gr.Number(label="Click Y", precision=0)
+    click_result = gr.Textbox(label="Selected PNG mask")
+    auto_result = gr.Textbox(label="Grayscale object-index PNG JSON")
+    gr.Button("Select clicked object").click(
+        fn=segment, inputs=[source, x_input, y_input], outputs=[click_result],
+        api_name="segment", concurrency_id="sam3-inference", concurrency_limit=1,
+    )
+    gr.Button("Auto detect candidate objects").click(
+        fn=segment_all, inputs=[source], outputs=[auto_result],
+        api_name="segment_all", concurrency_id="sam3-inference", concurrency_limit=1,
+    )
+
 demo.queue().launch()
