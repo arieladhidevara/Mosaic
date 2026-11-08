@@ -25,7 +25,12 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Upload SAM 3 app and dependencies (preserve HF Space README and hardware settings)
+      - name: Test click-focused SAM 3 masks
+        run: |
+          python3 -m pip install --disable-pip-version-check "numpy>=1.26,<2"
+          python3 -m unittest discover -s tests -p "test_sam3_mask_utils.py"
+
+      - name: Upload SAM 3 inference files (preserve HF Space README and hardware settings)
         env:
           HF_SPACE_WRITE_TOKEN: ${{ secrets.HF_SPACE_WRITE_TOKEN }}
           GITHUB_SHA: ${{ github.sha }}
@@ -42,7 +47,7 @@ jobs:
           from huggingface_hub import HfApi
 
           folder = Path("integrations/hf-sam3-space")
-          required = ["app.py", "requirements.txt"]
+          required = ["app.py", "requirements.txt", "mask_utils.py"]
           missing = [name for name in required if not (folder / name).is_file()]
           if missing:
               raise SystemExit("Missing Space files: " + ", ".join(missing))

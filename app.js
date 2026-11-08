@@ -993,6 +993,16 @@ async function applySAM3Wand(p){
     if(!result?.mask||!/^data:image\/png;base64,/.test(result.mask))throw Error('Invalid SAM 3 mask.');
     const image=new Image();image.src=result.mask;await image.decode();
     if(image.width!==w||image.height!==h)throw Error('SAM 3 mask dimensions do not match.');
+    // Defensive guard: never apply an empty or near-full-canvas AI selection.
+    // This also protects existing projects if the Space is running stale code.
+    const qw=Math.min(256,w),qh=Math.min(256,h),qc=makeCanvas(qw,qh),qctx=qc.getContext('2d',{willReadFrequently:true});
+    qctx.drawImage(image,0,0,qw,qh);
+    const alpha=qctx.getImageData(0,0,qw,qh).data;
+    let selectedPixels=0;
+    for(let i=3;i<alpha.length;i+=4)if(alpha[i]>127)selectedPixels++;
+    const fraction=selectedPixels/(qw*qh);
+    if(fraction<0.00001)throw Error('AI Wand did not find an object. Click inside the object and retry.');
+    if(fraction>=.92)throw Error('AI Wand selected almost the whole image. Click a more distinct object, or switch to Color Wand.');
     if(captured.master!==state.master||captured.mask!==state.selectionMask||
        captured.revision!==sam3WandRevision||captured.mode!==state.selectionMode||
        captured.source!==state.pendingSourceId||captured.editing!==state.editingPatchId||
