@@ -20,3 +20,11 @@ body:not(.workspace-open) #app{position:fixed;inset:0;width:100%;height:100%;ove
 
 /* Keep the AI-for-designers correction readable on narrow phones. */
 @media(max-width:480px){.hero-eyebrow{gap:6px;flex-wrap:wrap;letter-spacing:1.15px}.hero-eyebrow .hero-rewrite-arrow{font-size:11px}}
+
+
+/* Minimal video-first landing: preserve the left message and entry actions. */
+.landing{grid-template-rows:76px minmax(0,1fr)}
+.landing .hero-studio{display:block;width:100%;height:auto;aspect-ratio:910/512;min-height:0;border:1px solid #ffffff18;border-radius:12px;background:#19161d;box-shadow:0 24px 60px #0005;transform:none;overflow:hidden}
+.landing .hero-video{display:block;width:100%;height:100%;object-fit:contain;background:#19161d}
+@media(max-width:700px){.landing{grid-template-rows:68px minmax(0,1fr);overflow-y:auto}.landing-main{align-items:center}.landing-hero{height:auto;min-height:100%;grid-template-columns:minmax(0,1fr);gap:22px;padding:22px 0 32px}.landing .hero-studio{display:block;width:100%;max-width:530px;margin:0 auto}.landing .hero-copy{margin:0 auto;width:100%;max-width:530px}.hero-copy h1{margin:16px 0}.hero-description{margin-bottom:20px}}
+@media(max-height:520px){.landing .hero-studio{height:auto;aspect-ratio:910/512}}
