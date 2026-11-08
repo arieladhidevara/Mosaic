@@ -1,11 +1,15 @@
 /* Authenticated same-origin proxy for an optional Hugging Face SAM 3 ZeroGPU Space. */
 'use strict';
 const {send,guard} = require('../../lib/auth');
-const {segmentImage} = require('../../lib/hf-sam3');
+const {segmentImage, segmentAllImage} = require('../../lib/hf-sam3');
 
 module.exports = async function handler(req,res) {
   if (!await guard(req,res,'POST')) return;
   try {
+    if (req.body?.mode === 'auto') {
+      const regions = await segmentAllImage(req.body);
+      return send(res,200,regions);
+    }
     const mask = await segmentImage(req.body);
     return send(res,200,{mask});
   } catch (error) {
