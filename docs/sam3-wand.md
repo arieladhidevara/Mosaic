@@ -19,10 +19,46 @@ authorized checkpoint access and the `MOZAI_HF_SAM3_SPACE_URL` environment
 variable on Vercel. Until configured, AI Wand reports an error; use Color Wand.
 
 
+## Auto Create — detect first, save options only after generation
+
+The standard **Wand** is **Color Wand only** (local, no AI costs). Object
+segmentation moved to a separate **✦ Auto Create** action in the **Groups**
+toolbar.
+
+1. Upload an image / create a Master, then click **✦ Auto Create**.
+2. Sign in to mozAI (guest users do not get segmentation access). This step
+   does *not* require an OpenAI API key. Auto Create sends the image preview
+   to the configured Hugging Face SAM 3 Space.
+3. The Space creates best-effort 2D object-mask proposals from a **single
+   shared image embedding** and a sparse grid of point prompts. This is not
+   SAM 3D reconstruction, not guaranteed exhaustive segmentation, and may
+   miss tiny or ambiguous elements.
+4. Region highlights exist only over the **image canvas**. No objects or
+   options are created in the Groups list by the detection pass.
+5. Hover and click a highlighted region to use its temporary mask; a draft
+   Group may appear in the right sidebar. Enter an edit prompt and Generate.
+6. **A new option is visible in Groups only after successful image generation.**
+   A failed first generation does not leave a phantom option behind.
+   Other manual selections and imported options continue working.
+
+The same authenticated `POST /api/ai/sam3` route accepts
+`{"mode":"auto","image":"data:image/jpeg;base64,...","width":768,"height":512}`
+and returns `{"labels":"data:image/png;base64,...","count":N}`.
+The PNG is an 8-bit grayscale *object index map*: 0 is background, 1…N are
+candidate regions. This one map replaces shipping up to 28 full-size PNGs.
+The Gradio endpoint is `/gradio_api/call/segment_all`, while legacy
+single-click `/segment` remains available server-side for compatibility.
+Both share a concurrency limit of one for the model instance.
+
+On the first run, HF ZeroGPU may take longer than expected or hit free quota.
+If Auto Create cannot isolate an object, fall back to Color Wand, Rect or
+Lasso. Do not upload client-confidential images to an external HF Space
+without authorization.
+
 ## Automatic GitHub → Hugging Face sync
 
 The checked-in workflow [sync-hf-space.yml](../.github/workflows/sync-hf-space.yml)
-publishes `app.py`, `requirements.txt`, and `mask_utils.py` from
+publishes `app.py`, `requirements.txt`, `mask_utils.py`, and `auto_regions.py` from
 `integrations/hf-sam3-space/` to the **existing** Hugging Face Space
 `arieladhidevara/mozAI` on pushes to `main` that modify this folder.
 It can also be started manually from GitHub Actions using **Run workflow**.
