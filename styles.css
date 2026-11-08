@@ -823,3 +823,11 @@ body:has(.source-editor-active) .mask-edit-controls,body:has(.source-editor-acti
 #wandEngine:focus-visible{outline:2px solid #aa9cff;outline-offset:2px}
 .wand-ai-hint{font-size:10px;color:#bdb7f4;white-space:nowrap}
 @media(max-width:730px){.wand-context{gap:5px}.wand-engine-label{font-size:10px}#wandEngine{max-width:106px}}
+
+/* AI Auto Create is a temporary segmentation layer, never a persistent Group. */
+.inspector-bar .auto-create-groups{font-size:10px;white-space:nowrap;padding:6px 9px;line-height:1.2;border-radius:8px;letter-spacing:0;font-weight:700}
+.inspector-bar .auto-create-groups[aria-pressed="true"]{background:#332d48;color:#d9d1ff;border-color:#8170c0}
+.inspector-bar .auto-create-groups:disabled{opacity:.65;cursor:progress}
+.canvas-wrap .auto-regions-overlay{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:4}
+.canvas-wrap .auto-regions-hint{position:absolute;z-index:5;padding:5px 8px;background:#1d1c2ee5;color:#f8f5ff;font-size:11px;font-weight:650;line-height:1.3;white-space:nowrap;border:1px solid #a990e94d;border-radius:7px;box-shadow:0 3px 12px #0004;pointer-events:none}
+.group-pending-options{display:block;font-size:11px;line-height:1.5;color:#8b8b9a;padding:9px 11px 13px}
