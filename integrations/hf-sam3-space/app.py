@@ -8,10 +8,12 @@ Requires accepted Meta SAM 3 checkpoint access and HF_TOKEN as a Space secret.
 import base64
 import io
 import json
+from functools import lru_cache
 
+# Import ZeroGPU before other ML libraries so CUDA is managed correctly.
+import spaces
 import gradio as gr
 import numpy as np
-import spaces
 import torch
 from PIL import Image
 from auto_regions import build_label_map
@@ -19,12 +21,19 @@ from mask_utils import choose_clicked_mask
 from sam3.model_builder import build_sam3_image_model
 from sam3.model.sam3_image_processor import Sam3Processor
 
-# ZeroGPU requires GPU models to be created at module import time.
-model = build_sam3_image_model(enable_inst_interactivity=True)
-processor = Sam3Processor(model)
+# Meta SAM 3 eagerly builds CPU and CUDA tensors while deepcopying
+# transformer layers. With ZeroGPU's module-scope fake-CUDA patch this
+# fails before Gradio starts ("cuda:0 (ZeroGPU) and cpu"). Construct inside
+# the *real* ZeroGPU worker instead. Keep a cache for warm workers.
+# This intentionally trades a slower first request for reliable startup.
+@lru_cache(maxsize=1)
+def gpu_model():
+    model = build_sam3_image_model(enable_inst_interactivity=True, device="cuda")
+    model.eval()
+    return model, Sam3Processor(model)
 
 
-@spaces.GPU(duration=45)
+@spaces.GPU(duration=120)
 def segment(image_data_uri: str, x: int, y: int) -> str:
     if not isinstance(image_data_uri, str) or not image_data_uri.startswith("data:image/jpeg;base64,"):
         raise gr.Error("Expected JPEG data URI.")
@@ -37,6 +46,7 @@ def segment(image_data_uri: str, x: int, y: int) -> str:
         x, y = int(x), int(y)
         if not (1 <= w <= 1024 and 1 <= h <= 1024 and 0 <= x < w and 0 <= y < h):
             raise ValueError("Coordinates or image size out of bounds.")
+        model, processor = gpu_model()
         with torch.inference_mode():
             state = processor.set_image(image)
             masks, scores, _ = model.predict_inst(
@@ -59,7 +69,7 @@ def segment(image_data_uri: str, x: int, y: int) -> str:
         raise gr.Error("SAM 3 could not isolate that object. Click farther inside its outline or use Color Wand.") from exc
 
 
-@spaces.GPU(duration=60)
+@spaces.GPU(duration=120)
 def segment_all(image_data_uri: str) -> str:
     """Return one grayscale PNG index map for all detected object proposals."""
     if not isinstance(image_data_uri, str) or not image_data_uri.startswith("data:image/jpeg;base64,"):
@@ -73,6 +83,8 @@ def segment_all(image_data_uri: str) -> str:
         if not (1 <= w <= 1024 and 1 <= h <= 1024):
             raise ValueError("Unsupported image dimensions.")
 
+        # Model construction must happen inside an actual ZeroGPU worker.
+        model, processor = gpu_model()
         # Encode the image once. Reuse SAM 3's image features for grid prompts.
         with torch.inference_mode():
             image_state = processor.set_image(image)
