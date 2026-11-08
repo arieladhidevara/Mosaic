@@ -82,26 +82,37 @@ test('unsafe origin and unsupported method are rejected before authentication',a
   const response=res();await edit(req({method:'POST',headers:{host:'localhost:8000',origin:'https://evil.example'}}),response);assert.equal(response.statusCode,403);
   const method=res();await edit(req({method:'GET'}),method);assert.equal(method.statusCode,405);
 }));
-test('auto-login does not bypass OpenAI API key validation',async()=>env(local,async()=>{
-  const original=global.fetch;let calls=0;global.fetch=async()=>{calls++;throw Error('Must not call OpenAI')};
+test('generation requires a saved profile key and rejects API keys sent in body',async()=>env(local,async()=>{
+  const before=global.fetch;let calls=0;global.fetch=async()=>{calls++;throw Error('Unexpected OpenAI call')};
   try{
-    for(const apiKey of [undefined,'','invalid']){
-      const response=res();await edit(req({method:'POST',body:{apiKey,userId:userId,role:'admin'}}),response);assert.equal(response.statusCode,400);assert.match(response.body.error,/OpenAI API key/);
+    for(const body of [{apiKey:'sk-client-key-must-be-rejected'},{}]){
+      const response=res();await edit(req({method:'POST',body}),response);
+      assert.equal(response.statusCode,400);assert.match(response.body.error,/key/i);
     }
     assert.equal(calls,0);
-  }finally{global.fetch=original}
+  }finally{global.fetch=before}
 }));
-test('generation attribution uses server identity and forwards only the caller BYOK key',async()=>env(local,async()=>{
-  const oldFetch=global.fetch,oldStart=store.startGeneration,oldFinish=store.finishGeneration;let start,finish,authorization;
-  store.startGeneration=async(actor,values)=>{start={actor,values};return {id:randomUUID()}};store.finishGeneration=async(actor,id,values)=>{finish={actor,id,values}};
-  global.fetch=async(url,options)=>{assert.equal(url,'https://api.openai.com/v1/images/edits');authorization=options.headers.Authorization;return Response.json({data:[{b64_json:'test-image'}],usage:{input_tokens:10,output_tokens:20,total_tokens:30}})};
-  const png=Buffer.alloc(80);Buffer.from('89504e470d0a1a0a','hex').copy(png);png.writeUInt32BE(256,16);png.writeUInt32BE(256,20);const image='data:image/png;base64,'+png.toString('base64');
+test('generation uses the saved account key and verified server identity',async()=>env(local,async()=>{
+  const credentials=require('../lib/credential-store');
+  const oldFetch=global.fetch,oldStart=store.startGeneration,oldFinish=store.finishGeneration,oldReveal=credentials.reveal;
+  let start,finish,authorization;
+  credentials.reveal=async()=> 'sk-developer-owned-placeholder';
+  store.startGeneration=async(actor,values)=>{start={actor,values};return {id:randomUUID()}};
+  store.finishGeneration=async(actor,id,values)=>{finish={actor,id,values}};
+  global.fetch=async(url,options)=>{
+    assert.equal(url,'https://api.openai.com/v1/images/edits');
+    authorization=options.headers.Authorization;
+    return Response.json({data:[{b64_json:'test-image'}],usage:{input_tokens:10,output_tokens:20,total_tokens:30}});
+  };
+  const png=Buffer.alloc(80);Buffer.from('89504e470d0a1a0a','hex').copy(png);png.writeUInt32BE(256,16);png.writeUInt32BE(256,20);
+  const image='data:image/png;base64,'+png.toString('base64');
   try{
-    const response=res();await edit(req({method:'POST',body:{apiKey:'sk-developer-owned-placeholder',collage:image,mask:image,prompt:'Sensitive prompt',quality:'medium',userId:userId,environment:'production'}}),response);
+    const response=res();await edit(req({method:'POST',body:{collage:image,base:image,mask:image,prompt:'Sensitive prompt',quality:'medium'}}),response);
     assert.equal(response.statusCode,200);assert.equal(authorization,'Bearer sk-developer-owned-placeholder');
-    assert.equal(start.actor.environment,'development');assert.equal(start.actor.id,policy.DEV_USER.id);assert.equal(finish.values.total_tokens,30);assert.equal(finish.values.status,'success');
-    assert.doesNotMatch(JSON.stringify({start,finish}),/sk-developer|Sensitive prompt|base64/);assert.equal(response.body.usageRecorded,true);
-  }finally{global.fetch=oldFetch;store.startGeneration=oldStart;store.finishGeneration=oldFinish}
+    assert.equal(start.actor.environment,'development');assert.equal(start.actor.id,policy.DEV_USER.id);
+    assert.equal(finish.values.total_tokens,30);assert.equal(finish.values.status,'success');
+    assert.doesNotMatch(JSON.stringify({start,finish}),/sk-developer|Sensitive prompt|base64/);
+  }finally{global.fetch=oldFetch;store.startGeneration=oldStart;store.finishGeneration=oldFinish;credentials.reveal=oldReveal}
 }));
 test('missing usage remains unknown instead of invented zero',()=>{
   assert.deepEqual(usageFrom(undefined),{input_tokens:null,output_tokens:null,total_tokens:null});
@@ -237,19 +248,26 @@ test('Google unavailable and cross-origin starts fail safely without issuing aut
   }finally{global.fetch=original}
 }));
 
-test('OpenAI connection validates the supplied key without images, billing access or secret reflection',async()=>env(local,async()=>{
-  const handler=require('../api/ai/connection'),original=global.fetch;let status=200,calls=0;
-  global.fetch=async(url,options)=>{calls++;assert.equal(url,'https://api.openai.com/v1/models');assert.equal(options.headers.Authorization,'Bearer sk-developer-test-only-key');return Response.json({secret:'DO_NOT_REFLECT'},{status})};
+test('OpenAI connection checks the key, saves it, and never returns the plaintext secret',async()=>env(local,async()=>{
+  const handler=require('../api/ai/connection'),vault=require('../lib/credential-store');
+  const original=global.fetch,oldSave=vault.save;let status=200,calls=0;
+  vault.save=async(actor,key)=>{assert.equal(key,'sk-developer-test-only-key');return {connected:true,keyHint:'-key',updatedAt:'test'}};
+  global.fetch=async(url,options)=>{
+    calls++;assert.equal(url,'https://api.openai.com/v1/models');
+    assert.equal(options.headers.Authorization,'Bearer sk-developer-test-only-key');
+    return Response.json({secret:'DO_NOT_REFLECT'},{status});
+  };
   try{
-    const invalid=res();await handler(req({method:'POST',body:{apiKey:'invalid'}}),invalid);assert.equal(invalid.statusCode,400);assert.equal(calls,0);
+    const invalid=res();await handler(req({method:'POST',body:{apiKey:'invalid'}}),invalid);
+    assert.equal(invalid.statusCode,400);assert.equal(calls,0);
     for(const code of [200,401,403,429,500]){
       status=code;const response=res();await handler(req({method:'POST',body:{apiKey:'sk-developer-test-only-key'}}),response);
-      assert.equal(response.statusCode,code===200?200:[401,403].includes(code)?400:503);assert.doesNotMatch(JSON.stringify(response.body),/DO_NOT_REFLECT|sk-developer/);
-      if(code===200)assert.deepEqual(response.body,{connected:true,balanceAvailable:false});
+      assert.equal(response.statusCode,code===200?200:[401,403].includes(code)?400:503);
+      assert.doesNotMatch(JSON.stringify(response.body),/DO_NOT_REFLECT|sk-developer/);
+      if(code===200)assert.equal(response.body.connected,true);
     }
-  }finally{global.fetch=original}
+  }finally{global.fetch=original;vault.save=oldSave}
 }));
-
 test('demo credits count successful generations once, across qualities, and reset locally',async()=>{
   const directory=await fs.mkdtemp(path.join(os.tmpdir(),'mozai-demo-')),file=path.join(directory,'data.json'),localStore=store.createStore(file),actor={...policy.DEV_USER};
   try{

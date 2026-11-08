@@ -1,105 +1,116 @@
-/* BYOK is account-scoped; optional browser remembering is explicit in the form. */
-import * as vault from './key-vault.js';
+/* OpenAI keys are stored encrypted on mozAI's server and never returned to the browser. */
+import * as legacyVault from './key-vault.js';
 const $=id=>document.getElementById(id);
 const dialog=$('apiKeyDialog'),form=$('apiKeyForm'),button=$('apiKeyStatusBtn');
-let key='',keyOwner=null,pending=null,finishPending=null,ensuring=null,validation=0,epoch=0,restoration=null,restoredFor=null,remembered=false,initialPromptFor=null;
+let connected=false,owner=null,checked=false,loading=null,epoch=0,validation=0,initialPromptFor=null;
 const validKey=value=>/^sk-[\w-]{15,300}$/.test(value);
 function updateButton(){
-  const ready=Boolean(key);
-  button.textContent=ready?'AI connected':'Connect AI';
-  button.title=ready?'Manage your OpenAI API key':'Connect OpenAI API key';
+  button.textContent=connected?'AI connected':'Connect AI';
+  button.title=connected?'Manage saved OpenAI API key':'Connect OpenAI API key';
   button.setAttribute('aria-label',button.title);
-  button.classList.toggle('premium-active',ready);
-  document.body.classList.toggle('premium-ready',ready);
+  button.classList.toggle('premium-active',connected);
+  document.body.classList.toggle('premium-ready',connected);
+}
+function clear(){
+  epoch++;validation++;connected=false;owner=null;checked=false;loading=null;initialPromptFor=null;
+  if(dialog.open)dialog.close();
+  form.reset();updateButton();
 }
 function openKeyDialog(){
-  validation++;
-  $('apiKeyInput').value='';
-  $('apiKeyRemoveBtn').classList.toggle('hidden',!key);
-  $('apiKeyError').textContent='';
-  $('apiKeyRemember').checked=key?remembered:true;
+  validation++;$('apiKeyInput').value='';$('apiKeyError').textContent='';
+  $('apiKeyRemoveBtn').classList.toggle('hidden',!connected);
   if(!dialog.open)dialog.showModal();
   $('apiKeyInput').focus({preventScroll:true});
 }
-function complete(value){
-  if(finishPending){finishPending(value);finishPending=null;pending=null}
-}
-async function ensure(){
-  if(ensuring)return ensuring;
-  ensuring=(async()=>{
-    if(!await window.MosaicAccount.ensure())return false;
-    await restore();
-    if(key)return true;
-    // Never interrupt an image generation with another API-key popup.
-    window.MosaicCore?.toast('Connect your OpenAI key from the top bar to generate.');
-    return false;
-  })().finally(()=>{ensuring=null});
-  return ensuring;
+async function restore(force=false){
+  const actor=window.MosaicAccount.current();
+  if(!actor){clear();return false}
+  if(checked&&owner===actor.id&&!force)return connected;
+  if(loading&&!force)return loading;
+  const ticket=epoch;
+  const task=(async()=>{
+    try{
+      const status=await window.MosaicAccount.request('/api/ai/connection');
+      if(ticket!==epoch||window.MosaicAccount.current()?.id!==actor.id)return false;
+      connected=Boolean(status.connected);owner=actor.id;checked=true;updateButton();
+      return connected;
+    }catch(error){
+      if(ticket===epoch){checked=false;window.MosaicCore?.toast(error.message)}
+      return false;
+    }
+  })();
+  loading=task;
+  try{return await task}finally{if(loading===task)loading=null}
 }
 async function promptForKeyAtEntry(){
   const actor=window.MosaicAccount.current();
   if(!actor||initialPromptFor===actor.id)return;
   initialPromptFor=actor.id;
-  await restore();
-  if(window.MosaicAccount.current()?.id===actor.id&&!key&&!dialog.open)openKeyDialog();
-}
-async function restore(){
-  const actor=window.MosaicAccount.current();if(!actor)return false;
-  if(key&&keyOwner===actor.id)return true;
-  if(restoredFor===actor.id)return restoration;
-  restoredFor=actor.id;const ticket=epoch;
-  restoration=(async()=>{
-    try{
-      const saved=await vault.recall(actor.id);
-      if(ticket!==epoch||window.MosaicAccount.current()?.id!==actor.id)return false;
-      if(validKey(saved||'')){key=saved;keyOwner=actor.id;remembered=true;updateButton();return true}
-    }catch{/* Storage-disabled browsers can still connect for this tab. */}
-    return false;
-  })();return restoration;
-}
-async function request(path,body){
-  if(!key)throw Error('Add your OpenAI API key to generate images.');
-  if(!/^\/api\/ai\/(?:master|edit|harmonize|classify|option-name)$/.test(path))
-    throw Error('Unsupported AI request.');
-  // HTTPS to mozAI's same-origin function, which forwards this key to OpenAI.
-  // Do not place keys in URLs, cookies, localStorage or project files.
-  await window.MosaicAccount.ready();
-  if(!keyOwner||window.MosaicAccount.current()?.id!==keyOwner)throw Error('Sign in to the account connected to this OpenAI key.');
-  let result;
-  try{result=await window.MosaicAccount.request(path,{method:'POST',body:{...body,apiKey:key,projectId:await window.MosaicAccount.projectId()}})}
-  catch(error){
-    if(error.status===401&&!error.code){const owner=keyOwner;clear();if(owner)await vault.forget(owner).catch(()=>{})}
-    throw error;
+  if(await restore()){
+    await legacyVault.forget(actor.id).catch(()=>{});
+    return;
   }
+  if(!checked)return; // A network error must not be mistaken for a missing key.
+  const old=await legacyVault.recall(actor.id).catch(()=>null);
+  if(validKey(old||'')){
+    try{
+      const saved=await window.MosaicAccount.request('/api/ai/connection',{method:'POST',body:{apiKey:old}});
+      if(window.MosaicAccount.current()?.id===actor.id){
+        connected=Boolean(saved.connected);owner=actor.id;checked=true;updateButton();
+        window.dispatchEvent(new CustomEvent('mosaic:keyconnected'));
+      }
+      await legacyVault.forget(actor.id).catch(()=>{});
+      return;
+    }catch{/* A failed migration should not block reconnecting manually. */}
+  }
+  if(window.MosaicAccount.current()?.id===actor.id&&!connected&&!dialog.open)openKeyDialog();
+}
+async function ensure(){
+  if(!await window.MosaicAccount.ensure())return false;
+  if(await restore())return true;
+  window.MosaicCore?.toast('Connect your OpenAI key in your profile or the top bar.');
+  return false;
+}
+async function request(path,body={}){
+  if(!/^\/api\/ai\/(?:master|edit|harmonize|classify|option-name)$/.test(path))throw Error('Unsupported AI request.');
+  if(!await ensure())throw Error('Connect your OpenAI API key in your profile.');
+  // Only the verified account/session and image data are sent. No secret is in browser requests.
+  const result=await window.MosaicAccount.request(path,{method:'POST',body:{...body,projectId:await window.MosaicAccount.projectId()}});
   if(result.generationId)window.dispatchEvent(new CustomEvent('mosaic:generation',{detail:{recorded:result.usageRecorded}}));
   return result;
 }
 form.addEventListener('submit',async event=>{
   event.preventDefault();
-  const nextKey=$('apiKeyInput').value.trim();
-  if(!validKey(nextKey)){$('apiKeyError').textContent='Enter a valid OpenAI API key starting with sk-.';return}
+  const key=$('apiKeyInput').value.trim();
+  if(!validKey(key)){$('apiKeyError').textContent='Enter a valid OpenAI API key starting with sk-.';return}
   const actor=window.MosaicAccount.current();if(!actor)return;
-  const attempt=++validation,submit=$('apiKeySubmitBtn');submit.disabled=true;submit.textContent='Checking connection…';$('apiKeyError').textContent='';
+  const attempt=++validation,submit=$('apiKeySubmitBtn');
+  submit.disabled=true;submit.textContent='Saving securely…';$('apiKeyError').textContent='';
   try{
-    await window.MosaicAccount.request('/api/ai/connection',{method:'POST',body:{apiKey:nextKey}});
-    if(attempt!==validation||!dialog.open||window.MosaicAccount.current()?.id!==actor.id)return;
-    const shouldRemember=$('apiKeyRemember').checked;let saved=false;
-    try{if(shouldRemember){await vault.remember(actor.id,nextKey);saved=true}else await vault.forget(actor.id)}catch{}
-    if(attempt!==validation||!dialog.open||window.MosaicAccount.current()?.id!==actor.id)return;
-    key=nextKey;keyOwner=actor.id;remembered=saved;restoredFor=actor.id;form.reset();complete(true);dialog.close();updateButton();
-    if(shouldRemember&&!saved)window.MosaicCore?.toast('Connected for this tab. This browser could not remember the key.');
+    const result=await window.MosaicAccount.request('/api/ai/connection',{method:'POST',body:{apiKey:key}});
+    if(attempt!==validation||window.MosaicAccount.current()?.id!==actor.id)return;
+    connected=Boolean(result.connected);owner=actor.id;checked=true;
+    await legacyVault.forget(actor.id).catch(()=>{});
+    form.reset();if(dialog.open)dialog.close();updateButton();
     window.dispatchEvent(new CustomEvent('mosaic:keyconnected'));
   }catch(error){if(attempt===validation)$('apiKeyError').textContent=error.message}
   finally{submit.disabled=false;submit.textContent='Connect securely'}
 });
-dialog.addEventListener('close',()=>{if(dialog.open)return;validation++;form.reset();complete(false)});
 $('apiKeyCancelBtn').addEventListener('click',()=>dialog.close());
 $('apiKeyRemoveBtn').addEventListener('click',async()=>{
-  const owner=keyOwner||window.MosaicAccount.current()?.id;clear();if(owner)await vault.forget(owner).catch(()=>{});
+  const actor=window.MosaicAccount.current();if(!actor)return;
+  const remove=$('apiKeyRemoveBtn');remove.disabled=true;$('apiKeyError').textContent='';
+  try{
+    await window.MosaicAccount.request('/api/ai/connection',{method:'DELETE'});
+    await legacyVault.forget(actor.id).catch(()=>{});
+    connected=false;owner=actor.id;checked=true;updateButton();
+    remove.classList.add('hidden');$('apiKeyInput').focus();
+  }catch(error){$('apiKeyError').textContent=error.message}
+  finally{remove.disabled=false}
 });
 button.addEventListener('click',async()=>{if(await window.MosaicAccount.ensure())openKeyDialog()});
-window.addEventListener('mosaic:account',event=>{if(event.detail.user)void promptForKeyAtEntry()});
-function clear(){epoch++;validation++;key='';keyOwner=null;remembered=false;restoredFor=null;restoration=null;form.reset();complete(false);if(dialog.open)dialog.close();updateButton()}
-window.MosaicAuth={clear,restore,ensure,request,status:async()=>Boolean(key),isReady:()=>Boolean(key)};
+window.addEventListener('mosaic:managekey',async()=>{if(await window.MosaicAccount.ensure())openKeyDialog()});
+window.addEventListener('mosaic:account',event=>{if(event.detail.user)void promptForKeyAtEntry();else clear()});
+window.MosaicAuth={clear,restore,ensure,request,status:()=>restore(),isReady:()=>connected};
 updateButton();
 void window.MosaicAccount.ready().then(()=>promptForKeyAtEntry());

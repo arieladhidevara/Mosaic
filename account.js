@@ -51,6 +51,7 @@ function controls(){
     const panel=document.createElement('div');panel.className='header-menu-panel';
     const email=document.createElement('span');email.className='header-account-email';email.textContent=user.email;panel.append(email);
     const tier=document.createElement('small');tier.className='header-account-tier';tier.textContent=user.auth==='development'?'Development · Pro':'mozAI Pro';panel.append(tier);
+    const aiSettings=document.createElement('button');aiSettings.type='button';aiSettings.textContent='OpenAI API key';aiSettings.onclick=()=>{menu.open=false;window.dispatchEvent(new Event('mosaic:managekey'))};panel.append(aiSettings);
     if(user.role==='admin'){const link=document.createElement('a');link.href='/admin';link.textContent='Admin portal';panel.append(link)}
     if(user.auth!=='development'){
       const signOut=document.createElement('button');signOut.type='button';signOut.textContent='Sign out';signOut.onclick=async()=>{signOut.disabled=true;try{await request('/api/session',{method:'POST',body:{action:'logout'}},false);window.MosaicAuth?.clear?.();writeSession('mozai.guest',null);location.assign('/')}catch(error){signOut.disabled=false;signOut.textContent='Retry sign out';signOut.title=error.message}};panel.append(signOut);

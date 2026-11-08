@@ -1,9 +1,9 @@
 /* BYOK vision classification of an explicitly masked architectural region. */
-const {send,guard,requireApiKey}=require('../../lib/auth');
+const {send,guard,loadApiKey}=require('../../lib/auth');
 const CATEGORIES=['Wall','Ceiling','Floor','Door','Window','Glazing','Furniture','Millwork','Lighting','Structure','Landscape','Stairs','Other'];
 module.exports=async function handler(req,res){
-  if(!await guard(req,res,'POST')||!requireApiKey(req,res))return;
-  const body=req.body||{},image=body.image,key=body.apiKey;
+  if(!await guard(req,res,'POST')||!await loadApiKey(req,res))return;
+  const body=req.body||{},image=body.image,key=req.openAiApiKey;
   if(typeof key!=='string'||!/^sk-[\w-]{15,300}$/.test(key))return send(res,400,{error:'OpenAI API key required.'});
   if(typeof image!=='string'||image.length>950000||!/^data:image\/jpeg;base64,[A-Za-z0-9+/=]+$/.test(image))return send(res,400,{error:'Invalid classification crop.'});
   const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),30000);
