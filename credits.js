@@ -1,10 +1,10 @@
 const $=id=>document.getElementById(id),policy=window.MozDemoCredits;
 const button=document.createElement('button');button.id='demoCreditsBtn';button.type='button';button.className='btn btn-quiet compact demo-credits-button';button.textContent='Pro preview';
-document.querySelector('.topbar-actions').insertBefore(button,$('apiKeyStatusBtn'));
+document.getElementById('aiAccountTools').insertBefore(button,$('apiKeyStatusBtn'));
 let balance=null,sequence=0;
 function paint(){
   const signed=Boolean(window.MosaicAccount.current());
-  button.textContent=signed?(balance?'Pro · '+balance.remaining+' demo credits':'Pro · demo credits'):'Pro preview';
+  button.textContent=signed?(balance?'Pro · '+balance.remaining+' demo':'Pro'):'Pro';
   button.title='mozAI Pro demo credits. Separate from OpenAI billing.';
   $('demoRemaining').textContent=balance?String(balance.remaining):'—';
 }
@@ -29,15 +29,19 @@ function labels(){
     document.querySelectorAll(selectors.join(',')).forEach(target=>{
       if(target.dataset.creditLabel!==label)target.dataset.creditLabel=label;
       target.dataset.creditOperation=operation;
+      if(target.classList.contains('variant-action'))target.title='Regenerate this option · '+label;
     });
   }
+  const quality=$('regionRenderQuality').value;
+  const info='Collage + mask'+($('preserveOriginalGeometry').checked?' + Base':'')+' · '+quality+' · '+policy.costs[quality]+' demo';
+  if($('quickPromptInfo')&&$('quickPromptInfo').textContent!==info)$('quickPromptInfo').textContent=info;
 }
 button.onclick=()=>void open();$('creditsClose').onclick=()=>$('creditsDialog').close();$('creditsRefresh').onclick=()=>void refresh();
 window.addEventListener('mosaic:account',()=>{balance=null;paint();void refresh()});
 window.addEventListener('mosaic:generation',event=>{if(event.detail.recorded===false){balance=null;paint();$('creditsError').textContent='Your image is ready, but its usage could not be recorded. Demo balance may be incomplete.'}else void refresh()});
 // Onboarding finishes on the canvas; the balance remains available in the toolbar.
 window.addEventListener('mosaic:keyconnected',()=>{void refresh();window.MosaicCore?.toast('OpenAI connected. Pro demo credits are separate from OpenAI billing.')});
-document.addEventListener('change',event=>{if(['regionRenderQuality','harmonizeQuality'].includes(event.target.id))labels()});
+document.addEventListener('change',event=>{if(['regionRenderQuality','harmonizeQuality','preserveOriginalGeometry'].includes(event.target.id))labels()});
 new MutationObserver(labels).observe($('app'),{childList:true,subtree:true});
 window.MosaicCredits={refresh,open,labels};
 paint();labels();void window.MosaicAccount.ready().then(()=>refresh());

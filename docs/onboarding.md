@@ -79,12 +79,24 @@ without generating an image. Restricted keys need permission to list models for
 this check. Successful validation is not a claim about model access, quota or
 remaining balance; image requests still handle provider errors normally.
 
-The key exists only in the current tab's JS memory. The key input is emptied
-after submission/closing. Refresh, disconnect, sign-out or an expired account
-session clears it. It is sent through the same-origin server to OpenAI over
-HTTPS in hosted environments, never stored in the database, analytics, logs,
-cookies, browser storage or project files, and never displayed to administrators.
-Do not claim the server never receives it: it must receive it to forward requests.
+The API-key form offers **Remember on this browser**. This writes only an
+account-scoped AES-GCM ciphertext envelope and a nonextractable Web Crypto key to
+IndexedDB on this origin. After account authentication, the matching credential
+is restored automatically, including across a full reload. It is not stored on
+the server or in localStorage/sessionStorage. This is local protection of stored
+bytes, not a separate boundary from scripts running on the same origin.
+
+Uncheck Remember for tab-only use. Remove key deletes the saved credential.
+Sign-out/session expiry clears the active in-memory key; a remembered key is
+available again only after authenticating its matching account. Keys rejected by
+OpenAI with 401 are disconnected and forgotten, while quota/rate failures do not
+discard a valid key. If browser persistence is unavailable, connection still works
+for the current tab and the UI explains that remembering failed.
+
+The key input is emptied after submission/closing. Keys pass through the server
+to OpenAI over HTTPS in hosted environments, and are never saved in server
+storage, analytics, logs, cookies or project files, or displayed to admins.
+Do not claim the server never receives them: it must forward AI requests.
 
 ## Demo credits, not OpenAI billing
 

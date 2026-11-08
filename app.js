@@ -42,10 +42,10 @@ function setMaster(c,name){void window.MosaicAccount?.startProject(!state.refere
   $('welcome').classList.add('hidden');$('canvasWrap').classList.remove('hidden');setProjectTitle(name);$('projectSize').textContent=`${c.width} × ${c.height}`;
   $('masterTitle').textContent='Master';$('masterInfo').textContent=`${name} · ${c.width} × ${c.height}`;$('masterStatus').textContent='✓';$('masterZone').classList.add('ready');updateZoomFit();renderGroups();render();updateSourceActions();message('Upload a variation, select the area you want, then click Apply.')}
 async function importReference(file){if(!file)return;if(state.reference){toast('Base is locked. Click Base to preview it.');return}try{state.reference=await loadFileToCanvas(file,4000);state.rawBase=state.reference;void window.MosaicAccount?.startProject(true);void window.MosaicAccount?.track('base_uploaded');state.alignmentTransforms=null;setSourcePreview('basePreview',state.reference);setSourcePreview('welcomeBaseThumb',state.reference);$('referenceTitle').textContent='Base';$('referenceInfo').textContent=`${fileName(file)} · ${state.reference.width} × ${state.reference.height}`;$('referenceStatus').textContent='✓';$('referenceZone').classList.add('ready');toast('Base image saved locally.');window.MosaicPremium?.onReferenceLoaded(file);updateSourceActions()}catch(e){toast(e.message)}}
-function continueWithBase(notify=true){
+function continueWithBase(notify=true,targetSize=null){
   if(!state.reference||state.master)return;
   const base=state.reference,max=2400,scale=Math.min(1,max/Math.max(base.width,base.height));
-  const working=makeCanvas(Math.max(1,Math.round(base.width*scale)),Math.max(1,Math.round(base.height*scale)));
+  const working=makeCanvas(targetSize?.width||Math.max(1,Math.round(base.width*scale)),targetSize?.height||Math.max(1,Math.round(base.height*scale)));
   working.getContext('2d').drawImage(base,0,0,working.width,working.height);
   setMaster(working,'Base · Working Draft');
   state.masterIsBase=true;
@@ -58,6 +58,19 @@ function continueWithBase(notify=true){
   updateSourceActions();
   message('Editing Base as your working draft. Upload or generate a real Master when ready.');
   if(notify)toast('Continuing with Base only. No Master was generated.');
+}
+function upgradeBaseDraft(target){
+  if(!target||!state.masterIsBase||state.groups.length||state.patches.size||state.sources.size||state.pendingSourceId||state.maskMoveDrag||state.maskVertexDrag||window.MosaicSourceEditor?.isEditing())return false;
+  if(Math.max(canvas.width,canvas.height)>=Math.max(target.width,target.height)||[...state.undo,...state.redo].some(entry=>entry.type!=='selection'))return false;
+  const oldWidth=canvas.width,oldHeight=canvas.height,sx=target.width/oldWidth,sy=target.height/oldHeight;
+  const point=p=>p?{...p,x:p.x*sx,y:p.y*sy}:p,paths=items=>(items||[]).map(path=>path.map(point));
+  const resize=source=>{if(!source)return null;const out=makeCanvas(target.width,target.height);out.getContext('2d').drawImage(source,0,0,out.width,out.height);return out};
+  const history=items=>items.map(entry=>{const input=makeCanvas(oldWidth,oldHeight);input.getContext('2d').putImageData(entry.image,0,0);const output=resize(input);return {...entry,paths:paths(entry.paths),points:(entry.points||[]).map(point),image:output.getContext('2d').getImageData(0,0,output.width,output.height)}});
+  state.undo=history(state.undo);state.redo=history(state.redo);state.master=resize(state.master);state.selectionMask=resize(state.selectionMask);
+  setSelectionPaths(paths(state.selectionPaths));state.lasso=state.lasso.map(point);state.shapeStart=point(state.shapeStart);state.shapeEnd=point(state.shapeEnd);state.hoverPoint=point(state.hoverPoint);
+  canvas.width=overlay.width=target.width;canvas.height=overlay.height=target.height;state.selectionGeneration++;
+  $('selectionDraft').setAttribute('viewBox',`0 0 ${target.width} ${target.height}`);$('projectSize').textContent=target.width+' × '+target.height;
+  window.MosaicPremium?.onBaseContinue?.(state.master);updateSelectionOutline();updateZoomFit();render();return true;
 }
 function showProcessing(on){state.busy=on;$('processing').classList.toggle('hidden',!on)}
 function clearDraft(){state.lasso=[];state.hoverPoint=null;state.pointerStart=null;state.dragFreehand=false;state.shapeStart=null;state.shapeEnd=null;state.drawing=false}
@@ -536,7 +549,7 @@ function endTransform(){
     message('Layer and selection moved together. Drag corners to skew; Undo to revert.');
     renderGroups();
   }
-  drawOverlay();if(state.tool==='select')showQuickPrompt(state.lastCanvasPointer,true);
+  drawOverlay();if(state.tool==='select'&&drag&&!drag.moved)showQuickPrompt(state.lastCanvasPointer,true);
 }
 function resetPatchTransform(){
   const patch=activeTransformPatch();if(!patch||!patch.corners||window.MosaicPremium?.isPreviewing())return;
@@ -660,11 +673,11 @@ function renderGroups(){
 }
 function editExisting(pid){if(state.pendingSourceId){toast('Apply or discard your new image before editing saved variants.');return}const patch=state.patches.get(pid);if(!patch)return;state.editingPatchId=pid;state.selectedPatchId=pid;resetSelection();state.selectionPoints=patchControlPoints(patch).map(({x,y})=>({x,y}));state.selectionMask.getContext('2d').drawImage(displayedPatchMask(patch),0,0);setMode('add');selectTool('lasso');updateSelectionOutline();updateApplyButton();message('Editing a saved mask. Refine it, then click Update mask to commit changes.')}
 function groupEvent(e){if(window.MosaicRegions?.handleGroupEvent(e))return;if(window.MosaicPremium?.handleGroupEvent(e))return;const target=e.target.closest('[data-action]');if(!target)return;const action=target.dataset.action,group=state.groups.find(g=>g.id===target.dataset.group),pid=target.dataset.patch;
-  if(action==='focus'&&group){selectGroupMask(group);showQuickPrompt();return}
-  if(action==='edit-mask'&&group){selectGroupMask(group);state.maskEditOnly=true;renderGroups();render();showQuickPrompt();return}
+  if(action==='focus'&&group){hideQuickPrompt();selectGroupMask(group);return}
+  if(action==='edit-mask'&&group){hideQuickPrompt();selectGroupMask(group);state.maskEditOnly=true;renderGroups();render();return}
   if(action==='edit-image'){window.MosaicSourceEditor?.openOption(pid);return}
   if(action==='edit'){editExisting(pid);return}
-  if(action==='choose'&&group){if(state.pendingSourceId){toast('Apply or discard the new image first.');return}state.editingPatchId=null;resetSelection();group.active=pid==='master'?null:pid;refreshGroupFootprint(group);state.selectedPatchId=group.active;selectGroupMask(group);showQuickPrompt();renderGroups();render();return}
+  if(action==='choose'&&group){if(state.pendingSourceId){toast('Apply or discard the new image first.');return}hideQuickPrompt();state.editingPatchId=null;resetSelection();group.active=pid==='master'?null:pid;refreshGroupFootprint(group);state.selectedPatchId=group.active;selectGroupMask(group);renderGroups();render();return}
   if(action==='delete'&&group){if(state.pendingSourceId){toast('Finish the new image before removing variants.');return}group.patchIds=group.patchIds.filter(x=>x!==pid);state.patches.delete(pid);if(group.active===pid)group.active=group.patchIds.at(-1)||null;if(state.editingPatchId===pid)state.editingPatchId=null;if(state.selectedPatchId===pid)state.selectedPatchId=null;if(!group.patchIds.length)state.groups=state.groups.filter(g=>g.id!==group.id);else refreshGroupFootprint(group);resetSelection();renderGroups();render();toast('Variant removed.')}}
 function selectTool(tool){if(window.MosaicSourceEditor?.isEditing())return;clearHover();clearDraft();hideQuickPrompt();state.tool=tool;if(state.pendingSourceId&&tool==='reveal'){state.pendingRevealOnly=true;render()}$('resetTransformBtn').classList.toggle('hidden',tool!=='transform'||!activeTransformPatch());
   $('viewport').classList.toggle('is-selecting',['lasso','rect','ellipse','wand','reveal','erase'].includes(tool));
@@ -811,7 +824,7 @@ function endMaskVertexDrag(cancel=false){
     activeMaskVertex=drag.vertex;
   }
   updateSelectionOutline();updateApplyButton();renderGroups();render();
-  if(!cancel&&drag.moved)showQuickPrompt(state.lastCanvasPointer,true);
+  hideQuickPrompt();
 }
 function beginSelectionMove(event,point){
   if(!state.boundaryCanvas||!pointInImage(point))return false;
@@ -831,7 +844,7 @@ function endSelectionMove(cancel=false){
   const drag=state.maskMoveDrag;state.maskMoveDrag=null;if(!drag)return;
   if(cancel){state.selectionMask=drag.mask;setSelectionPaths(drag.paths);if(drag.moved&&state.undo.at(-1)===drag.undoEntry)state.undo.pop()}
   else if(drag.moved)saveSelectionGeometry();
-  updateSelectionOutline();updateApplyButton();renderGroups();render();if(!cancel)showQuickPrompt(state.lastCanvasPointer,true);
+  updateSelectionOutline();updateApplyButton();renderGroups();render();if(!cancel&&!drag.moved)showQuickPrompt(state.lastCanvasPointer,true);
 }
 const maskPointControls=$('maskEditControls'),maskAddButton=document.createElement('button'),maskRemoveButton=document.createElement('button');
 const brushCursor=document.createElement('div');brushCursor.className='brush-cursor';brushCursor.setAttribute('aria-hidden','true');brushCursor.hidden=true;document.body.append(brushCursor);
@@ -983,7 +996,7 @@ function snapshotPatch(p){state.undo.push({type:'patch',patchId:p.id,paths:MaskG
 function finishMaskSelection(){
   void window.MosaicAccount?.track('selection_created');
   updateSelectionOutline();ensureSelectionPaths();if(state.maskEditOnly&&state.selectionTargetPatchId)saveSelectionGeometry();prepareSelectionGroup();updateApplyButton();
-  selectTool('select');render();showQuickPrompt();
+  selectTool('select');render();hideQuickPrompt();
 }
 function commitMaskPath(trace,points=[],polygon=false){if(!state.selectionMask)return;const m=state.selectionMask.getContext('2d');if(state.maskEditOnly&&state.selectionTargetPatchId)snapshotPointEdit();else snapshotSelection();m.save();
   if(state.selectionMode==='new'){if(!state.maskEditOnly){state.selectionTargetPatchId=null;releaseDraftGroupForNewSelection()}m.clearRect(0,0,canvas.width,canvas.height)}
@@ -1371,5 +1384,5 @@ viewport.addEventListener('wheel',event=>{
   if(state.lasso.length)state.hoverPoint=canvasPoint(event,false);
   if(state.shapeStart)state.shapeEnd=canvasPoint(event,false);drawOverlay();
 },{passive:false});
-window.MosaicCore = {svgNode,vectorLayer,drawVectorPaths,maskPathsFromRaster,state,canvas,overlay,ctx,makeCanvas,uid,setProjectTitle,toast,message,promptText,loadFileToCanvas,setMaster,continueWithBase,setSourcePreview,updateSourceActions,render,composeApprovedCanvas,renderGroups,drawPatch,selectTool,setMode,updateApplyButton,maskBoundingBox,assignGroup,resetSelection,updateSelectionOutline,updateMaskWithLasso,updateZoomFit,escapeHTML,categoryFromText,updateGroupCategory,optionNameFromPrompt,prepareSelectionGroup,groupMask,selectGroupMask,CATEGORIES,showQuickPrompt,hideQuickPrompt,createBlankRegion,moveOptionToGroup,displayedPatchMask,renderedPatchLayer,refreshGroupFootprint,invalidateDisplayedMask,attachGeneratedSelection,patchSelectionPaths,exactMaskBoundingBox,unwarpPatchSelection,patchControlPoints,displayedMaskPoint};
+window.MosaicCore = {svgNode,vectorLayer,drawVectorPaths,maskPathsFromRaster,state,canvas,overlay,ctx,makeCanvas,uid,setProjectTitle,toast,message,promptText,loadFileToCanvas,setMaster,continueWithBase,upgradeBaseDraft,setSourcePreview,updateSourceActions,render,composeApprovedCanvas,renderGroups,drawPatch,selectTool,setMode,updateApplyButton,maskBoundingBox,assignGroup,resetSelection,updateSelectionOutline,updateMaskWithLasso,updateZoomFit,escapeHTML,categoryFromText,updateGroupCategory,optionNameFromPrompt,prepareSelectionGroup,groupMask,selectGroupMask,CATEGORIES,showQuickPrompt,hideQuickPrompt,createBlankRegion,moveOptionToGroup,displayedPatchMask,renderedPatchLayer,refreshGroupFootprint,invalidateDisplayedMask,attachGeneratedSelection,patchSelectionPaths,exactMaskBoundingBox,unwarpPatchSelection,patchControlPoints,displayedMaskPoint};
 promptText();

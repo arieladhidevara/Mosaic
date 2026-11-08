@@ -113,6 +113,8 @@ function beginAIProgress(label,detail='Preparing request…',target={scope:'mast
 const welcomeGenerateButton=$('welcomeBaseGenerateSubmit');
 welcomeGenerateButton.classList.remove('sr-only');welcomeGenerateButton.classList.add('welcome-prompt-generate-button');
 welcomeGenerateButton.removeAttribute('tabindex');welcomeGenerateButton.removeAttribute('aria-hidden');welcomeGenerateButton.textContent='✦ Generate';
+// Keep the submit action below the prompt; references stay beside its text field.
+$('welcomeBasePromptForm').append(welcomeGenerateButton);
 function onReferenceLoaded() {
   // A Base upload is only a reference. Never silently promote it to Master.
   if(state.reference&&state.master){
@@ -346,7 +348,7 @@ function resizedFrame(source,w,h){
   const out=makeCanvas(w,h),o=out.getContext('2d');
   o.fillStyle='#fff';o.fillRect(0,0,w,h);
   o.drawImage(source,0,0,w,h);
-  return out.toDataURL('image/jpeg',.78);
+  return out.toDataURL('image/jpeg',.94);
 }
 function transparentEditMask(source,w,h){
   const out=makeCanvas(w,h),m=out.getContext('2d');
@@ -400,7 +402,7 @@ function cropFrame(source,window,w,h,mask=false){
   const sw=window.w/canvas.width*source.width;
   const sh=window.h/canvas.height*source.height;
   context.drawImage(source,sx,sy,sw,sh,0,0,w,h);
-  return frame.toDataURL(mask?'image/png':'image/jpeg',mask?undefined:.78);
+  return frame.toDataURL(mask?'image/png':'image/jpeg',mask?undefined:.94);
 }
 function encodeRegionalCrop(patch){
   const visualMask=cloneCanvas(core.displayedPatchMask(patch));
@@ -931,7 +933,11 @@ async function prepareReferenceImages(files){
   for(const file of list){
     if(!/^image\/(jpeg|png|webp)$/.test(file.type)||file.size>10000000)throw Error('Choose a JPG, PNG or WEBP image under 10 MB.');
     const frame=await core.loadFileToCanvas(file,1000);
-    output.push(frame.toDataURL('image/jpeg',.72));
+    let encoded=frame.toDataURL('image/jpeg',.90);
+    // Keep attached references within the server's per-image and combined caps.
+    if(encoded.length>720000)encoded=frame.toDataURL('image/jpeg',.78);
+    if(encoded.length>720000){const smaller=makeCanvas(Math.round(frame.width*.75),Math.round(frame.height*.75));smaller.getContext('2d').drawImage(frame,0,0,smaller.width,smaller.height);encoded=smaller.toDataURL('image/jpeg',.85)}
+    output.push(encoded);
   }
   return output;
 }
@@ -972,7 +978,8 @@ async function createMasterFromBase(prompt,files,button,afterSuccess){
     if(!await window.MosaicAuth.ensure())return;
     // Enter the editor immediately. Base is a working draft until the first
     // generated Master arrives, so its preview never creates a Master version.
-    if(!state.master)core.continueWithBase(false);
+    const masterTarget=window.MozMasterResolution.target(state.reference.width,state.reference.height);
+    if(!state.master)core.continueWithBase(false,masterTarget);else core.upgradeBaseDraft(masterTarget);
     job.generation=state.selectionGeneration;
     if(firstMaster)core.setProjectTitle('Base');
     core.updateSourceActions();

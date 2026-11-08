@@ -43,6 +43,20 @@ function controls(){
   let account=$('accountControls');
   if(!account){account=document.createElement('div');account.id='accountControls';account.className='account-controls';(document.querySelector('.topbar-actions')||$('adminAccount')).append(account)}
   account.replaceChildren();
+  if(!adminPage){
+    if(!user){const signIn=document.createElement('button');signIn.type='button';signIn.className='header-control';signIn.textContent='Sign in';signIn.onclick=()=>showLogin();account.append(signIn);return}
+    const menu=document.createElement('details');menu.className='header-menu header-profile';
+    const summary=document.createElement('summary');summary.setAttribute('aria-label','Account settings');summary.title=user.email;
+    const avatar=document.createElement('span');avatar.className='header-avatar';avatar.textContent=user.email.slice(0,2).toUpperCase();summary.append(avatar);
+    const panel=document.createElement('div');panel.className='header-menu-panel';
+    const email=document.createElement('span');email.className='header-account-email';email.textContent=user.email;panel.append(email);
+    const tier=document.createElement('small');tier.className='header-account-tier';tier.textContent=user.auth==='development'?'Development · Pro':'mozAI Pro';panel.append(tier);
+    if(user.role==='admin'){const link=document.createElement('a');link.href='/admin';link.textContent='Admin portal';panel.append(link)}
+    if(user.auth!=='development'){
+      const signOut=document.createElement('button');signOut.type='button';signOut.textContent='Sign out';signOut.onclick=async()=>{signOut.disabled=true;try{await request('/api/session',{method:'POST',body:{action:'logout'}},false);window.MosaicAuth?.clear?.();writeSession('mozai.guest',null);location.assign('/')}catch(error){signOut.disabled=false;signOut.textContent='Retry sign out';signOut.title=error.message}};panel.append(signOut);
+    }
+    menu.append(summary,panel);account.append(menu);return;
+  }
   const label=document.createElement('span');label.textContent=user?(user.auth==='development'?'Dev · Pro':user.email):'Guest workspace';label.title=user?.email||'Manual editing, local projects and exports';account.append(label);
   const button=document.createElement('button');button.className='btn btn-quiet compact';button.type='button';
   if(user){

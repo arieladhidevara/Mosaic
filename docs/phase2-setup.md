@@ -103,7 +103,7 @@ Supabase login and invitation access. Supabase Auth handles
 password hashing, confirmation, and authentication; Mosaic verifies every session
 with `/auth/v1/user` and checks an active membership from its database. Session
 tokens use HttpOnly, SameSite cookies and Secure `__Host-` cookies on Vercel.
-The application refreshes sessions server-side; BYOK stays only in JS memory.
+The application refreshes sessions server-side. BYOK is active in JS memory, with optional account-scoped encrypted browser remembering; it is never stored on the server.
 
 ## Reset local test data
 

@@ -19,6 +19,7 @@ window.runInitialMasterChecks=async function(pausePreview=false){
     $('projectName').click();$('projectNameInput').value='First render';$('projectNameInput').dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}));
     $('welcomeBasePromptInput').value='Create a refined architectural render';$('welcomeBasePromptForm').requestSubmit();
     await wait(()=>Boolean(state.master&&$('canvasGenerationProgress')?.children.length));
+    assert(core.canvas.width===2048&&core.canvas.height===1360,'Small uploaded Base limited the first Master resolution');
     assert(state.masterIsBase&&$('welcome').classList.contains('hidden')&&!$('canvasWrap').classList.contains('hidden'),'Generate did not immediately enter the main canvas with Base');
     assert(ai.getMasterVersions().length===0,'Base preview was registered as a generated Master');
     const pixel=core.ctx.getImageData(30,30,1,1).data;assert(pixel[0]===82&&pixel[1]===102&&pixel[2]===127,'Canvas does not show Base while generating');
@@ -38,6 +39,7 @@ window.runInitialMasterChecks=async function(pausePreview=false){
     if(pausePreview)await new Promise(resolve=>{window.finishInitialPreview=resolve});
     releaseReply();
     await wait(()=>!state.masterIsBase&&ai.getMasterVersions().length===1);
+    assert(state.master.width===2048&&state.master.height===1360,'Generated Master was reduced to the uploaded Base resolution');
     assert(requests===1,'Initial flow sent duplicate Master requests');
     assert($('projectName').textContent==='First render','Generated Master overwrote the project name');
     assert(state.selectionMask.toDataURL()===mask&&state.draftGroupId===group,'Master arrival lost the in-progress selection or Group');

@@ -39,9 +39,7 @@ npm run dev:local
 ```
 
 Open http://127.0.0.1:8000, click **Connect AI**, and enter your OpenAI API
-key. Local auto-login uses an isolated development account; production requires Supabase setup described in [Phase 2 setup](docs/phase2-setup.md). The OpenAI key stays in
-the current browser tab and is forwarded only by the local same-origin server for
-each OpenAI request.
+key. Local auto-login uses an isolated development account; production requires Supabase setup described in [Phase 2 setup](docs/phase2-setup.md). The OpenAI key is forwarded by the same-origin server for each OpenAI request; optional browser remembering reconnects it after refresh.
 
 Run the Node.js server or use Vercel for both application authentication and AI endpoints. Opening `index.html` directly cannot establish an application session.
 
@@ -79,14 +77,14 @@ limit BYOK generation when depleted. See [onboarding setup](docs/onboarding.md).
 4. The returned **crop-only output** is resized to the original crop window and composited into the correct position on a transparent full-size working layer. The original selection mask limits the applied pixels; all pixels outside the selected area remain unchanged. Use **✦ Regen** on an option to retry or regenerate; this does not erase the approved option if generation fails.
 5. **Harmonize** sends the full approved collage and Base (no local crop) at the selected Harmonize quality to produce a new full Master. Base is always included, regardless of the geometry toggle. The Groups panel retains prior alternatives, and Master 2/3/etc. appear in the Master Versions browser. Previous editable snapshots remain in memory for branching.
 
-Initial Master, AI Edit and Harmonize use `gpt-image-2.6-sunburst` through the Images Edit API. Initial Master always uses High quality.
+Initial Master, AI Edit and Harmonize use `gpt-image-2.6-sunburst` through the Images Edit API. Initial Master always uses High quality and requests roughly 2K output independently of Base pixel count (2048px long edge, 1920px near-square). The generation preview starts at that working resolution, so selections made while generating stay aligned. Existing working canvases retain their dimensions to preserve layers and history. Extreme aspect ratios outside 1:3 to 3:1 retain automatic sizing. Image inputs use JPEG quality 94% within the payload budget; output uses JPEG quality 100%.
 
 API-generated images are not perfectly geometry-constrained; masking guarantees outside-region pixels are left untouched by regional edits, but a full-image Harmonize may still change geometry. Region guide overlays are local display aids and can be toggled off.
 
 ### API key and security
 
 - Application login uses verified Supabase sessions and invitation membership. Local auto-login is explicitly enabled with `npm run dev:local` and is blocked on Vercel. The BYOK Remove-key control disconnects only the OpenAI key; it does not sign out of the application.
-- OpenAI API key entry uses a masked input, stays only in the current browser tab's JavaScript memory and disappears after a refresh or tab close. It is **never** stored in cookies, `localStorage`, GitHub, the project file or a server environment variable.
+- OpenAI API key entry uses a masked input. **Remember on this browser** stores an account-scoped AES-GCM envelope in IndexedDB with a nonextractable Web Crypto key, so refresh reconnects automatically. Uncheck it for tab-only use; Remove key deletes the saved credential. Keys never enter server storage, cookies, `localStorage`, analytics, GitHub or project files. Browser encryption does not isolate a key from scripts running on the same origin.
 - On each AI action, the browser sends the key in the HTTPS POST body to the mozAI same-origin serverless function. That function checks the request origin, validates the key's format, and forwards it to OpenAI. The app never embeds or shares an API key in its source code.
 - This is **BYOK**: every user uses their own API key and is responsible for their OpenAI API charges. Check actual API billing and any account-specific credit benefits in OpenAI; the mozAI demo balance is independent.
 - A valid OpenAI key alone cannot access AI endpoints: the server also requires a verified Supabase session and active invitation membership. Admin endpoints additionally require a database admin role. **Only enter your API key in a deployment you trust.**
@@ -126,7 +124,7 @@ The original Base geometry is preserved separately from the working Master.
 
 - Click **Save project** to download a versioned, lossless JSON-based `.moz` file. It includes Base, working Master, original uploads, source layers, Groups, Option names/prompts, saved selections, moved/skewed masks, current draft selection, Undo/Redo, queued image files, Master Versions and editable Harmonize history.
 - Click **Open project** to restore a previously saved file and resume editing. Imported images are decoded and validated before the current project is replaced. Files over **300 MB** are rejected; large multi-version projects may create correspondingly large files.
-- Save/Open is local and does not require an AI API request. **OpenAI API keys are never written into project files**; the user re-enters a key after refresh to use AI.
+- Save/Open is local and does not require an AI API request. **OpenAI API keys are never written into project files**; remembered browser keys reconnect after refresh, while tab-only keys require reconnection.
 - Use **Save image** for a single PNG, or **Save project** for an editable `.moz` file. Older `.mosaic` files remain readable.
 
 ## UX notes (November 2026)
@@ -171,3 +169,5 @@ Browser regression scripts: `tests/workspace-scenarios.js` covers the pointer, L
 ## Phase 2 accounts and local development
 
 See [the complete Vercel + Supabase setup guide](docs/phase2-setup.md). Use `npm run dev:local` for loopback-only automatic login as `dev@mosaic.local`, `npm run dev:login` for real Supabase login, and `npm run dev:reset` to reset only isolated local test data. `/admin` uses the same application session. All AI operations still require your own OpenAI key. `npm test` includes auth/security and in-memory PostgreSQL migration tests.
+
+The welcome page fits one viewport without scrolling. The header groups Open/Save project under Project and uses matching AI, account and PNG controls. The floating AI prompt opens from a canvas area click; sidebar option selection only exposes its editable mask. References use a + beside the prompt, with Generate below.
