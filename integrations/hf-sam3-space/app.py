@@ -13,6 +13,7 @@ import numpy as np
 import spaces
 import torch
 from PIL import Image
+from mask_utils import choose_clicked_mask
 from sam3.model_builder import build_sam3_image_model
 from sam3.model.sam3_image_processor import Sam3Processor
 
@@ -42,8 +43,9 @@ def segment(image_data_uri: str, x: int, y: int) -> str:
                 point_labels=np.asarray([1], dtype=np.int32),
                 multimask_output=True,
             )
-        idx = int(np.argmax(scores))
-        binary = np.asarray(masks[idx]).astype(bool)
+        # Prefer a click-containing object over a high-score whole-image mask.
+        # Drop disconnected islands and reject nearly full-canvas selections.
+        binary = choose_clicked_mask(masks, scores, x, y)
         if binary.shape != (h, w):
             raise ValueError("Unexpected SAM 3 mask shape.")
         rgba = np.full((h, w, 4), 255, dtype=np.uint8)
@@ -52,7 +54,7 @@ def segment(image_data_uri: str, x: int, y: int) -> str:
         Image.fromarray(rgba, mode="RGBA").save(out, format="PNG")
         return "data:image/png;base64," + base64.b64encode(out.getvalue()).decode("ascii")
     except (ValueError, OSError, IndexError) as exc:
-        raise gr.Error("SAM 3 could not create a mask for this image.") from exc
+        raise gr.Error("SAM 3 could not isolate that object. Click farther inside its outline or use Color Wand.") from exc
 
 
 demo = gr.Interface(
