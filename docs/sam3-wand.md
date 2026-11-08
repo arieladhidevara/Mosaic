@@ -7,9 +7,10 @@ Hugging Face Gradio Space. The returned transparent mask is drawn into the
 same selection canvas as Color Wand, preserving New / Add / Subtract, Undo,
 Edit Mask, Apply and Group workflows.
 
-**Not automatically activated after merge:** The linked Hugging Face Space
-is not created or configured by this repository. Until configured, selecting
-AI Wand will give a safe error; switch back to Color Wand.
+**Not automatically activated after merge:** The Hugging Face Space
+`arieladhidevara/mozAI` exists, but the model still needs a healthy runtime,
+authorized checkpoint access and the `MOZAI_HF_SAM3_SPACE_URL` environment
+variable on Vercel. Until configured, AI Wand reports an error; use Color Wand.
 
 
 ## Automatic GitHub → Hugging Face sync
