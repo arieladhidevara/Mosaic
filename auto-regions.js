@@ -1,5 +1,5 @@
 /* mozAI Auto Create: detect candidate objects, preview only on the image,
-   and create a Group/option only after the user chooses and generates an edit. */
+   creates reusable Group drafts immediately; Options still appear only on Generate. */
 const core = window.MosaicCore;
 const $ = id => document.getElementById(id);
 const button = $('autoCreateGroupsBtn');
@@ -19,6 +19,7 @@ imageWrap.append(hint);
 let active = false, fetching = false, serial = 0;
 let labels = null, labelWidth = 0, labelHeight = 0, labelCount = 0, hovered = 0;
 let detectedFor = null;
+const regionGroups = new Map();
 
 function updateButton() {
   button.disabled = fetching;
@@ -35,6 +36,8 @@ function reset() {
   active = false;
   fetching = false;
   labels = null;
+  regionGroups.clear();
+  window.MosaicMaskProgress?.hide?.('auto');
   detectedFor = null;
   labelWidth = labelHeight = labelCount = 0;
   clearPreview();
@@ -102,43 +105,25 @@ function createMask(id) {
   context.putImageData(pixels, 0, 0);
   return candidate;
 }
-function selectRegion(event, id) {
-  const mask = createMask(id);
-  if (!mask) {core.toast('This region is too small or broad. Try another one or use Color Wand.');return}
-  const state = core.state;
-  if (!state.master || state.pendingSourceId || state.editingPatchId || state.busy) {
-    core.toast('Finish the current edit before selecting another region.');
-    return;
+function selectRegion(event,id){
+  const groupId=regionGroups.get(id);
+  const group=core.state.groups.find(g=>g.id===groupId);
+  if(!group){core.toast('This object is not available as a Group. Try another area.');return}
+  const state=core.state;
+  if(!state.master||state.pendingSourceId||state.editingPatchId||state.busy){
+    core.toast('Finish the current edit before selecting another region.');return;
   }
-  // A cancelled uncommitted draft must not linger as an empty Group.
-  const draft = state.groups.find(group => group.id === state.draftGroupId);
-  if (draft && !draft.patchIds.length && !draft.manualName) {
-    state.groups = state.groups.filter(group => group !== draft);
-  }
+  const append=event.ctrlKey||event.metaKey;
   reset();
-  core.resetSelection();
-  core.setMode('new');
-  const m = state.selectionMask.getContext('2d');
-  m.save();
-  m.imageSmoothingEnabled = false;
-  m.drawImage(mask, 0, 0, sourceCanvas.width, sourceCanvas.height);
-  m.restore();
-  state.selectionPaths = [];
-  state.selectionPoints = [];
-  state.pendingRevealOnly = false;
-  core.updateSelectionOutline();
-  core.prepareSelectionGroup();
-  core.updateApplyButton();
-  core.selectTool('select');
-  core.renderGroups();
-  core.render();
-  state.lastCanvasPointer = {clientX:event.clientX, clientY:event.clientY};
+  if(append)core.appendGroupSelection(group);
+  else core.selectGroupMask(group,{showOutline:true});
+  state.lastCanvasPointer={clientX:event.clientX,clientY:event.clientY};
   core.showQuickPrompt(state.lastCanvasPointer);
-  core.message('Object selected. Describe the change and Generate. The new option appears in Groups when ready.');
+  core.message('Object selected. Describe the change and Generate. Ctrl+click additional objects to combine them.');
 }
 async function start() {
   if (fetching) return;
-  if (active) {reset();core.message('Auto Create closed. Color Wand and manual tools are available.');return}
+  if (active) {reset();core.message('Auto Create closed. AI Wand and manual tools are available.');return}
   const state = core.state;
   if (!state.master) {core.toast('Upload or generate an image first.');return}
   if (state.busy || state.pendingSourceId || state.editingPatchId || window.MosaicPremium?.isPreviewing?.()) {
@@ -154,6 +139,7 @@ async function start() {
   fetching = true;
   updateButton();
   core.message('Auto Create is detecting candidate objects in your image…');
+  window.MosaicMaskProgress?.show?.('auto','SAM 3 · Auto Create','Preparing image for segmentation…');
   try {
     core.render();
     const scale = Math.min(1, 768/Math.max(sourceCanvas.width, sourceCanvas.height));
@@ -161,6 +147,7 @@ async function start() {
     const height = Math.max(1, Math.round(sourceCanvas.height*scale));
     const sample = core.makeCanvas(width, height);
     sample.getContext('2d').drawImage(sourceCanvas, 0, 0, width, height);
+    window.MosaicMaskProgress?.show?.('auto','SAM 3 · Auto Create','Analyzing objects on Hugging Face ZeroGPU…');
     const response = await window.MosaicAccount.request('/api/ai/sam3', {
       method:'POST', body:{
         mode:'auto', image:sample.toDataURL('image/jpeg', 0.80), width, height
@@ -168,6 +155,7 @@ async function start() {
     });
     if (serial !== revision || master !== state.master || generation !== state.selectionGeneration ||
         activeOptions !== state.groups.map(g => g.id + ':' + g.active).join('|')) return;
+    window.MosaicMaskProgress?.show?.('auto','SAM 3 · Auto Create','Decoding object masks…');
     if (!response?.labels || !/^data:image\/png;base64,/.test(response.labels)) throw Error('Invalid region map from SAM 3.');
     const image = new Image();
     image.src = response.labels;
@@ -186,23 +174,45 @@ async function start() {
     labelWidth = width;
     labelHeight = height;
     labelCount = detected;
+    window.MosaicMaskProgress?.show?.('auto','SAM 3 · Auto Create','Creating Groups from detected objects…');
+    regionGroups.clear();
+    let created=0,reused=0;
+    for(let id=1;id<=detected;id++){
+      const smallMask=createMask(id);
+      if(!smallMask)continue;
+      const fullMask=core.makeCanvas(sourceCanvas.width,sourceCanvas.height);
+      const ctx=fullMask.getContext('2d');
+      ctx.imageSmoothingEnabled=false;
+      ctx.drawImage(smallMask,0,0,sourceCanvas.width,sourceCanvas.height);
+      let group=core.matchingGroup(fullMask);
+      if(group)reused++;
+      else{
+        group=core.newGroup(fullMask);
+        group.autoCreated=true;
+        created++;
+      }
+      regionGroups.set(id,group.id);
+    }
+    if(!regionGroups.size)throw Error('All detected masks were too small or too broad.');
+    core.renderGroups();
     preview.width = width;
     preview.height = height;
     active = true;
     detectedFor = master;
     hovered = 0;
     paintPreview();
-    core.message('Auto Create found up to ' + labelCount + ' regions. Hover and click one, then Generate to save an option.');
-    core.toast('Object masks ready. Click a highlighted area in the image.');
+    core.message('Auto Create created '+created+' Groups and reused '+reused+' existing Groups. Click a mask or a Group to generate an option.');
+    core.toast('Created '+created+' Groups · reused '+reused+'. Hover and click an object.');
   } catch(error) {
     if (revision === serial) {
       reset();
       core.toast('Auto Create: ' + (error.message || 'Could not segment image.'));
-      core.message('Auto Create unavailable. You can still use Color Wand or Lasso.');
+      core.message('Auto Create unavailable. You can still use AI Wand or Line.');
     }
   } finally {
     if (serial === revision) {
       fetching = false;
+      window.MosaicMaskProgress?.hide?.('auto');
       updateButton();
     }
   }
@@ -220,7 +230,7 @@ sourceOverlay.addEventListener('pointerdown',event=>{
   event.stopImmediatePropagation();
   const id = regionAt(imagePoint(event));
   if (id) selectRegion(event, id);
-  else core.toast('Click a highlighted object. Use Color Wand for unrecognized surfaces.');
+  else core.toast('Click a highlighted object. Use AI Wand for unrecognized surfaces.');
 },true);
 sourceOverlay.addEventListener('pointerleave',()=>{if(active){hovered=0;hint.classList.add('hidden');paintPreview()}},true);
 document.addEventListener('keydown',event=>{
