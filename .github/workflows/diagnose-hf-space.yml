@@ -1,0 +1,53 @@
+name: Diagnose SAM 3 Hugging Face Space
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/diagnose-hf-space.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    steps:
+      - name: Inspect public Hugging Face Space runtime and Gradio API
+        run: |
+          python3 - <<'PY'
+          import json
+          import urllib.error
+          import urllib.request
+
+          urls = [
+              "https://huggingface.co/api/spaces/arieladhidevara/mozAI/runtime",
+              "https://arieladhidevara-mozai.hf.space/gradio_api/info",
+          ]
+          for url in urls:
+              print("Endpoint:", url, flush=True)
+              request = urllib.request.Request(url, headers={"User-Agent": "mozai-hf-space-diagnostics/1.0"})
+              try:
+                  with urllib.request.urlopen(request, timeout=18) as response:
+                      data = response.read(100_000).decode("utf-8", errors="replace")
+                      print("HTTP:", response.status)
+                      try:
+                          result = json.loads(data)
+                          if "/runtime" in url:
+                              print("Runtime stage:", result.get("stage"))
+                              print("Hardware:", result.get("hardware"))
+                              print("Error:", str(result.get("errorMessage", ""))[:1000])
+                          else:
+                              info = result.get("named_endpoints", {})
+                              print("Gradio endpoints:", ", ".join(info))
+                              print("Auto Create present:", "/segment_all" in info)
+                      except ValueError:
+                          print("Response is not JSON:", data[:450])
+              except urllib.error.HTTPError as exc:
+                  print("HTTP:", exc.code)
+                  print("Response:", exc.read(1000).decode("utf-8", errors="replace"))
+              except Exception as exc:
+                  print("Connection error:", type(exc).__name__, str(exc)[:500])
+          PY
