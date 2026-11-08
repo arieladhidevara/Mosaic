@@ -1,22 +1,15 @@
-# Optional SAM 3 AI Wand (Hugging Face ZeroGPU)
+# SAM 3 Auto Create (Hugging Face ZeroGPU)
 
-**Color Wand** is now the only Wand tool; it stays local and free.
-**SAM 3** is used behind the login-gated **Groups → Auto Create** action, which
-creates temporary object proposals over the image and saves new Group options
-only after generation succeeds. The original single-click `/segment` endpoint
-is kept internally for compatibility but is no longer exposed as a Wand mode. The Space compares SAM 3's candidate masks,
-prioritizes regions containing the click, retains only the connected object near
-the click, and rejects empty / near-whole-image selections (>=90%). The browser
-also rejects masks covering >=92% as a safety fallback during deployments.
-Click *inside* the desired object, rather than on its boundary or background.
-This improves selection reliability but does not provide automatic semantic
-object categories or guarantee perfect furniture/floor/wall boundaries.
+**Color Wand** is the only Wand tool and remains local/free. AI segmentation
+has moved into **Groups → ✦ Auto Create**: sign in, detect candidate objects
+within the image, click one, then Generate. Draft Groups may appear after
+selection; a new **option appears only after image generation succeeds**.
 
-**Not automatically activated after merge:** The Hugging Face Space
-`arieladhidevara/mozAI` exists, but the model still needs a healthy runtime,
-authorized checkpoint access and the `MOZAI_HF_SAM3_SPACE_URL` environment
-variable on Vercel. Until configured, AI Wand reports an error; use Color Wand.
-
+The existing `/segment` single-click endpoint remains for compatibility but
+is not part of the Wand UI. The new `/segment_all` endpoint creates a labeled
+2D object map without running SAM 3D reconstruction. Not every object will
+necessarily be detected. The Hugging Face Space and Vercel server-side URL
+must be configured for live use.
 
 ## Auto Create — detect first, save options only after generation
 
