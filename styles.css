@@ -840,3 +840,34 @@ body:has(.source-editor-active) .mask-edit-controls,body:has(.source-editor-acti
 @media(max-width:730px){
   .slimsam-wand-status{max-width:150px;white-space:normal}
 }
+
+/* AI mask progress: show indeterminate progress when the model/API cannot
+   report real percentages, instead of displaying a fictional estimate. */
+.mask-progress-hud{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:15;
+  width:min(310px,calc(100% - 28px));padding:13px 15px;border-radius:12px;
+  background:#1d1b2ceF;color:#f7f4ff;border:1px solid #9d83d355;box-shadow:0 12px 38px #0007;
+  pointer-events:none;line-height:1.5;text-align:left}
+.mask-progress-hud.hidden{display:none}
+.mask-progress-title{display:flex;align-items:center;gap:8px;font-size:12px}
+.mask-progress-spinner{color:#ac99ff;font-size:16px;animation:mask-hud-spin 1.5s linear infinite}
+.mask-progress-detail{font-size:10px;color:#bab6cb;margin:4px 0 9px}
+.mask-progress-track{position:relative;height:5px;border-radius:99px;overflow:hidden;background:#474059}
+.mask-progress-fill{height:100%;background:#a88afa;border-radius:99px;transition:width .22s ease}
+.mask-progress-fill.indeterminate{width:38%;animation:mask-hud-slide 1.65s ease-in-out infinite}
+@keyframes mask-hud-slide{0%{transform:translateX(-110%)}100%{transform:translateX(320%)}}
+@keyframes mask-hud-spin{to{transform:rotate(360deg)}}
+@media(prefers-reduced-motion:reduce){
+  .mask-progress-spinner,.mask-progress-fill.indeterminate{animation:none}
+  .mask-progress-fill.indeterminate{width:45%}
+}
+/* Cropped masked image thumbnails: transparent outside silhouette. */
+.group-cutout,.option-cutout{display:block;object-fit:contain;flex:none;background-color:#242230;
+  background-image:linear-gradient(45deg,#34313b 25%,transparent 25%),linear-gradient(-45deg,#34313b 25%,transparent 25%),
+    linear-gradient(45deg,transparent 75%,#34313b 75%),linear-gradient(-45deg,transparent 75%,#34313b 75%);
+  background-size:10px 10px;background-position:0 0,0 5px,5px -5px,-5px 0;border-radius:6px;
+  border:1px solid #645c7b4d}
+.group-cutout{width:45px;height:40px}
+.option-cutout{width:44px;height:34px}
+.group-icon:has(.group-cutout){width:45px;height:40px;padding:0;overflow:hidden;background:transparent}
+.region-group .group-head{gap:10px}
+.region-group .variant-row{min-height:43px}
