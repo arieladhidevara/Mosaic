@@ -1,0 +1,48 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {contentDimensions,selectSlimMask} from '../slimsam-mask-utils.mjs';
+
+const size=256;
+const empty = () => new Float32Array(3*size*size).fill(-1);
+const paint = (logits, index, x1,y1,x2,y2) => {
+  for(let y=y1;y<y2;y++)for(let x=x1;x<x2;x++)logits[index*size*size+y*size+x]=2;
+};
+test('SlimSAM mask coordinates respect longest-edge scaling and zero padding',()=>{
+  assert.deepEqual(contentDimensions(1024,512),{width:256,height:128});
+  assert.deepEqual(contentDimensions(512,1024),{width:128,height:256});
+  assert.deepEqual(contentDimensions(512,512),{width:256,height:256});
+});
+test('SlimSAM accepts connected mask containing cursor, ignores detached artifacts',()=>{
+  const logits=empty();
+  paint(logits,0,20,30,70,90);
+  paint(logits,0,180,180,210,210);
+  const mask=selectSlimMask(logits,[.91,.1,.1],256,256,35,50);
+  assert.ok(mask);
+  assert.equal(mask.mask[50*256+35],1);
+  assert.equal(mask.mask[190*256+190],0);
+  assert.ok(mask.coverage>0.04 && mask.coverage<0.05);
+});
+test('SlimSAM chooses best-scoring plausible candidate rather than larger noisy one',()=>{
+  const logits=empty();
+  paint(logits,0,0,0,240,240);
+  paint(logits,1,55,55,100,100);
+  paint(logits,2,50,50,72,72);
+  const mask=selectSlimMask(logits,[.99,.9,.68],256,256,60,60);
+  assert.ok(mask);
+  assert.equal(mask.mask[90*256+90],1);
+  assert.equal(mask.mask[120*256+120],0);
+});
+test('SlimSAM rejects mask covering almost entire image',()=>{
+  const logits=empty();
+  paint(logits,0,0,0,256,256);
+  assert.equal(selectSlimMask(logits,[.99,.2,.1],256,256,60,60),null);
+});
+test('SlimSAM rejects an object that does not contain the click',()=>{
+  const logits=empty();
+  paint(logits,0,10,10,40,40);
+  assert.equal(selectSlimMask(logits,[.99,.2,.1],256,256,220,220),null);
+});
+test('SlimSAM ignores click outside image bounds',()=>{
+  const logits=empty();
+  assert.equal(selectSlimMask(logits,[.9,.8,.7],256,128,300,40),null);
+});
