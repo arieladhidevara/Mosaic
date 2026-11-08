@@ -1274,7 +1274,8 @@ function pointerDown(e){if(e.target.closest('form,button,input,textarea,select')
     else if(state.selectedPatchId){const originalTool=state.tool;editExisting(state.selectedPatchId);selectTool(originalTool)}
     else{toast('Upload a variation to begin masking.');return}}
   const p=canvasPoint(e,!['lasso','rect','ellipse'].includes(state.tool));
-  if(state.tool==='wand'){e.preventDefault();if(e.ctrlKey||e.metaKey)setMode('add');window.MosaicSlimWand?.selectAt?.(p);return}
+  if((e.ctrlKey||e.metaKey)&&['wand','lasso','rect','ellipse'].includes(state.tool)&&!state.lasso.length)setMode('add');
+  if(state.tool==='wand'){e.preventDefault();window.MosaicSlimWand?.selectAt?.(p);return}
   state.drawing=true;e.preventDefault();e.currentTarget.setPointerCapture(e.pointerId);
   if(state.tool==='lasso'){state.pointerStart=p;state.dragFreehand=false;state.hoverPoint=p;if(!state.lasso.length)state.lasso=[p];drawOverlay()}
   else if(state.tool==='rect'||state.tool==='ellipse'){state.shapeStart=p;state.shapeEnd=p;state.constrainShape=e.shiftKey;drawOverlay()}
