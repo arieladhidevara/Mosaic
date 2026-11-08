@@ -38,7 +38,7 @@ jobs:
                           if "/runtime" in url:
                               print("Runtime stage:", result.get("stage"))
                               print("Hardware:", result.get("hardware"))
-                              print("Error:", str(result.get("errorMessage", ""))[:1000])
+                              print("Error (tail):", str(result.get("errorMessage", ""))[-9000:])
                           else:
                               info = result.get("named_endpoints", {})
                               print("Gradio endpoints:", ", ".join(info))
