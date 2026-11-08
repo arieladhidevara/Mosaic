@@ -815,3 +815,11 @@ body:has(.source-editor-active) .mask-edit-controls,body:has(.source-editor-acti
 /* SVG masks keep contours and points sharp at every zoom level. */
 .group-hover-hint{position:fixed}
 .source-editor-in-progress #selectionOutlineVectors,.source-editor-in-progress #regionHoverVectors,.source-editor-in-progress #regionGuideVectors{display:none}
+
+/* AI Wand is opt-in; existing color flood fill remains the default. */
+.wand-context{display:flex;align-items:center;gap:8px;min-width:0;flex-wrap:wrap}
+.wand-engine-label{display:flex;align-items:center;gap:5px;color:#c4c5d1;font-size:11px;white-space:nowrap}
+#wandEngine{background:#21242d;color:#e8e7f7;border:1px solid #535362;border-radius:6px;padding:5px 6px;font:inherit;max-width:112px;cursor:pointer}
+#wandEngine:focus-visible{outline:2px solid #aa9cff;outline-offset:2px}
+.wand-ai-hint{font-size:10px;color:#bdb7f4;white-space:nowrap}
+@media(max-width:730px){.wand-context{gap:5px}.wand-engine-label{font-size:10px}#wandEngine{max-width:106px}}
