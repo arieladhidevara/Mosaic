@@ -1,0 +1,61 @@
+name: Sync mozAI SAM 3 to Hugging Face
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "integrations/hf-sam3-space/**"
+      - ".github/workflows/sync-hf-space.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mozai-hf-space-sync
+  cancel-in-progress: false
+
+jobs:
+  sync-space:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73f37c8a3f7be11d1e # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Upload only the SAM 3 Space files
+        env:
+          HF_SPACE_WRITE_TOKEN: ${{ secrets.HF_SPACE_WRITE_TOKEN }}
+          GITHUB_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          if [ -z "${HF_SPACE_WRITE_TOKEN}" ]; then
+            echo "::error::Missing repository secret HF_SPACE_WRITE_TOKEN. Add a Hugging Face fine-grained write token authorized for arieladhidevara/mozAI."
+            exit 1
+          fi
+          python3 -m pip install --disable-pip-version-check "huggingface_hub>=0.30,<2"
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+          from huggingface_hub import HfApi
+
+          folder = Path("integrations/hf-sam3-space")
+          required = ["app.py", "requirements.txt", "README.md"]
+          missing = [name for name in required if not (folder / name).is_file()]
+          if missing:
+              raise SystemExit("Missing Space files: " + ", ".join(missing))
+
+          api = HfApi(token=os.environ["HF_SPACE_WRITE_TOKEN"])
+          result = api.upload_folder(
+              folder_path=str(folder),
+              repo_id="arieladhidevara/mozAI",
+              repo_type="space",
+              path_in_repo="",
+              allow_patterns=required,
+              commit_message=f"Sync SAM 3 Space from Mosaic {os.environ['GITHUB_SHA'][:12]}",
+          )
+          print("Uploaded SAM 3 Space files to arieladhidevara/mozAI")
+          print("Commit:", result)
+          PY
