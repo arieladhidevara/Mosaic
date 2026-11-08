@@ -2,7 +2,7 @@
 import * as vault from './key-vault.js';
 const $=id=>document.getElementById(id);
 const dialog=$('apiKeyDialog'),form=$('apiKeyForm'),button=$('apiKeyStatusBtn');
-let key='',keyOwner=null,pending=null,finishPending=null,ensuring=null,validation=0,epoch=0,restoration=null,restoredFor=null,remembered=false;
+let key='',keyOwner=null,pending=null,finishPending=null,ensuring=null,validation=0,epoch=0,restoration=null,restoredFor=null,remembered=false,initialPromptFor=null;
 const validKey=value=>/^sk-[\w-]{15,300}$/.test(value);
 function updateButton(){
   const ready=Boolean(key);
@@ -30,10 +30,18 @@ async function ensure(){
     if(!await window.MosaicAccount.ensure())return false;
     await restore();
     if(key)return true;
-    if(pending)return pending;
-    pending=new Promise(resolve=>{finishPending=resolve});openKeyDialog();return pending;
+    // Never interrupt an image generation with another API-key popup.
+    window.MosaicCore?.toast('Connect your OpenAI key from the top bar to generate.');
+    return false;
   })().finally(()=>{ensuring=null});
   return ensuring;
+}
+async function promptForKeyAtEntry(){
+  const actor=window.MosaicAccount.current();
+  if(!actor||initialPromptFor===actor.id)return;
+  initialPromptFor=actor.id;
+  await restore();
+  if(window.MosaicAccount.current()?.id===actor.id&&!key&&!dialog.open)openKeyDialog();
 }
 async function restore(){
   const actor=window.MosaicAccount.current();if(!actor)return false;
@@ -90,8 +98,8 @@ $('apiKeyRemoveBtn').addEventListener('click',async()=>{
   const owner=keyOwner||window.MosaicAccount.current()?.id;clear();if(owner)await vault.forget(owner).catch(()=>{});
 });
 button.addEventListener('click',async()=>{if(await window.MosaicAccount.ensure())openKeyDialog()});
-window.addEventListener('mosaic:account',async event=>{if(event.detail.user){await restore();if(event.detail.interactive&&!ensuring&&!key)void ensure()}});
+window.addEventListener('mosaic:account',event=>{if(event.detail.user)void promptForKeyAtEntry()});
 function clear(){epoch++;validation++;key='';keyOwner=null;remembered=false;restoredFor=null;restoration=null;form.reset();complete(false);if(dialog.open)dialog.close();updateButton()}
 window.MosaicAuth={clear,restore,ensure,request,status:async()=>Boolean(key),isReady:()=>Boolean(key)};
 updateButton();
-void window.MosaicAccount.ready().then(()=>restore());
+void window.MosaicAccount.ready().then(()=>promptForKeyAtEntry());

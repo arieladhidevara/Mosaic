@@ -6,7 +6,11 @@ module.exports=async function(req,res){
     if(req.method==='GET'){
       const params=new URL(req.url,'http://server.invalid').searchParams,page=Number(params.get('page')||1);
       if(!Number.isInteger(page)||page<1||page>10000)return send(res,400,{error:'Invalid page.'});
-      return send(res,200,{environment:req.account.environment,data:await store.adminList(req.account,params.get('view')||'overview',page)});
+      const view=params.get('view')||'overview';
+      if(view==='user'||view==='project')return send(res,200,{
+        environment:req.account.environment,data:await store.adminDetail(req.account,view,params.get('id'))
+      });
+      return send(res,200,{environment:req.account.environment,data:await store.adminList(req.account,view,page)});
     }
     const body=req.body||{};
     if(body.action==='invite'){
