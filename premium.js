@@ -518,6 +518,8 @@ async function generateRegion(patchId,regenerate=false){
       }
       core.invalidateDisplayedMask(existing);
       existing.awaitingResult=false;
+      // New options enter the right sidebar only after a real image is ready.
+      existing.hideUntilReady=false;
       if(!existing.manualName&&!existing.semanticNamed)existing.name=core.optionNameFromPrompt(existing.prompt,'AI edit '+(patch.regionNumber||''));
       existing.generating=false;
       const group=state.groups.find(g=>g.patchIds.includes(patchId));
@@ -538,7 +540,22 @@ async function generateRegion(patchId,regenerate=false){
         :'Generated result is ready in its Group options.');
       progress.done(activateResult?'AI edit applied to the mask.':'AI edit saved as an option.');
     }catch(error){
-      patch.generating=false;renderGroups();
+      patch.generating=false;
+      // A failed first generation must not leave a phantom option in Groups.
+      // Existing options being regenerated remain intact and retryable.
+      if (patch.hideUntilReady && state.patches.get(patchId) === patch) {
+        const group=state.groups.find(g=>g.patchIds.includes(patchId));
+        if (group) {
+          group.patchIds=group.patchIds.filter(id=>id!==patchId);
+          if (group.active===patchId) group.active=null;
+          core.refreshGroupFootprint(group);
+          if (!group.patchIds.length && state.draftGroupId!==group.id)
+            state.groups=state.groups.filter(g=>g!==group);
+        }
+        state.patches.delete(patchId);
+        state.sources.delete(patch.sourceId);
+      }
+      renderGroups();
       progress.fail(error.message||'AI edit failed.');
       toast('Local AI edit: '+error.message);
       message('The current approved image was preserved. Retry from its option.');
@@ -595,7 +612,7 @@ function createRegionRequest(prompt,referenceImages=[],selectedMask=state.select
   const source = {id: sourceId, name: 'AI request', canvas: base};
   const regionNumber=++premium.regionSerial,color=REGION_COLORS[(regionNumber-1)%REGION_COLORS.length];
   const patch = {id: uid('ai_patch'), sourceId, mask, bbox, maskPaths:window.MozMaskGeometry.copyPaths(selectedPaths),maskPoints:selectedPoints?.map(point=>({...point}))||[],regionNumber, color,
-    name: core.optionNameFromPrompt(text,'AI edit '+regionNumber), manualName:false, prompt: text, referenceImages, awaitingResult: true,
+    name: core.optionNameFromPrompt(text,'AI edit '+regionNumber), manualName:false, prompt: text, referenceImages, awaitingResult: true, hideUntilReady: true,
     groupId:groupId||null,
     projectPrompt: premium.projectPrompt,
     request: {baseImage: base, reference: state.reference, mask, prompt: text}};
