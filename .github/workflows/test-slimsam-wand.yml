@@ -1,0 +1,48 @@
+name: Test AI Tiny Wand
+on:
+  pull_request:
+    paths:
+      - 'app.js'
+      - 'index.html'
+      - 'styles.css'
+      - 'slimsam-*'
+      - 'tests/slimsam-wand.test.mjs'
+      - 'package.json'
+      - '.github/workflows/test-slimsam-wand.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'app.js'
+      - 'index.html'
+      - 'styles.css'
+      - 'slimsam-*'
+      - 'tests/slimsam-wand.test.mjs'
+      - 'package.json'
+      - '.github/workflows/test-slimsam-wand.yml'
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Validate SlimSAM source syntax
+        run: |
+          node --check slimsam-worker.mjs
+          node --check slimsam-mask-utils.mjs
+          node --check slimsam-wand.js
+      - name: Run mask and region unit tests
+        run: node --test tests/slimsam-wand.test.mjs
+      - name: Check frontend references and Color removal
+        run: |
+          node - <<'NODE'
+          const fs = require('node:fs');
+          const html = fs.readFileSync('index.html', 'utf8');
+          const app = fs.readFileSync('app.js','utf8');
+          if(!html.includes('./slimsam-wand.js')) throw Error('Wand controller not loaded');
+          if(!html.includes('id="slimsamWandStatus"')) throw Error('SlimSAM UI state missing');
+          if(html.includes('id="wandTolerance"') || html.includes('id="wandEngine"')) throw Error('Obsolete Color Wand UI');
+          if(app.includes('applyMagicWand(')) throw Error('Obsolete Color Wand processor');
+          if(!app.includes('applyWandMask(')) throw Error('SlimSAM does not commit masks to editor');
+          NODE
