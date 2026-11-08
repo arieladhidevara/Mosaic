@@ -25,6 +25,8 @@ const apiRoutes = new Map([
 
 const publicFiles = new Set([
   'index.html',
+  'privacy.html',
+  'terms.html',
   'styles.css',
   'auth.js',
   'key-vault.js',
@@ -44,6 +46,14 @@ const publicFiles = new Set([
   'admin.css',
   'app.js',
   'mask-geometry.js',
+  // Keep the local origin in sync with the production editor module graph.
+  // Module workers require explicit allowlisting and JavaScript MIME types.
+  'mask-progress.js',
+  'mask-cleanup.mjs',
+  'slimsam-wand.js',
+  'slimsam-worker.mjs',
+  'slimsam-mask-utils.mjs',
+  'auto-regions.js',
   'premium.js',
   'regions.js',
   'source-editor.js',
@@ -56,6 +66,7 @@ const contentTypes = {
   '.html': 'text/html; charset=utf-8',
   '.css': 'text/css; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
+  '.mjs': 'text/javascript; charset=utf-8',
   '.svg': 'image/svg+xml; charset=utf-8',
 };
 
