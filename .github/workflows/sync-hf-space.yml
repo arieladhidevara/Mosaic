@@ -30,6 +30,8 @@ jobs:
           python3 -m pip install --disable-pip-version-check "numpy>=1.26,<2"
           python3 -m unittest discover -s tests -p "test_sam3_mask_utils.py"
           python3 -m unittest discover -s tests -p "test_sam3_auto_regions.py"
+          python3 -m unittest discover -s tests -p "test_sam3_space_contract.py"
+          python3 -m py_compile integrations/hf-sam3-space/app.py
 
       - name: Validate SAM 3 API bridge
         run: node --test tests/hf-sam3.test.cjs

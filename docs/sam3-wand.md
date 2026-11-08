@@ -11,6 +11,18 @@ is not part of the Wand UI. The new `/segment_all` endpoint creates a labeled
 necessarily be detected. The Hugging Face Space and Vercel server-side URL
 must be configured for live use.
 
+## ZeroGPU startup workaround
+
+Meta SAM 3 creates a mix of hardcoded CUDA and CPU tensors while cloning
+transformer layers at model construction. ZeroGPU intercepts CUDA at module
+scope, which can raise a mixed-device `copy.deepcopy` error during Space
+startup. Instead of loading at import time, mozAI now loads the model
+inside the `@spaces.GPU` worker and memoizes it for warm workers.
+This is deliberately a reliability workaround, not an optimization:
+cold requests need to load the checkpoint and can take longer or exceed
+ZeroGPU duration/quota. The model requires an authorized
+`facebook/sam3` checkpoint and the `HF_TOKEN` Space secret.
+
 ## Auto Create — detect first, save options only after generation
 
 The standard **Wand** is **Color Wand only** (local, no AI costs). Object
