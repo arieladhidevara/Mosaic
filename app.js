@@ -370,6 +370,7 @@ function invalidateDisplayedMask(patch){
   visibleMaskCache.delete(patch);
   patchTextures.delete(patch);
   maskHandleCache.delete(patch);
+  optionThumbCache.delete(patch);
 }
 function renderedPatchLayer(patch){
   const output=makeCanvas(canvas.width,canvas.height);
@@ -771,7 +772,7 @@ function renderGroups(){
 function editExisting(pid){if(state.pendingSourceId){toast('Apply or discard your new image before editing saved variants.');return}const patch=state.patches.get(pid);if(!patch)return;state.editingPatchId=pid;state.selectedPatchId=pid;resetSelection();state.selectionPoints=patchControlPoints(patch).map(({x,y})=>({x,y}));state.selectionMask.getContext('2d').drawImage(displayedPatchMask(patch),0,0);setMode('add');selectTool('lasso');updateSelectionOutline();updateApplyButton();message('Editing a saved mask. Refine it, then click Update mask to commit changes.')}
 function groupEvent(e){if(window.MosaicRegions?.handleGroupEvent(e))return;if(window.MosaicPremium?.handleGroupEvent(e))return;const target=e.target.closest('[data-action]');if(!target)return;const action=target.dataset.action,group=state.groups.find(g=>g.id===target.dataset.group),pid=target.dataset.patch;
   if(action==='focus'&&group){hideQuickPrompt();selectGroupMask(group);return}
-  if(action==='edit-mask'&&group){hideQuickPrompt();selectGroupMask(group);state.maskEditOnly=true;renderGroups();render();return}
+  if(action==='edit-mask'&&group){hideQuickPrompt();selectGroupMask(group,{showOutline:true});state.maskEditOnly=true;state.selectionOverlayHidden=false;updateSelectionOutline();renderGroups();render();return}
   if(action==='edit-image'){window.MosaicSourceEditor?.openOption(pid);return}
   if(action==='edit'){editExisting(pid);return}
   if(action==='choose'&&group){
