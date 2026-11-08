@@ -191,27 +191,39 @@ function updateGroupCategory(group,category,source='vision'){
   if(!group.manualName)group.name=groupLabel(group);
   renderGroups();drawOverlay();
 }
-function matchingGroup(mask){
-  // Auto-group only near-identical masks. At least 85% of BOTH filled masks
-  // must overlap, so a small mask inside a much larger one is not considered
-  // the same region.
-  const box=exactMaskBoundingBox(mask);if(!box)return null;
-  const alpha=mask.getContext('2d',{willReadFrequently:true}).getImageData(box.x,box.y,box.w,box.h).data;
-  let areaA=0;for(let i=3;i<alpha.length;i+=4)if(alpha[i]>0)areaA++;
-  let best=null,bestScore=.85;
+function matchingGroup(mask,threshold=.85){
+  // Compare normalized low-resolution coverage, rather than scanning full 4K
+  // masks N x N times during Auto Create. Require substantial overlap in BOTH
+  // directions, so a small object inside a larger surface stays separate.
+  const width=Math.min(192,canvas.width);
+  const height=Math.max(1,Math.round(width*canvas.height/canvas.width));
+  const sample=source=>{
+    const c=makeCanvas(width,height),ctx=c.getContext('2d',{willReadFrequently:true});
+    ctx.imageSmoothingEnabled=false;
+    ctx.drawImage(source,0,0,width,height);
+    const pixels=ctx.getImageData(0,0,width,height).data;
+    const selected=new Uint8Array(width*height);
+    let area=0,minX=width,minY=height,maxX=-1,maxY=-1;
+    for(let i=0;i<selected.length;i++){
+      if(pixels[i*4+3]<120)continue;
+      selected[i]=1;area++;
+      const x=i%width,y=(i-x)/width;
+      minX=Math.min(minX,x);minY=Math.min(minY,y);
+      maxX=Math.max(maxX,x);maxY=Math.max(maxY,y);
+    }
+    return {selected,area,box:maxX>=0?{x:minX,y:minY,w:maxX-minX+1,h:maxY-minY+1}:null};
+  };
+  const a=sample(mask);
+  if(!a.area)return null;
+  let best=null,bestScore=threshold;
   for(const group of state.groups){
     if(!group.area)continue;
-    const other=groupMask(group),gb=exactMaskBoundingBox(other);
-    if(!gb||!bboxIoU(box,gb))continue;
-    const oc=other.getContext('2d',{willReadFrequently:true});
-    const full=oc.getImageData(gb.x,gb.y,gb.w,gb.h).data;
-    let intersection=0,areaB=0;
-    for(let i=3;i<full.length;i+=4)if(full[i]>0)areaB++;
-    const beta=oc.getImageData(box.x,box.y,box.w,box.h).data;
-    for(let i=3;i<alpha.length;i+=4)if(alpha[i]>0&&beta[i]>0)intersection++;
-    if(!areaA||!areaB)continue;
-    const overlapA=intersection/areaA,overlapB=intersection/areaB,score=Math.min(overlapA,overlapB);
-    if(score>=.85&&score>=bestScore){best=group;bestScore=score}
+    const b=sample(groupMask(group));
+    if(!b.area||!bboxIoU(a.box,b.box))continue;
+    let intersection=0;
+    for(let i=0;i<a.selected.length;i++)if(a.selected[i]&&b.selected[i])intersection++;
+    const score=Math.min(intersection/a.area,intersection/b.area);
+    if(score>=bestScore){best=group;bestScore=score}
   }
   return best;
 }
