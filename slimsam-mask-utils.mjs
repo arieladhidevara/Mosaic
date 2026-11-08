@@ -11,6 +11,21 @@ export function contentDimensions(imageWidth, imageHeight, side = SAM_MASK_SIDE)
   };
 }
 
+// Median/majority smoothing removes single-pixel islands and jagged steps at
+// decoder resolution. It does not blur the editable dashed contour or cutout.
+export function smoothObjectMask(input,width,height){
+  const output=new Uint8Array(input.length);
+  for(let y=0;y<height;y++)for(let x=0;x<width;x++){
+    let filled=0,neighbors=0;
+    for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++){
+      const nx=x+dx,ny=y+dy;
+      if(nx<0||ny<0||nx>=width||ny>=height)continue;
+      neighbors++;filled+=input[ny*width+nx]?1:0;
+    }
+    output[y*width+x]=filled>=Math.ceil(neighbors*.56)?1:0;
+  }
+  return output;
+}
 // Select only the 4-connected object that contains the positive cursor point,
 // rather than allowing stray islands or empty background to be selected.
 // Reject nearly-full-image masks and tiny isolated noise.
@@ -52,6 +67,15 @@ export function selectSlimMask(logits, scores, imageWidth, imageHeight, imageX, 
     if (!best || rank > best.rank) best = {mask: visited, width, height, coverage, score: Number(scores[k]), rank};
   }
   if (!best) return null;
+  const clean=smoothObjectMask(best.mask,best.width,best.height);
+  // Small furniture parts can be thinner than 3 pixels at 256px scale:
+  // retain the original connected mask when smoothing erases the click.
+  if(clean[py*best.width+px]){
+    best.mask=clean;
+    let area=0;
+    for(const pixel of clean)area+=pixel;
+    best.coverage=area/(best.width*best.height);
+  }
   delete best.rank;
   return best;
 }
