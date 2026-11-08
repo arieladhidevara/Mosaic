@@ -12,7 +12,7 @@ Supabase membership checks. Signing in from the editor preserves its canvas.
 1. Upload a **Base image**. mozAI stays on onboarding until you **upload a Master**, **generate a Master from the inline prompt**, or deliberately click **Continue with Base only**. Just uploading Base never silently starts the editor or creates Master. Clicking Generate opens the main canvas immediately with Base and centered generation progress; the Base fades into the generated Master when it is ready. Mask editing remains available while generating.
 2. Upload your own **Master image**, generate a Master with Pro, or click **Continue with Base only** to start a local manual working draft. The draft is not registered as an uploaded/generated Master, and a real Master can still be added later (with confirmation if it would replace existing Group work).
 3. Upload one or more AI images. Each becomes a temporary top layer, one at a time.
-4. Choose **Line**, **Rect**, **Oval**, or **Magic Wand** (Color by default; optional AI · SAM 3 after configuring a Hugging Face Space). Line uses click-to-place polygon points; close at the start, double-click, or press Enter. Start/draw outside the image if needed: the live outline stays visible in the surrounding viewport and the applied selection automatically clips to the image rectangle. Rect/Oval support Shift-constrained shapes. Magic Wand flood-selects connected, similar-colored pixels under the click, with an adjustable **Tolerance** slider. **New / Add / Subtract** work with every selection tool.
+4. Choose **Line**, **Rect**, **Oval** or **Wand (SlimSAM)**. Wand downloads and caches the quantized model in the browser on first load, then highlights objects on hover and selects on click. The right **Groups → Auto Create** action uses the hosted SAM 3 Space to detect objects and create empty Groups immediately; an Option is added only after the user selects a Group and generates. **New / Add / Subtract** work with selection tools and Ctrl/Cmd-click unions multiple masks.
 5. Click **Apply** to keep only the selected region of the uploaded image. **Enter** closes an unfinished Line; selection remains a draft until Apply. The unselected pixels are hidden non-destructively.
 6. Refine a patch later with **Edit**, **Brush**, or **Eraser**. Overlapping patches from the same region are automatically grouped as alternatives, with the newest active.
 7. Use **Compare master**: hold the button with a mouse to compare temporarily; on touch devices tap once to view master and again to return.
@@ -22,7 +22,7 @@ The prompt can also be copied directly from the interface. Manual image processi
 
 ## Important notes
 
-- **Optional AI Wand** uses [Hugging Face SAM 3](docs/sam3-wand.md) only when selected and a Space is configured; unconfigured installations continue using Color Wand. **No automatic image difference detection**. The Magic Wand operates on connected pixels of similar color in the visible composition, not semantic objects. Region grouping still happens only *after* applying a mask.
+- **Wand** uses locally cached SlimSAM model weights (no server-side Wand API usage). **Auto Create** uses hosted SAM 3 to create reusable Groups; masking progress is shown during model loading and inference. Browser cache may be evicted under device storage pressure.
 - Automatic Group matching requires strong **actual mask intersection**, not just similar bounding boxes. Use the **+ beside Groups** in the right sidebar for a new Group. Desktop drag/drop can move options between Groups without adding a fifth option button.
 - Use **Select** to move or reshape an applied image and its mask together. Use the option's **Edit** action to change only its selection. **Edit** beside Base, Master, or a pending upload opens the image position editor. Changes to one option preserve source images shared by other options.
 - Maximum import size defaults to 2400 pixels on the longest side to limit browser memory; hidden Base image can be imported at up to 4000 pixels.
@@ -37,6 +37,16 @@ editor and the `/api/ai/*` routes that connect to OpenAI:
 ```bash
 npm run dev:local
 ```
+
+To update a previously cloned local installation to the latest released UX:
+
+```bash
+git checkout main
+git pull --ff-only origin main
+npm run dev:local
+```
+
+The local server serves the same frontend JavaScript and model workers as the GitHub `main` branch, including Wand preload, masking progress, and Auto Create. In local development, the SAM 3 backend defaults to the same public `https://arieladhidevara-mozai.hf.space` Space as production; an explicit `MOZAI_HF_SAM3_SPACE_URL` in `.env.local` overrides this. Model downloads require an internet connection.
 
 Open http://127.0.0.1:8000, click **Connect AI**, and enter your OpenAI API
 key. Local auto-login uses an isolated development account; production requires Supabase setup described in [Phase 2 setup](docs/phase2-setup.md). The OpenAI key is forwarded by the same-origin server for each OpenAI request; optional browser remembering reconnects it after refresh.
