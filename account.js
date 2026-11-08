@@ -27,7 +27,7 @@ gate.innerHTML=`<dialog id="accountDialog" class="account-dialog" aria-labelledb
   <button id="accountSignup" class="account-text-button" type="button" hidden>Create an invited account</button>
   <details id="inviteEntry" class="invite-entry"><summary>Have an invitation link?</summary><label>Paste your invitation link<input id="invitationInput" type="text" autocomplete="off" placeholder="https://mozai.cc/#invite=…"></label><button id="invitationApply" type="button" class="btn btn-outline">Use invitation</button></details>
   <button id="accountGuest" type="button" class="account-text-button">Continue as guest &rarr;</button>
-  <small>AI access is by invitation. Bring your own OpenAI key; API charges are billed by OpenAI. Demo credits are for the Pro preview only.</small>
+  <small>AI access is by invitation. Bring your own OpenAI key; API charges are billed by OpenAI. Demo credits are for the Pro preview only. By using mozAI, you acknowledge our <a href="/terms" target="_blank" rel="noopener noreferrer">Terms</a> and <a href="/privacy" target="_blank" rel="noopener noreferrer">Privacy Policy</a>.</small>
   </div></dialog>`;
 const dialog=$('accountDialog');
 function renderWorkspace(){

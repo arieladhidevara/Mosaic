@@ -26,3 +26,6 @@
 .invitation-notice{font-size:10px;color:#d2bde8;background:#ba9be012;border:1px solid #ba9be025;border-radius:6px;line-height:1.7;padding:10px;margin-bottom:17px}.invite-entry{margin-top:16px;font-size:10px;color:#aaa1b5}.invite-entry summary{cursor:pointer}.invite-entry label{display:grid;margin:14px 0 9px}.invite-entry .btn{font-size:10px}
 .account-controls{border-left:1px solid #ffffff12;padding-left:10px}.account-controls>span{max-width:130px;color:#96909f;font-size:10px}.callback-page{margin:0;min-height:100dvh;display:grid;place-items:center;background:#111217;color:#eeeaf5;font-family:Inter,system-ui,sans-serif}.callback-page .account-card{width:min(430px,100%)}.callback-return{color:#cbb7ea;font-size:12px}
 @media(max-width:500px){.account-card{padding:30px 24px}.account-card h1{font-size:26px}.account-dialog{max-height:calc(100dvh - 20px)}}
+
+/* Links to legal information in the authentication dialog. */
+.account-card small a{color:#d6bff0;text-decoration:underline;text-underline-offset:2px}

@@ -171,3 +171,7 @@ Browser regression scripts: `tests/workspace-scenarios.js` covers the pointer, L
 See [the complete Vercel + Supabase setup guide](docs/phase2-setup.md). Use `npm run dev:local` for loopback-only automatic login as `dev@mosaic.local`, `npm run dev:login` for real Supabase login, and `npm run dev:reset` to reset only isolated local test data. `/admin` uses the same application session. All AI operations still require your own OpenAI key. `npm test` includes auth/security and in-memory PostgreSQL migration tests.
 
 The welcome page fits one viewport without scrolling. The header groups Open/Save project under Project and uses matching AI, account and PNG controls. The floating AI prompt opens from a canvas area click; sidebar option selection only exposes its editable mask. References use a + beside the prompt, with Generate below.
+
+## Launch safety and monitoring
+
+The /privacy and /terms documents linked from the landing page describe beta data practices. The account dialog also links to them. On 5xx API errors, a random X-MozAI-Error-ID is added to the response and a sanitized structured log records only that ID, numeric status, and a validated code. Request bodies, uploaded imagery, user identifiers, prompt contents, and API keys are never intentionally logged by this handler. Run npm test to exercise these guarantees. Production rate limiting still requires independent Vercel WAF configuration and verification. The LICENSE notice is unchanged by this patch.
