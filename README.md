@@ -45,7 +45,7 @@ Run the Node.js server or use Vercel for both application authentication and AI 
 
 ## Deploy to Vercel
 
-The public GitHub repository `arieladhidevara/Mosaic` is connected to its Vercel deployment. Pushing to the `main` branch automatically updates its production deployment. Framework: Other/static site with serverless API functions. No bundling step is required. Supabase server environment variables and the Phase 2 database migration are required for login. See [Phase 2 setup](docs/phase2-setup.md).
+The GitHub repository `arieladhidevara/Mosaic` is connected to its Vercel deployment. Pushing to the `main` branch automatically updates its production deployment. Framework: Other/static site with serverless API functions. No bundling step is required. Supabase server environment variables and the Phase 2 database migration are required for login. See [Phase 2 setup](docs/phase2-setup.md).
 
 ## Structure
 
@@ -57,7 +57,7 @@ The public GitHub repository `arieladhidevara/Mosaic` is connected to its Vercel
 - `regions.js`: Group controls, names, hover and drag/drop
 - `vercel.json`: static hosting config
 
-MIT License.
+**Source code license:** Proprietary, all rights reserved. See [LICENSE](LICENSE). Earlier versions that were published under MIT retain their previous MIT grants; this change applies to new versions only.
 
 ## AI workflow (OpenAI API key only)
 
