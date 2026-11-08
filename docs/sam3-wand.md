@@ -1,11 +1,10 @@
 # Optional SAM 3 AI Wand (Hugging Face ZeroGPU)
 
-The existing **Color** Wand stays the default and is fully local/free. The new
-**AI · SAM 3** choice takes a single click and sends the current *visible
-composition preview* (max 1024px JPEG) to an optional server-configured
-Hugging Face Gradio Space. The returned transparent mask is drawn into the
-same selection canvas as Color Wand, preserving New / Add / Subtract, Undo,
-Edit Mask, Apply and Group workflows. The Space compares SAM 3's candidate masks,
+**Color Wand** is now the only Wand tool; it stays local and free.
+**SAM 3** is used behind the login-gated **Groups → Auto Create** action, which
+creates temporary object proposals over the image and saves new Group options
+only after generation succeeds. The original single-click `/segment` endpoint
+is kept internally for compatibility but is no longer exposed as a Wand mode. The Space compares SAM 3's candidate masks,
 prioritizes regions containing the click, retains only the connected object near
 the click, and rejects empty / near-whole-image selections (>=90%). The browser
 also rejects masks covering >=92% as a safety fallback during deployments.
