@@ -15,9 +15,9 @@ AI Wand will give a safe error; switch back to Color Wand.
 ## Automatic GitHub → Hugging Face sync
 
 The checked-in workflow [sync-hf-space.yml](../.github/workflows/sync-hf-space.yml)
-publishes only \`app.py\` and \`requirements.txt\` from
-\`integrations/hf-sam3-space/\` to the **existing** Hugging Face Space
-\`arieladhidevara/mozAI\` on pushes to \`main\` that modify this folder.
+publishes only `app.py` and `requirements.txt` from
+`integrations/hf-sam3-space/` to the **existing** Hugging Face Space
+`arieladhidevara/mozAI` on pushes to `main` that modify this folder.
 It can also be started manually from GitHub Actions using **Run workflow**.
 It does not remove extra Space files or replace the Hugging Face Space README,
 SDK or hardware settings.
@@ -28,19 +28,19 @@ SDK or hardware settings.
    https://huggingface.co/settings/tokens with write access to
    **arieladhidevara/mozAI**. Use an account that owns or can write to the Space.
 2. Store this token in the GitHub repository secret
-   \`HF_SPACE_WRITE_TOKEN\` at
+   `HF_SPACE_WRITE_TOKEN` at
    https://github.com/arieladhidevara/Mosaic/settings/secrets/actions.
 3. Go to https://github.com/arieladhidevara/Mosaic/actions/workflows/sync-hf-space.yml
    and choose **Run workflow** to deploy the current files immediately.
    A missing token fails the workflow with a clear error; it never logs the token.
 4. Check the Space **Build logs** followed by **Container logs**.
-   The SAM 3 package currently needs \`setuptools==80.9.0\` because it imports
-   \`pkg_resources\`, which was removed from newer setuptools versions.
-5. Separately, gated \`facebook/sam3\` checkpoint download requires approved
-   model access and a Hugging Face **Space secret** named \`HF_TOKEN\`.
+   The SAM 3 package currently needs `setuptools==80.9.0` because it imports
+   `pkg_resources`, which was removed from newer setuptools versions.
+5. Separately, gated `facebook/sam3` checkpoint download requires approved
+   model access and a Hugging Face **Space secret** named `HF_TOKEN`.
    This runtime-read token is distinct from the GitHub deployment token.
-6. Only once SAM 3 is healthy, configure the actual \`.hf.space\` inference URL
-   in Vercel \`MOZAI_HF_SAM3_SPACE_URL\` and redeploy mozAI.
+6. Only once SAM 3 is healthy, configure the actual `.hf.space` inference URL
+   in Vercel `MOZAI_HF_SAM3_SPACE_URL` and redeploy mozAI.
 
 The workflow sync is only a code delivery mechanism: it does **not** grant
 ZeroGPU quota, accept gated model terms, fix CUDA/runtime memory issues,
