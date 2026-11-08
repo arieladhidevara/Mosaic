@@ -1056,6 +1056,7 @@ function applyMagicWand(p){
     if(x>0)add(i-1);if(x<w-1)add(i+1);if(y>0)add(i-w);if(y<h-1)add(i+w);
   }
   if(!count){toast('No pixels matched. Increase tolerance.');return}
+  if(count>=w*h*.90){toast('Color Wand matched nearly the whole image. Lower tolerance, or choose AI · SAM 3 to select an object.');return}
   const region=makeCanvas(w,h);region.getContext('2d').putImageData(selected,0,0);
   if(state.maskEditOnly&&state.selectionTargetPatchId)snapshotPointEdit();else snapshotSelection();
   const mc=state.selectionMask.getContext('2d');
