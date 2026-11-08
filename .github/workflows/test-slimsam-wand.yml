@@ -12,6 +12,9 @@ on:
       - 'mask-cleanup.mjs'
       - 'tests/slimsam-wand.test.mjs'
       - 'package.json'
+      - 'local-server.js'
+      - 'scripts/dev-server.js'
+      - 'tests/local-assets.test.cjs'
       - '.github/workflows/test-slimsam-wand.yml'
   push:
     branches: [main]
@@ -26,6 +29,9 @@ on:
       - 'mask-cleanup.mjs'
       - 'tests/slimsam-wand.test.mjs'
       - 'package.json'
+      - 'local-server.js'
+      - 'scripts/dev-server.js'
+      - 'tests/local-assets.test.cjs'
       - '.github/workflows/test-slimsam-wand.yml'
 jobs:
   test:
@@ -45,8 +51,8 @@ jobs:
           node --check auto-regions.js
           node --check regions.js
           node --check mask-progress.js
-      - name: Run mask and region unit tests
-        run: node --test tests/slimsam-wand.test.mjs
+      - name: Run mask, region, and local-server asset tests
+        run: node --test tests/slimsam-wand.test.mjs tests/local-assets.test.cjs
       - name: Check frontend references and Color removal
         run: |
           node - <<'NODE'
