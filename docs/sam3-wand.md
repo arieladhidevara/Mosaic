@@ -1,0 +1,59 @@
+# Optional SAM 3 AI Wand (Hugging Face ZeroGPU)
+
+The existing **Color** Wand stays the default and is fully local/free. The new
+**AI · SAM 3** choice takes a single click and sends the current *visible
+composition preview* (max 1024px JPEG) to an optional server-configured
+Hugging Face Gradio Space. The returned transparent mask is drawn into the
+same selection canvas as Color Wand, preserving New / Add / Subtract, Undo,
+Edit Mask, Apply and Group workflows.
+
+**Not automatically activated after merge:** The linked Hugging Face Space
+is not created or configured by this repository. Until configured, selecting
+AI Wand will give a safe error; switch back to Color Wand.
+
+## Deploy the Space
+
+1. Create your own Hugging Face Gradio Space with ZeroGPU hardware using
+   the files in [integrations/hf-sam3-space](../integrations/hf-sam3-space/).
+   ZeroGPU availability, GPU quotas and hosting eligibility are subject to HF
+   rules. If your account is not eligible for free hosting, use suitable paid
+   GPU hosting instead.
+2. Request/accept checkpoint access to **facebook/sam3** and configure the
+   Space secret **HF_TOKEN** authorized to download that checkpoint.
+3. Verify the Space builds and manually test its /gradio_api/call/segment
+   endpoint. It must accept [JPEG data URI, x, y], and respond with a base64
+   **transparent PNG data URI** in a string output (not a Gradio image/file URL).
+   Verify model memory, runtime and request duration; 45s is an initial limit.
+4. In Vercel server-side project environment variables, configure
+   MOZAI_HF_SAM3_SPACE_URL=https://YOUR-SPACE.hf.space
+   and optionally HF_SAM3_TOKEN=YOUR_TOKEN. The URL must be an HTTPS subdomain
+   of .hf.space with no path/query. Tokens stay on the server, never in JS.
+5. Redeploy Vercel and test a masked click on mozAI. Test New, Add,
+   Subtract, Undo, editing an existing group, slow queue handling, and failure.
+
+Do not commit tokens to GitHub. Ensure the Space access policy is appropriate
+for private architectural imagery. The request forwards previews to a separate
+third-party service; users should not send confidential design images unless
+their rights, employer/client rules, and service controls permit it.
+
+## Operational notes
+
+- The same-origin route authenticates the logged-in user and validates dimensions,
+  content type, request size, and the configured Space hostname. It does not
+  require the user's OpenAI API key.
+- The Gradio request is asynchronous. A stale response is ignored when the
+  user switches Wand engine, project, tool, selection mode or edit target.
+- A failure does not erase an existing selection. The user can select Color Wand.
+- GPU quota and cold starts/queue times depend on Hugging Face and the
+  caller identity/token, and **are not a guaranteed number of selections**.
+  With a shared server-side token, users generally share the token's limits.
+- The Space has to load a large model, even for one click. Budget, privacy,
+  rate limiting and workload isolation should be assessed before public SaaS use.
+- Never expose Hugging Face secrets in browser code, logs or project files.
+
+## Testing
+
+Run npm test for local route validation and HF Gradio SSE contract tests.
+Live end-to-end testing needs a deployed Space and cannot be simulated by
+the unit tests. SAM 3 model correctness and mask quality for complex
+architectural edges still require manual evaluation.
