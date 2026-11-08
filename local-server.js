@@ -19,6 +19,7 @@ const apiRoutes = new Map([
   ['/api/ai/edit', require('./api/ai/edit')],
   ['/api/ai/harmonize', require('./api/ai/harmonize')],
   ['/api/ai/classify', require('./api/ai/classify')],
+  ['/api/ai/sam3', require('./api/ai/sam3')],
   ['/api/ai/option-name', require('./api/ai/option-name')],
 ]);
 
