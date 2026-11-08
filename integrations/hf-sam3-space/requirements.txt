@@ -1,3 +1,5 @@
+# SAM 3 still imports pkg_resources, removed by setuptools 82.
+setuptools==80.9.0
 gradio>=5,<7
 spaces
 numpy
