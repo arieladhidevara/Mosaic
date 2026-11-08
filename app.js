@@ -673,6 +673,45 @@ function drawOverlay(){ox.clearRect(0,0,overlay.width,overlay.height);drawDraftP
   updateMaskPointControls();refreshBrushCursor();
 }
 function escapeHTML(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]))}
+// Small thumbnails show an actual cutout on transparency, not a full render.
+// Cache completed option thumbs to avoid expensive full-image work during UI redraws.
+const optionThumbCache=new WeakMap();
+function cutoutThumbnail(image,mask){
+  if(!image||!mask)return '';
+  const b=exactMaskBoundingBox(mask);if(!b)return '';
+  const width=52,height=42,pad=3,scale=Math.min((width-pad*2)/b.w,(height-pad*2)/b.h);
+  const dw=b.w*scale,dh=b.h*scale,dx=(width-dw)/2,dy=(height-dh)/2;
+  const thumb=makeCanvas(width,height),t=thumb.getContext('2d');
+  t.imageSmoothingEnabled=true;t.imageSmoothingQuality='high';
+  t.drawImage(image,b.x,b.y,b.w,b.h,dx,dy,dw,dh);
+  t.globalCompositeOperation='destination-in';
+  t.filter='blur(.5px)';
+  t.drawImage(mask,b.x,b.y,b.w,b.h,dx,dy,dw,dh);
+  t.filter='none';t.globalCompositeOperation='source-over';
+  return thumb.toDataURL('image/png');
+}
+function patchThumbnail(patch){
+  if(!patch)return '';
+  const src=state.sources.get(patch.sourceId),mask=displayedPatchMask(patch);
+  if(!src?.canvas||!mask||patch.awaitingResult)return '';
+  const signature=[patch.bbox?.x,patch.bbox?.y,patch.bbox?.w,patch.bbox?.h,
+    ...(patch.corners||[]).flatMap(p=>[p.x,p.y])].join('/');
+  const cached=optionThumbCache.get(patch);
+  if(cached&&cached.source===src.canvas&&cached.mask===patch.mask&&cached.signature===signature)return cached.data;
+  const image=patch.corners?.length?renderedPatchLayer(patch):src.canvas;
+  const data=cutoutThumbnail(image,mask);
+  optionThumbCache.set(patch,{source:src.canvas,mask:patch.mask,signature,data});
+  return data;
+}
+function groupThumbnail(group){
+  const active=state.patches.get(group.active),fallback=state.patches.get(group.patchIds.at(-1));
+  const patch=active||fallback;
+  if(patch){
+    const url=patchThumbnail(patch);
+    if(url)return url;
+  }
+  return cutoutThumbnail(state.master,groupMask(group));
+}
 function renderGroups(){
   const list=$('groupList');
   // Async AI status/semantic naming refreshes the Groups panel while people
@@ -697,10 +736,11 @@ function renderGroups(){
     const optionRow=(pid)=>{
       const p=state.patches.get(pid);if(!p)return '';
       const isMaster=p.isMasterVersion||p.isOriginalMaster;
-      return `<div class="variant-row ${g.active===pid?'selected':''} ${state.maskEditOnly&&state.selectionTargetPatchId===pid?'mask-editing':''}" data-action="choose" data-group="${g.id}" data-patch="${pid}" ${isMaster?'data-master-version="true"':''}><span class="variant-dot"></span><span class="variant-text">${escapeHTML(p.name)}</span><span class="option-actions" aria-label="Option actions"><button type="button" class="variant-action" title="Edit selection mask" data-action="edit-mask" data-group="${g.id}" data-patch="${pid}">Edit</button><button type="button" class="variant-action" title="Rename option" data-region-action="rename-option" data-group="${g.id}" data-patch="${pid}">Rename</button><button type="button" class="variant-action" title="Delete option" data-action="delete" data-group="${g.id}" data-patch="${pid}">Delete</button><button type="button" class="variant-action" title="Regenerate this option (Pro)" data-region-action="regen-option" data-group="${g.id}" data-patch="${pid}">${p.generating?'Generating…':'✦ Regen'}</button></span></div>`;
+      const thumb=patchThumbnail(p);
+      return `<div class="variant-row ${g.active===pid?'selected':''} ${state.maskEditOnly&&state.selectionTargetPatchId===pid?'mask-editing':''}" data-action="choose" data-group="${g.id}" data-patch="${pid}" ${isMaster?'data-master-version="true"':''}><span class="variant-dot"></span>${thumb?`<img class="option-cutout" src="${thumb}" alt="" loading="lazy">`:''}<span class="variant-text">${escapeHTML(p.name)}</span><span class="option-actions" aria-label="Option actions"><button type="button" class="variant-action" title="Edit selection mask" data-action="edit-mask" data-group="${g.id}" data-patch="${pid}">Edit</button><button type="button" class="variant-action" title="Rename option" data-region-action="rename-option" data-group="${g.id}" data-patch="${pid}">Rename</button><button type="button" class="variant-action" title="Delete option" data-action="delete" data-group="${g.id}" data-patch="${pid}">Delete</button><button type="button" class="variant-action" title="Regenerate this option (Pro)" data-region-action="regen-option" data-group="${g.id}" data-patch="${pid}">${p.generating?'Generating…':'✦ Regen'}</button></span></div>`;
     };
     const originalRow=g.hasHarmonizedMaster||!readyIds.length?'':`<div class="variant-row ${g.active===null?'selected':''}" data-action="choose" data-group="${g.id}" data-patch="master"><span class="variant-dot"></span><span class="variant-text">Original Master</span></div>`;
-    return `<div class="region-group" data-group="${g.id}"><div class="group-head" data-action="focus" data-group="${g.id}"><span class="group-icon">▧</span><span class="group-heading-copy"><small>Group ${String(state.groups.indexOf(g)+1).padStart(2,'0')}</small><span class="group-name">${escapeHTML(g.name)}</span></span><span class="group-count">${readyIds.length}</span><span class="group-head-actions"><button type="button" class="variant-action group-add-option" data-region-action="add-option" title="Add an option to this region" aria-label="Add region option">＋</button></span></div><div class="group-options">${order.map(optionRow).join('')}${originalRow}${readyIds.length?'':`<small class="group-pending-options">${g.patchIds.length?'Generating edit…':'Select an area and Generate to add an option'}</small>`}</div></div>`;
+    return `<div class="region-group" data-group="${g.id}"><div class="group-head" data-action="focus" data-group="${g.id}"><span class="group-icon">${groupThumbnail(g)?`<img class="group-cutout" src="${groupThumbnail(g)}" alt="" loading="lazy">`:'▧'}</span><span class="group-heading-copy"><small>Group ${String(state.groups.indexOf(g)+1).padStart(2,'0')}</small><span class="group-name">${escapeHTML(g.name)}</span></span><span class="group-count">${readyIds.length}</span><span class="group-head-actions"><button type="button" class="variant-action group-add-option" data-region-action="add-option" title="Add an option to this region" aria-label="Add region option">＋</button></span></div><div class="group-options">${order.map(optionRow).join('')}${originalRow}${readyIds.length?'':`<small class="group-pending-options">${g.patchIds.length?'Generating edit…':'Select an area and Generate to add an option'}</small>`}</div></div>`;
   }).join('');
   if(liveForm&&liveGroup){
     const section=[...list.querySelectorAll('.region-group[data-group]')]
@@ -756,7 +796,16 @@ function maskPathsFromRaster(mask,points=[]){
     for(let i=3;i<pixels.length;i+=4){const a=pixels[i]>110,b=candidate[i]>110;if(a||b)total++;if(a!==b)changed++}
     if(total&&changed/total<.012)return [copyCorners(points)];
   }
-  return MaskGeometry.traceMask(pixels,w,h,canvas.width/w,canvas.height/h,Math.max(.6,.7/state.zoom));
+  // Raster/AI predictions need a readable editable contour, not hundreds of
+  // noisy auto-generated handles. User-authored Line vertices are kept above.
+  let tolerance=Math.max(1.6,2.8/state.zoom);
+  let paths=MaskGeometry.traceMask(pixels,w,h,canvas.width/w,canvas.height/h,tolerance);
+  for(let attempt=0;attempt<6&&paths.some(path=>path.length>72);attempt++){
+    tolerance*=1.5;
+    paths=MaskGeometry.traceMask(pixels,w,h,canvas.width/w,canvas.height/h,tolerance);
+  }
+  return paths.filter(path=>path.length>=3);
+}
 }
 function setSelectionPaths(paths){
   state.selectionPaths=MaskGeometry.copyPaths(paths);state.selectionPoints=state.selectionPaths.flat();
