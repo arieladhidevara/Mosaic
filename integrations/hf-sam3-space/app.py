@@ -19,8 +19,18 @@ from mask_utils import choose_clicked_mask
 from sam3.model_builder import build_sam3_image_model
 from sam3.model.sam3_image_processor import Sam3Processor
 
-# ZeroGPU requires GPU models to be created at module import time.
-model = build_sam3_image_model(enable_inst_interactivity=True)
+# ZeroGPU's CUDA emulation can create CUDA tensors during module construction
+# while SAM 3's get_clones() deep-copies CPU layers. Build consistently on CPU
+# first, then move the complete model to CUDA at import time as ZeroGPU requires.
+# This workaround is scoped strictly to the synchronous startup constructor.
+_cuda_available = torch.cuda.is_available
+try:
+    torch.cuda.is_available = lambda: False
+    with torch.device("cpu"):
+        model = build_sam3_image_model(device="cpu", enable_inst_interactivity=True)
+finally:
+    torch.cuda.is_available = _cuda_available
+model = model.to("cuda")
 processor = Sam3Processor(model)
 
 
