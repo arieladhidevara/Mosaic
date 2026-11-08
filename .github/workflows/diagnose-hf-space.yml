@@ -6,6 +6,9 @@ on:
     paths:
       - ".github/workflows/diagnose-hf-space.yml"
   workflow_dispatch:
+  workflow_run:
+    workflows: ["Sync mozAI SAM 3 to Hugging Face"]
+    types: [completed]
 
 permissions:
   contents: read
