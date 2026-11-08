@@ -229,10 +229,26 @@ function createBlankRegion(){
   setMode('new');selectTool('lasso');renderGroups();
   message('Draw an area, then generate or apply an image to save it as a Group.');
 }
+function autoClassifyGroup(group){
+  if(!group||group.manualCategory||group.category!=='Region'||group.classificationPending)return;
+  if(!window.MosaicAuth?.isReady?.()||!window.MosaicPremium?.classifyArea)return;
+  const snapshot=cloneMask(groupMask(group));
+  if(!maskBoundingBox(snapshot))return;
+  group.classificationPending=true;renderGroups();
+  void window.MosaicPremium.classifyArea(snapshot).then(category=>{
+    if(state.groups.includes(group)&&!group.manualCategory&&group.category==='Region')updateGroupCategory(group,category,'vision');
+  }).catch(()=>{/* Manual category selection stays available if classification fails. */})
+    .finally(()=>{group.classificationPending=false;if(state.groups.includes(group))renderGroups()});
+}
 function prepareSelectionGroup(){
-  if(!state.selectionMask||state.editingPatchId)return;
-  // A selection is a draft until Generate or Apply creates an image option.
-  if(!state.selectionTargetPatchId)state.draftGroupId=matchingGroup(state.selectionMask)?.id||null;
+  if(!state.selectionMask||state.editingPatchId||!maskBoundingBox(state.selectionMask))return;
+  if(!state.selectionTargetPatchId){
+    let group=state.groups.find(g=>g.id===state.draftGroupId&&!g.patchIds.length)||matchingGroup(state.selectionMask);
+    if(!group)group=newGroup(state.selectionMask);
+    if(!group.patchIds.length){group.footprint=cloneMask(state.selectionMask);group.area=maskBoundingBox(group.footprint)}
+    state.draftGroupId=group.id;
+    autoClassifyGroup(group);
+  }
   renderGroups();
 }
 function assignGroup(patch,targetGroupId=state.selectionTargetPatchId?state.draftGroupId:null){
@@ -242,7 +258,7 @@ function assignGroup(patch,targetGroupId=state.selectionTargetPatchId?state.draf
   if(category)updateGroupCategory(group,category,'prompt');
   rememberMask(group,patch.mask);
   state.patches.set(patch.id,patch);group.patchIds.push(patch.id);group.active=patch.id;if(state.queuedGroupId===group.id)state.queuedGroupId=null;
-  patch.groupId=group.id;state.selectedPatchId=patch.id;refreshGroupFootprint(group);return group;
+  patch.groupId=group.id;state.selectedPatchId=patch.id;refreshGroupFootprint(group);autoClassifyGroup(group);return group;
 }
 function refreshGroupFootprint(group){
   const patches=group.patchIds.map(id=>state.patches.get(id)).filter(Boolean);
@@ -263,6 +279,7 @@ function moveOptionToGroup(patchId,targetGroupId){
   renderGroups();render();toast('Moved '+patch.name+' to '+to.name+'.');return true;
 }
 function selectGroupMask(group){
+  hideQuickPrompt();
   if(!group||!state.master||state.busy||window.MosaicPremium?.isPreviewing())return;
   if(state.editingPatchId){toast('Finish editing the current mask first.');return}
   const mask=groupMask(group);
@@ -996,7 +1013,8 @@ function snapshotPatch(p){state.undo.push({type:'patch',patchId:p.id,paths:MaskG
 function finishMaskSelection(){
   void window.MosaicAccount?.track('selection_created');
   updateSelectionOutline();ensureSelectionPaths();if(state.maskEditOnly&&state.selectionTargetPatchId)saveSelectionGeometry();prepareSelectionGroup();updateApplyButton();
-  selectTool('select');render();hideQuickPrompt();
+  selectTool('select');render();
+  if(!state.maskEditOnly&&!state.pendingSourceId)showQuickPrompt(state.lastCanvasPointer);
 }
 function commitMaskPath(trace,points=[],polygon=false){if(!state.selectionMask)return;const m=state.selectionMask.getContext('2d');if(state.maskEditOnly&&state.selectionTargetPatchId)snapshotPointEdit();else snapshotSelection();m.save();
   if(state.selectionMode==='new'){if(!state.maskEditOnly){state.selectionTargetPatchId=null;releaseDraftGroupForNewSelection()}m.clearRect(0,0,canvas.width,canvas.height)}
@@ -1384,5 +1402,6 @@ viewport.addEventListener('wheel',event=>{
   if(state.lasso.length)state.hoverPoint=canvasPoint(event,false);
   if(state.shapeStart)state.shapeEnd=canvasPoint(event,false);drawOverlay();
 },{passive:false});
+window.addEventListener('mosaic:keyconnected',()=>state.groups.forEach(autoClassifyGroup));
 window.MosaicCore = {svgNode,vectorLayer,drawVectorPaths,maskPathsFromRaster,state,canvas,overlay,ctx,makeCanvas,uid,setProjectTitle,toast,message,promptText,loadFileToCanvas,setMaster,continueWithBase,upgradeBaseDraft,setSourcePreview,updateSourceActions,render,composeApprovedCanvas,renderGroups,drawPatch,selectTool,setMode,updateApplyButton,maskBoundingBox,assignGroup,resetSelection,updateSelectionOutline,updateMaskWithLasso,updateZoomFit,escapeHTML,categoryFromText,updateGroupCategory,optionNameFromPrompt,prepareSelectionGroup,groupMask,selectGroupMask,CATEGORIES,showQuickPrompt,hideQuickPrompt,createBlankRegion,moveOptionToGroup,displayedPatchMask,renderedPatchLayer,refreshGroupFootprint,invalidateDisplayedMask,attachGeneratedSelection,patchSelectionPaths,exactMaskBoundingBox,unwarpPatchSelection,patchControlPoints,displayedMaskPoint};
 promptText();
