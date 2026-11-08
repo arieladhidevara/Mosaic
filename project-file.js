@@ -124,6 +124,7 @@ async function saveProject(){
     const queue=await encodeQueue(codec.pack);
     const file={
       format:MAGIC,version:VERSION,createdAt:new Date().toISOString(),
+      analytics:{projectId:await window.MosaicAccount?.projectId().catch(()=>null)||null},
       app:'mozAI',state:packedState,premium:packedPremium,queue,
       ui:{projectName:$('projectName').textContent||'Untitled composition'},
       images:codec.registry
@@ -131,7 +132,7 @@ async function saveProject(){
     const blob=new Blob([JSON.stringify(file)],{type:'application/json'});
     const name=(file.ui.projectName||'mozAI_project').replace(/[^a-z0-9_-]+/gi,'_').slice(0,48)||'mozAI_project';
     const url=URL.createObjectURL(blob),a=document.createElement('a');
-    a.href=url;a.download=name+'.moz';document.body.appendChild(a);a.click();a.remove();
+    a.href=url;a.download=name+'.moz';document.body.appendChild(a);a.click();a.remove();void window.MosaicAccount?.track('project_saved');
     setTimeout(()=>URL.revokeObjectURL(url),20000);
     toast('Saved '+a.download+' with editable images, masks, Groups and Master history.');
   }catch(error){toast('Save project failed: '+error.message)}
@@ -212,7 +213,7 @@ async function loadProjectFile(file){
     state.brushTargetId=null;state.hoveredGroupId=null;
     state.selectionMask=state.selectionMask||(state.master?makeCanvas(state.master.width,state.master.height):null);
     premium.restoreProjectState(restoredPremium);
-    restoreUI(saved,data.ui);
+    restoreUI(saved,data.ui);void window.MosaicAccount?.startProject(true,data.analytics?.projectId);void window.MosaicAccount?.track('project_opened');
     toast('Project restored, including Groups, options, selections and Master history.');
   }catch(error){toast('Open project failed: '+error.message)}
   finally{fileBusy=false;button.disabled=false;button.innerHTML=old}

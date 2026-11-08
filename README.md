@@ -4,8 +4,13 @@ mozAI is a manual-first architectural AI collage editor with optional bring-your
 
 ## Workflow
 
+Open the public welcome page and choose **Continue as guest** for manual editing,
+local project files and PNG export, or **Sign in to Pro**. AI actions request an
+invited account only when needed. Email/password and Google share the existing
+Supabase membership checks. Signing in from the editor preserves its canvas.
+
 1. Upload a **Base image**. mozAI stays on onboarding until you **upload a Master**, **generate a Master from the inline prompt**, or deliberately click **Continue with Base only**. Just uploading Base never silently starts the editor or creates Master. Clicking Generate opens the main canvas immediately with Base and centered generation progress; the Base fades into the generated Master when it is ready. Mask editing remains available while generating.
-2. Upload your own **Master image**, generate a Master with Premium, or click **Continue with Base only** to start a local manual working draft. The draft is not registered as an uploaded/generated Master, and a real Master can still be added later (with confirmation if it would replace existing Group work).
+2. Upload your own **Master image**, generate a Master with Pro, or click **Continue with Base only** to start a local manual working draft. The draft is not registered as an uploaded/generated Master, and a real Master can still be added later (with confirmation if it would replace existing Group work).
 3. Upload one or more AI images. Each becomes a temporary top layer, one at a time.
 4. Choose **Line**, **Rect**, **Oval**, or **Magic Wand**. Line uses click-to-place polygon points; close at the start, double-click, or press Enter. Start/draw outside the image if needed: the live outline stays visible in the surrounding viewport and the applied selection automatically clips to the image rectangle. Rect/Oval support Shift-constrained shapes. Magic Wand flood-selects connected, similar-colored pixels under the click, with an adjustable **Tolerance** slider. **New / Add / Subtract** work with every selection tool.
 5. Click **Apply** to keep only the selected region of the uploaded image. **Enter** closes an unfinished Line; selection remains a draft until Apply. The unselected pixels are hidden non-destructively.
@@ -21,7 +26,7 @@ The prompt can also be copied directly from the interface. Manual image processi
 - Automatic Group matching requires strong **actual mask intersection**, not just similar bounding boxes. Use the **+ beside Groups** in the right sidebar for a new Group. Desktop drag/drop can move options between Groups without adding a fifth option button.
 - Use **Select** to move or reshape an applied image and its mask together. Use the option's **Edit** action to change only its selection. **Edit** beside Base, Master, or a pending upload opens the image position editor. Changes to one option preserve source images shared by other options.
 - Maximum import size defaults to 2400 pixels on the longest side to limit browser memory; hidden Base image can be imported at up to 4000 pixels.
-- Live project data is kept **in browser memory** and refresh clears unsaved changes. Use **Save project** before leaving and **Open project** to restore it. No backend database/persistence or synchronization is required.
+- Live project data is kept **in browser memory** and refresh clears unsaved changes. Use **Save project** before leaving and **Open project** to restore it. Editable image content remains local. Account access and metadata analytics use Supabase in production, with an isolated file store for local developer mode.
 - Final AI harmonization is done manually and can still reinterpret visual references.
 
 ## Run locally
@@ -30,20 +35,17 @@ Node.js 18 or newer is required. The included local server serves both the stati
 editor and the `/api/ai/*` routes that connect to OpenAI:
 
 ```bash
-npm start
+npm run dev:local
 ```
 
-Open http://127.0.0.1:8000, click **✦ Add API key**, and enter your OpenAI API
-key. No `.env` file or npm dependency installation is required. The key stays in
-the current browser tab and is forwarded only by the local same-origin server for
-each OpenAI request.
+Open http://127.0.0.1:8000, click **Connect AI**, and enter your OpenAI API
+key. Local auto-login uses an isolated development account; production requires Supabase setup described in [Phase 2 setup](docs/phase2-setup.md). The OpenAI key is forwarded by the same-origin server for each OpenAI request; optional browser remembering reconnects it after refresh.
 
-You can still open `index.html` directly for manual editing, but AI features need
-the Node.js server (or a Vercel deployment) because `/api/ai/*` must run server-side.
+Run the Node.js server or use Vercel for both application authentication and AI endpoints. Opening `index.html` directly cannot establish an application session.
 
 ## Deploy to Vercel
 
-The public GitHub repository `arieladhidevara/Mosaic` is connected to its Vercel deployment. Pushing to the `main` branch automatically updates its production deployment. Framework: Other/static site. No build or environment variables are required.
+The public GitHub repository `arieladhidevara/Mosaic` is connected to its Vercel deployment. Pushing to the `main` branch automatically updates its production deployment. Framework: Other/static site with serverless API functions. No bundling step is required. Supabase server environment variables and the Phase 2 database migration are required for login. See [Phase 2 setup](docs/phase2-setup.md).
 
 ## Structure
 
@@ -59,7 +61,14 @@ MIT License.
 
 ## AI workflow (OpenAI API key only)
 
-**No mozAI username, password or account is required.** Click **✦ Add API key** in the toolbar and enter your OpenAI API key (or select any AI Generate action to open the key dialog automatically). The API key is validated for format locally and checked by OpenAI when you run a request.
+Manual editing requires no account. **AI requires an active invited mozAI account
+and your own OpenAI key.** Click **Connect AI** or a Generate action to sign in and
+follow the key setup guide. The connection check calls OpenAI's models endpoint
+without generating an image; it does not establish remaining balance, billing
+status, or permission to use a particular image model. Invited accounts display
+mozAI Pro with **100 demo credits**; Low/Medium/High generations use 1/2/3 demo
+credits after success. These are simulation units, never OpenAI funds, and do not
+limit BYOK generation when depleted. See [onboarding setup](docs/onboarding.md).
 
 1. Upload **Base**. A compact prompt bar appears under Base: type the first prompt and press **Enter** to generate a Master, or click the image icon to attach up to 3 visual references. Paste (Ctrl/Cmd+V) or drag image references into the bar too; small thumbnails appear only when attached. Alternatively upload Master manually. Base remains the camera/geometry reference.
 2. Draw a Line, Rectangle or Oval selection, click **Area**, and enter the instruction for that region. Each requested area receives a new colored contour and numbered label. Multiple areas can have different prompts.
@@ -68,18 +77,18 @@ MIT License.
 4. The returned **crop-only output** is resized to the original crop window and composited into the correct position on a transparent full-size working layer. The original selection mask limits the applied pixels; all pixels outside the selected area remain unchanged. Use **✦ Regen** on an option to retry or regenerate; this does not erase the approved option if generation fails.
 5. **Harmonize** sends the full approved collage and Base (no local crop) at the selected Harmonize quality to produce a new full Master. Base is always included, regardless of the geometry toggle. The Groups panel retains prior alternatives, and Master 2/3/etc. appear in the Master Versions browser. Previous editable snapshots remain in memory for branching.
 
-Initial Master, AI Edit and Harmonize use `gpt-image-2.6-sunburst` through the Images Edit API. Initial Master always uses High quality.
+Initial Master, AI Edit and Harmonize use `gpt-image-2.6-sunburst` through the Images Edit API. Initial Master always uses High quality and requests roughly 2K output independently of Base pixel count (2048px long edge, 1920px near-square). The generation preview starts at that working resolution, so selections made while generating stay aligned. Existing working canvases retain their dimensions to preserve layers and history. Extreme aspect ratios outside 1:3 to 3:1 retain automatic sizing. Image inputs use JPEG quality 94% within the payload budget; output uses JPEG quality 100%.
 
 API-generated images are not perfectly geometry-constrained; masking guarantees outside-region pixels are left untouched by regional edits, but a full-image Harmonize may still change geometry. Region guide overlays are local display aids and can be toggled off.
 
 ### API key and security
 
-- **No mozAI admin credentials, cookie sessions, signup, or server environment variables are needed.** Remove-key control disconnects the current tab.
-- OpenAI API key entry uses a masked input, stays only in the current browser tab's JavaScript memory and disappears after a refresh or tab close. It is **never** stored in cookies, `localStorage`, GitHub, the project file or a server environment variable.
+- Application login uses verified Supabase sessions and invitation membership. Local auto-login is explicitly enabled with `npm run dev:local` and is blocked on Vercel. The BYOK Remove-key control disconnects only the OpenAI key; it does not sign out of the application.
+- OpenAI API key entry uses a masked input. **Remember on this browser** stores an account-scoped AES-GCM envelope in IndexedDB with a nonextractable Web Crypto key, so refresh reconnects automatically. Uncheck it for tab-only use; Remove key deletes the saved credential. Keys never enter server storage, cookies, `localStorage`, analytics, GitHub or project files. Browser encryption does not isolate a key from scripts running on the same origin.
 - On each AI action, the browser sends the key in the HTTPS POST body to the mozAI same-origin serverless function. That function checks the request origin, validates the key's format, and forwards it to OpenAI. The app never embeds or shares an API key in its source code.
-- This is **BYOK**: every user uses their own API key and is responsible for their OpenAI API charges. ChatGPT subscriptions do not include OpenAI API credit.
-- Because mozAI runs on a publicly accessible URL, anyone who supplies a valid OpenAI API key can use the AI endpoints. Use Vercel Firewall / rate limiting to reduce resource abuse. **Only enter your API key in a deployment you trust.**
-- Supported endpoints: `/api/ai/master`, `/api/ai/edit`, `/api/ai/harmonize`, `/api/ai/classify`, `/api/ai/option-name`. Legacy `/api/login`, `/api/session`, `/api/logout`, and admin password setup have been removed.
+- This is **BYOK**: every user uses their own API key and is responsible for their OpenAI API charges. Check actual API billing and any account-specific credit benefits in OpenAI; the mozAI demo balance is independent.
+- A valid OpenAI key alone cannot access AI endpoints: the server also requires a verified Supabase session and active invitation membership. Admin endpoints additionally require a database admin role. **Only enter your API key in a deployment you trust.**
+- AI endpoints: `/api/ai/master`, `/api/ai/edit`, `/api/ai/harmonize`, `/api/ai/classify`, `/api/ai/option-name`, `/api/ai/connection`. Application sessions use `/api/session`; usage uses `/api/credits`. The old shared admin password implementation is no longer used.
 - Up to 3 reference images per generation are resized and validated before they are sent. Running the UI from a static file server allows manual editing; AI functions require a deployed Node.js serverless runtime.
 
 ## Move & Skew layers
@@ -115,7 +124,7 @@ The original Base geometry is preserved separately from the working Master.
 
 - Click **Save project** to download a versioned, lossless JSON-based `.moz` file. It includes Base, working Master, original uploads, source layers, Groups, Option names/prompts, saved selections, moved/skewed masks, current draft selection, Undo/Redo, queued image files, Master Versions and editable Harmonize history.
 - Click **Open project** to restore a previously saved file and resume editing. Imported images are decoded and validated before the current project is replaced. Files over **300 MB** are rejected; large multi-version projects may create correspondingly large files.
-- Save/Open is local and does not require an AI API request. **OpenAI API keys are never written into project files**; the user re-enters a key after refresh to use AI.
+- Save/Open is local and does not require an AI API request. **OpenAI API keys are never written into project files**; remembered browser keys reconnect after refresh, while tab-only keys require reconnection.
 - Use **Save image** for a single PNG, or **Save project** for an editable `.moz` file. Older `.mosaic` files remain readable.
 
 ## UX notes (November 2026)
@@ -156,3 +165,9 @@ Browser regression scripts: `tests/workspace-scenarios.js` covers the pointer, L
 - `tests/selection-scenarios.js` checks independent points, deliberate point controls, image placement versus mask editing, brush size/intensity, project naming, and portable Undo/Redo.
 
 - `tests/hover-group-scenarios.js` / `await runHoverGroupChecks()` verifies Select hover, sharp SVG contours, exact 85% two-way grouping at native resolution, no empty draft Groups, and repeated generation as alternatives.
+
+## Phase 2 accounts and local development
+
+See [the complete Vercel + Supabase setup guide](docs/phase2-setup.md). Use `npm run dev:local` for loopback-only automatic login as `dev@mosaic.local`, `npm run dev:login` for real Supabase login, and `npm run dev:reset` to reset only isolated local test data. `/admin` uses the same application session. All AI operations still require your own OpenAI key. `npm test` includes auth/security and in-memory PostgreSQL migration tests.
+
+The welcome page fits one viewport without scrolling. The header groups Open/Save project under Project and uses matching AI, account and PNG controls. The floating AI prompt opens from a canvas area click; sidebar option selection only exposes its editable mask. References use a + beside the prompt, with Generate below.

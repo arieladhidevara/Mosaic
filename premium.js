@@ -4,10 +4,10 @@ if (!core) throw new Error('Mosaic core must load before Premium');
 const {state, canvas, makeCanvas, uid, render, renderGroups, resetSelection, assignGroup, maskBoundingBox, toast, message} = core;
 const $ = id => document.getElementById(id);
 const esc = core.escapeHTML;
-const DEFAULT_SETTINGS={preserveOriginalGeometry:false,regionQuality:'medium',harmonizeQuality:'high'};
+const DEFAULT_SETTINGS={preserveOriginalGeometry:true,regionQuality:'medium',harmonizeQuality:'high'};
 function generationSettings(value={}){
   const quality=(value,fallback)=>['low','medium','high'].includes(value)?value:fallback;
-  return {preserveOriginalGeometry:value?.preserveOriginalGeometry===true,
+  return {preserveOriginalGeometry:true,
     regionQuality:quality(value?.regionQuality,'medium'),harmonizeQuality:quality(value?.harmonizeQuality,'high')};
 }
 const premium = {
@@ -113,6 +113,8 @@ function beginAIProgress(label,detail='Preparing request…',target={scope:'mast
 const welcomeGenerateButton=$('welcomeBaseGenerateSubmit');
 welcomeGenerateButton.classList.remove('sr-only');welcomeGenerateButton.classList.add('welcome-prompt-generate-button');
 welcomeGenerateButton.removeAttribute('tabindex');welcomeGenerateButton.removeAttribute('aria-hidden');welcomeGenerateButton.textContent='✦ Generate';
+// Keep the submit action below the prompt; references stay beside its text field.
+$('welcomeBasePromptForm').append(welcomeGenerateButton);
 function onReferenceLoaded() {
   // A Base upload is only a reference. Never silently promote it to Master.
   if(state.reference&&state.master){
@@ -346,7 +348,7 @@ function resizedFrame(source,w,h){
   const out=makeCanvas(w,h),o=out.getContext('2d');
   o.fillStyle='#fff';o.fillRect(0,0,w,h);
   o.drawImage(source,0,0,w,h);
-  return out.toDataURL('image/jpeg',.78);
+  return out.toDataURL('image/jpeg',.94);
 }
 function transparentEditMask(source,w,h){
   const out=makeCanvas(w,h),m=out.getContext('2d');
@@ -367,7 +369,7 @@ function encodeRequest(prompt,patch=null,masterSource=null,extraReferences=[]){
     const w=Math.max(128,Math.round(canvas.width*scale)),h=Math.max(128,Math.round(canvas.height*scale));
     const payload={collage:resizedFrame(collage,w,h),quality:patch?premium.settings.regionQuality:premium.settings.harmonizeQuality,
       projectPrompt:premium.projectPrompt,prompt,regions:annotationNotes(patch?.id),references:patch?.referenceImages||extraReferences};
-    if(!patch||premium.settings.preserveOriginalGeometry)payload.base=resizedFrame(state.reference||premium.initialMaster||state.master,w,h);
+    payload.base=resizedFrame(state.reference||premium.initialMaster||state.master,w,h);
     if(patch){
       payload.mask=transparentEditMask(patch.mask,w,h);
     }
@@ -400,7 +402,7 @@ function cropFrame(source,window,w,h,mask=false){
   const sw=window.w/canvas.width*source.width;
   const sh=window.h/canvas.height*source.height;
   context.drawImage(source,sx,sy,sw,sh,0,0,w,h);
-  return frame.toDataURL(mask?'image/png':'image/jpeg',mask?undefined:.78);
+  return frame.toDataURL(mask?'image/png':'image/jpeg',mask?undefined:.94);
 }
 function encodeRegionalCrop(patch){
   const visualMask=cloneCanvas(core.displayedPatchMask(patch));
@@ -419,7 +421,7 @@ function encodeRegionalCrop(patch){
       regions:annotationNotes(patch.id),
       references:patch.referenceImages||[]
     };
-    if(premium.settings.preserveOriginalGeometry){
+    {
       const baseScale=Math.min(1,maxDimension/Math.max(base.width,base.height));
       payload.base=resizedFrame(base,Math.max(128,Math.round(base.width*baseScale)),Math.max(128,Math.round(base.height*baseScale)));
     }
@@ -625,7 +627,7 @@ async function generateSelection(prompt,groupId=null,referenceFiles=[]){
   const savedMask=cloneCanvas(state.selectionMask),generation=state.selectionGeneration;
   const savedPoints=state.selectionPoints?.map(point=>({...point}))||[];
   const savedPaths=window.MozMaskGeometry.copyPaths(state.selectionPaths);
-  const requestedGroupId=groupId||(state.selectionTargetPatchId?state.draftGroupId:null);
+  const requestedGroupId=groupId||state.draftGroupId||null;
   try{
     const referenceImages=await prepareReferenceImages(referenceFiles);
     if(generation!==state.selectionGeneration){toast('The project changed. Please select the region again.');return}
@@ -931,7 +933,11 @@ async function prepareReferenceImages(files){
   for(const file of list){
     if(!/^image\/(jpeg|png|webp)$/.test(file.type)||file.size>10000000)throw Error('Choose a JPG, PNG or WEBP image under 10 MB.');
     const frame=await core.loadFileToCanvas(file,1000);
-    output.push(frame.toDataURL('image/jpeg',.72));
+    let encoded=frame.toDataURL('image/jpeg',.90);
+    // Keep attached references within the server's per-image and combined caps.
+    if(encoded.length>720000)encoded=frame.toDataURL('image/jpeg',.78);
+    if(encoded.length>720000){const smaller=makeCanvas(Math.round(frame.width*.75),Math.round(frame.height*.75));smaller.getContext('2d').drawImage(frame,0,0,smaller.width,smaller.height);encoded=smaller.toDataURL('image/jpeg',.85)}
+    output.push(encoded);
   }
   return output;
 }
@@ -972,7 +978,8 @@ async function createMasterFromBase(prompt,files,button,afterSuccess){
     if(!await window.MosaicAuth.ensure())return;
     // Enter the editor immediately. Base is a working draft until the first
     // generated Master arrives, so its preview never creates a Master version.
-    if(!state.master)core.continueWithBase(false);
+    const masterTarget=window.MozMasterResolution.target(state.reference.width,state.reference.height);
+    if(!state.master)core.continueWithBase(false,masterTarget);else core.upgradeBaseDraft(masterTarget);
     job.generation=state.selectionGeneration;
     if(firstMaster)core.setProjectTitle('Base');
     core.updateSourceActions();
@@ -1111,12 +1118,13 @@ window.MosaicPremium = {
   originalImage, exportPrompt, drawRegionGuides, classifyArea
 };
 function syncGenerationSettings(){
-  $('preserveOriginalGeometry').checked=premium.settings.preserveOriginalGeometry;
+  $('preserveOriginalGeometry').checked=true;
+  $('preserveOriginalGeometry').disabled=true;
   $('regionRenderQuality').value=premium.settings.regionQuality;
   $('harmonizeQuality').value=premium.settings.harmonizeQuality;
 }
-for(const id of ['preserveOriginalGeometry','regionRenderQuality','harmonizeQuality'])$(id).addEventListener('change',()=>{
-  premium.settings=generationSettings({preserveOriginalGeometry:$('preserveOriginalGeometry').checked,
+for(const id of ['regionRenderQuality','harmonizeQuality'])$(id).addEventListener('change',()=>{
+  premium.settings=generationSettings({preserveOriginalGeometry:true,
     regionQuality:$('regionRenderQuality').value,harmonizeQuality:$('harmonizeQuality').value});
 });
 syncGenerationSettings();

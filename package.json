@@ -5,10 +5,16 @@
   "description": "Local server for the mozAI collage workspace",
   "scripts": {
     "start": "node local-server.js",
-    "dev": "node local-server.js",
-    "test": "node --test tests/image-provider.test.cjs tests/mask-geometry.test.cjs"
+    "dev": "node scripts/dev-server.js",
+    "dev:local": "node scripts/dev-server.js --auto-login",
+    "dev:login": "node scripts/dev-server.js --real-login",
+    "dev:reset": "node scripts/reset-local-data.js",
+    "test": "node --test tests/image-provider.test.cjs tests/mask-geometry.test.cjs tests/auth.test.cjs tests/database.test.cjs"
   },
   "engines": {
     "node": ">=18"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "^0.5.15"
   }
 }

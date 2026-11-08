@@ -4,7 +4,7 @@ window.runInitialMasterChecks=async function(pausePreview=false){
   const assert=(value,message)=>{if(!value)throw Error(message)};
   const wait=async(predicate)=>{for(let i=0;i<400;i++){if(predicate())return;await new Promise(resolve=>setTimeout(resolve,20))}throw Error('Initial Master flow timed out')};
   assert(!state.master&&!state.reference,'Use a fresh browser tab for onboarding checks');
-  $('apiKeyStatusBtn').click();$('apiKeyInput').value='sk-initial-master-validation';$('apiKeyForm').requestSubmit();
+  $('apiKeyStatusBtn').click();await wait(()=>$('apiKeyDialog').open);$('apiKeyInput').value='sk-initial-master-validation';$('apiKeyForm').requestSubmit();await wait(()=>window.MosaicAuth.isReady());
   const base=makeCanvas(900,600),context=base.getContext('2d');context.fillStyle='#52667f';context.fillRect(0,0,900,600);context.fillStyle='#d8dee9';context.fillRect(160,100,500,280);context.fillStyle='#74859e';context.fillRect(210,160,150,220);context.fillRect(440,160,150,220);
   const file=await new Promise(resolve=>base.toBlob(blob=>resolve(new File([blob],'Initial base.png',{type:'image/png'})),'image/png'));
   const transfer=new DataTransfer();transfer.items.add(file);$('referenceInput').files=transfer.files;$('referenceInput').dispatchEvent(new Event('change'));
@@ -19,6 +19,7 @@ window.runInitialMasterChecks=async function(pausePreview=false){
     $('projectName').click();$('projectNameInput').value='First render';$('projectNameInput').dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}));
     $('welcomeBasePromptInput').value='Create a refined architectural render';$('welcomeBasePromptForm').requestSubmit();
     await wait(()=>Boolean(state.master&&$('canvasGenerationProgress')?.children.length));
+    assert(core.canvas.width===2048&&core.canvas.height===1360,'Small uploaded Base limited the first Master resolution');
     assert(state.masterIsBase&&$('welcome').classList.contains('hidden')&&!$('canvasWrap').classList.contains('hidden'),'Generate did not immediately enter the main canvas with Base');
     assert(ai.getMasterVersions().length===0,'Base preview was registered as a generated Master');
     const pixel=core.ctx.getImageData(30,30,1,1).data;assert(pixel[0]===82&&pixel[1]===102&&pixel[2]===127,'Canvas does not show Base while generating');
@@ -38,6 +39,7 @@ window.runInitialMasterChecks=async function(pausePreview=false){
     if(pausePreview)await new Promise(resolve=>{window.finishInitialPreview=resolve});
     releaseReply();
     await wait(()=>!state.masterIsBase&&ai.getMasterVersions().length===1);
+    assert(state.master.width===2048&&state.master.height===1360,'Generated Master was reduced to the uploaded Base resolution');
     assert(requests===1,'Initial flow sent duplicate Master requests');
     assert($('projectName').textContent==='First render','Generated Master overwrote the project name');
     assert(state.selectionMask.toDataURL()===mask&&state.draftGroupId===group,'Master arrival lost the in-progress selection or Group');
