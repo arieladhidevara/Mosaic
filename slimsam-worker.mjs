@@ -1,9 +1,9 @@
 // Local-only SlimSAM-77 inference worker. No image pixels are sent to mozAI's server.
 // Hugging Face hosts the ~13.1MB Apache-2.0 quantized ONNX model and
-// jsDelivr hosts Transformers.js v3.8.1. Browser's WASM runtime performs inference.
+// jsDelivr hosts the browser-bundled Transformers.js v3.8.1. Browser's WASM runtime performs inference.
 import {selectSlimMask} from './slimsam-mask-utils.mjs';
 
-const CDN = 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.8.1/+esm';
+const CDN = 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.8.1/dist/transformers.min.js';
 const MODEL = 'Xenova/slimsam-77-uniform';
 let loader = null, model = null, processor = null, Tensor = null, RawImage = null;
 let embedding = null, imageWidth = 0, imageHeight = 0, imageFingerprint = '';
