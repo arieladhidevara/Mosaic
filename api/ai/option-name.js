@@ -1,9 +1,9 @@
 /* Small BYOK semantic naming step. Keeps raw edit prompts in patch metadata. */
-const {send,guard,requireApiKey}=require('../../lib/auth');
+const {send,guard,loadApiKey}=require('../../lib/auth');
 module.exports=async function handler(req,res){
-  if(!await guard(req,res,'POST')||!requireApiKey(req,res))return;
+  if(!await guard(req,res,'POST')||!await loadApiKey(req,res))return;
   const body=typeof req.body==='string'?JSON.parse(req.body):req.body||{};
-  const key=body.apiKey,prompt=String(body.prompt||'').trim().slice(0,1400);
+  const key=req.openAiApiKey,prompt=String(body.prompt||'').trim().slice(0,1400);
   const category=String(body.category||'Region').slice(0,60);
   if(typeof key!=='string'||!/^sk-[\w-]{15,300}$/.test(key))return send(res,400,{error:'OpenAI API key required.'});
   if(!prompt)return send(res,400,{error:'Prompt required.'});
