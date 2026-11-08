@@ -5,7 +5,13 @@ The existing **Color** Wand stays the default and is fully local/free. The new
 composition preview* (max 1024px JPEG) to an optional server-configured
 Hugging Face Gradio Space. The returned transparent mask is drawn into the
 same selection canvas as Color Wand, preserving New / Add / Subtract, Undo,
-Edit Mask, Apply and Group workflows.
+Edit Mask, Apply and Group workflows. The Space compares SAM 3's candidate masks,
+prioritizes regions containing the click, retains only the connected object near
+the click, and rejects empty / near-whole-image selections (>=90%). The browser
+also rejects masks covering >=92% as a safety fallback during deployments.
+Click *inside* the desired object, rather than on its boundary or background.
+This improves selection reliability but does not provide automatic semantic
+object categories or guarantee perfect furniture/floor/wall boundaries.
 
 **Not automatically activated after merge:** The Hugging Face Space
 `arieladhidevara/mozAI` exists, but the model still needs a healthy runtime,
@@ -16,7 +22,7 @@ variable on Vercel. Until configured, AI Wand reports an error; use Color Wand.
 ## Automatic GitHub → Hugging Face sync
 
 The checked-in workflow [sync-hf-space.yml](../.github/workflows/sync-hf-space.yml)
-publishes only `app.py` and `requirements.txt` from
+publishes `app.py`, `requirements.txt`, and `mask_utils.py` from
 `integrations/hf-sam3-space/` to the **existing** Hugging Face Space
 `arieladhidevara/mozAI` on pushes to `main` that modify this folder.
 It can also be started manually from GitHub Actions using **Run workflow**.
