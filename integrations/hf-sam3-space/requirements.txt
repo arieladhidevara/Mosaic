@@ -1,0 +1,5 @@
+gradio>=5,<7
+spaces
+numpy
+Pillow
+git+https://github.com/facebookresearch/sam3.git
