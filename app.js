@@ -37,7 +37,7 @@ async function loadFileToCanvas(file,maxDimension=2400){if(!file||!file.type.sta
 async function importMaster(file){if(!file)return;if(state.rawMaster&&!state.masterIsBase){toast('Master is already uploaded. Open its preview or generate a new version.');return}
   if(state.masterIsBase&&state.groups.length&&!window.confirm('Upload Master and replace the current Base-only draft and its Groups?'))return;
   try{const c=await loadFileToCanvas(file);setMaster(c,fileName(file));void window.MosaicAccount?.track('master_uploaded');toast('Master ready. Add another image and select a region to keep.')}catch(e){toast(e.message)}}
-function setMaster(c,name){void window.MosaicAccount?.startProject(!state.reference);window.MosaicPremium?.onMasterReset();state.master=c;state.rawMaster=c;state.masterIsBase=false;state.alignmentTransforms=null;state.sources.clear();state.groups=[];state.patches.clear();state.pendingSourceId=null;state.queue=[];state.editingPatchId=null;state.selectedPatchId=null;state.undo=[];state.redo=[];state.selectionGeneration++;state.hoveredGroupId=null;state.queuedGroupId=null;
+function setMaster(c,name){void window.MosaicAccount?.startProject(!state.reference);window.MosaicPremium?.onMasterReset();state.master=c;window.MosaicAutoRegions?.reset?.();state.rawMaster=c;state.masterIsBase=false;state.alignmentTransforms=null;state.sources.clear();state.groups=[];state.patches.clear();state.pendingSourceId=null;state.queue=[];state.editingPatchId=null;state.selectedPatchId=null;state.undo=[];state.redo=[];state.selectionGeneration++;state.hoveredGroupId=null;state.queuedGroupId=null;
   canvas.width=overlay.width=c.width;canvas.height=overlay.height=c.height;setSourcePreview('masterPreview',c);window.MosaicPremium?.onMasterLoaded?.(c,name);$('selectionDraft').setAttribute('viewBox',`0 0 ${c.width} ${c.height}`);resetSelection();
   $('welcome').classList.add('hidden');$('canvasWrap').classList.remove('hidden');setProjectTitle(name);$('projectSize').textContent=`${c.width} × ${c.height}`;
   $('masterTitle').textContent='Master';$('masterInfo').textContent=`${name} · ${c.width} × ${c.height}`;$('masterStatus').textContent='✓';$('masterZone').classList.add('ready');updateZoomFit();renderGroups();render();updateSourceActions();message('Upload a variation, select the area you want, then click Apply.')}
@@ -696,7 +696,7 @@ function groupEvent(e){if(window.MosaicRegions?.handleGroupEvent(e))return;if(wi
   if(action==='edit'){editExisting(pid);return}
   if(action==='choose'&&group){if(state.pendingSourceId){toast('Apply or discard the new image first.');return}hideQuickPrompt();state.editingPatchId=null;resetSelection();group.active=pid==='master'?null:pid;refreshGroupFootprint(group);state.selectedPatchId=group.active;selectGroupMask(group);renderGroups();render();return}
   if(action==='delete'&&group){if(state.pendingSourceId){toast('Finish the new image before removing variants.');return}group.patchIds=group.patchIds.filter(x=>x!==pid);state.patches.delete(pid);if(group.active===pid)group.active=group.patchIds.at(-1)||null;if(state.editingPatchId===pid)state.editingPatchId=null;if(state.selectedPatchId===pid)state.selectedPatchId=null;if(!group.patchIds.length)state.groups=state.groups.filter(g=>g.id!==group.id);else refreshGroupFootprint(group);resetSelection();renderGroups();render();toast('Variant removed.')}}
-function selectTool(tool){if(window.MosaicSourceEditor?.isEditing())return;sam3WandRevision++;clearHover();clearDraft();hideQuickPrompt();state.tool=tool;if(state.pendingSourceId&&tool==='reveal'){state.pendingRevealOnly=true;render()}$('resetTransformBtn').classList.toggle('hidden',tool!=='transform'||!activeTransformPatch());
+function selectTool(tool){if(window.MosaicSourceEditor?.isEditing())return;clearHover();clearDraft();hideQuickPrompt();state.tool=tool;if(state.pendingSourceId&&tool==='reveal'){state.pendingRevealOnly=true;render()}$('resetTransformBtn').classList.toggle('hidden',tool!=='transform'||!activeTransformPatch());
   $('viewport').classList.toggle('is-selecting',['lasso','rect','ellipse','wand','reveal','erase'].includes(tool));
   $('wandOptions').classList.toggle('hidden',tool!=='wand');
   document.querySelector('.selection-modes').classList.toggle('hidden',!['lasso','rect','ellipse','wand'].includes(tool));
@@ -705,7 +705,7 @@ function selectTool(tool){if(window.MosaicSourceEditor?.isEditing())return;sam3W
   overlay.style.cursor='';
   if(tool==='select'&&state.boundaryCanvas)ensureSelectionPaths();
   if(tool==='select')message('Select: click a mask to see its outline. Drag a point to refine the selection.');
-  else if(tool==='wand')message($('wandEngine').value==='sam3'?'AI Wand: click an object to select it with SAM 3. Your image is sent to your configured Hugging Face Space.':'Color Wand: click a connected color area. Adjust tolerance; New / Add / Subtract also work.');
+  else if(tool==='wand')message('Color Wand: click a connected color region and adjust tolerance. For object detection, use Groups → Auto Create.');
   else if(tool==='lasso')message('Line: click each corner, then click the first point or press Enter to close.');
   else if(tool==='zoom')message('Zoom: click to zoom in. Shift-click to zoom out.');
   else if(tool==='pan')message('Pan: drag to move around the canvas.');
@@ -971,66 +971,6 @@ function drawDraftPreview(){
   }
 }
 
-let sam3WandInFlight=false, sam3WandRevision=0;
-async function applySAM3Wand(p){
-  if(!state.selectionMask||!pointInImage(p)){message('Click inside the image to select an object.');return}
-  if(sam3WandInFlight){toast('SAM 3 is already selecting.');return}
-  if(!await window.MosaicAccount?.ensure?.())return;
-  render();
-  const scale=Math.min(1,1024/Math.max(canvas.width,canvas.height));
-  const w=Math.max(1,Math.round(canvas.width*scale)),h=Math.max(1,Math.round(canvas.height*scale));
-  const sample=makeCanvas(w,h),sc=sample.getContext('2d');
-  sc.drawImage(canvas,0,0,w,h);
-  const x=clamp(Math.floor(p.x*w/canvas.width),0,w-1),y=clamp(Math.floor(p.y*h/canvas.height),0,h-1);
-  const captured={master:state.master,mask:state.selectionMask,revision:sam3WandRevision,mode:state.selectionMode,
-    source:state.pendingSourceId,editing:state.editingPatchId,target:state.selectionTargetPatchId};
-  sam3WandInFlight=true;
-  message('SAM 3 is finding the object on Hugging Face… You can switch tools while it processes.');
-  try{
-    const result=await window.MosaicAccount.request('/api/ai/sam3',{
-      image:sample.toDataURL('image/jpeg',.82),width:w,height:h,x,y
-    });
-    if(!result?.mask||!/^data:image\/png;base64,/.test(result.mask))throw Error('Invalid SAM 3 mask.');
-    const image=new Image();image.src=result.mask;await image.decode();
-    if(image.width!==w||image.height!==h)throw Error('SAM 3 mask dimensions do not match.');
-    // Defensive guard: never apply an empty or near-full-canvas AI selection.
-    // This also protects existing projects if the Space is running stale code.
-    const qw=Math.min(256,w),qh=Math.min(256,h),qc=makeCanvas(qw,qh),qctx=qc.getContext('2d',{willReadFrequently:true});
-    qctx.drawImage(image,0,0,qw,qh);
-    const alpha=qctx.getImageData(0,0,qw,qh).data;
-    let selectedPixels=0;
-    for(let i=3;i<alpha.length;i+=4)if(alpha[i]>127)selectedPixels++;
-    const fraction=selectedPixels/(qw*qh);
-    if(fraction<0.00001)throw Error('AI Wand did not find an object. Click inside the object and retry.');
-    if(fraction>=.92)throw Error('AI Wand selected almost the whole image. Click a more distinct object, or switch to Color Wand.');
-    if(captured.master!==state.master||captured.mask!==state.selectionMask||
-       captured.revision!==sam3WandRevision||captured.mode!==state.selectionMode||
-       captured.source!==state.pendingSourceId||captured.editing!==state.editingPatchId||
-       captured.target!==state.selectionTargetPatchId||state.tool!=='wand'||$('wandEngine').value!=='sam3'){
-      message('SAM 3 finished, but the selection changed; ignored the old result.');return;
-    }
-    if(state.maskEditOnly&&state.selectionTargetPatchId)snapshotPointEdit();else snapshotSelection();
-    const mc=state.selectionMask.getContext('2d');
-    mc.save();
-    if(state.selectionMode==='new'){
-      if(!state.maskEditOnly){state.selectionTargetPatchId=null;releaseDraftGroupForNewSelection()}
-      mc.clearRect(0,0,canvas.width,canvas.height);
-      state.selectionPoints=[];
-    }
-    mc.globalCompositeOperation=state.selectionMode==='subtract'?'destination-out':'source-over';
-    mc.imageSmoothingEnabled=false;
-    mc.drawImage(image,0,0,canvas.width,canvas.height);
-    mc.restore();
-    state.selectionPaths=[];state.selectionPoints=[];activeMaskVertex=null;hoverMaskEdge=null;maskEditVersion++;
-    state.pendingRevealOnly=Boolean(state.pendingSourceId);
-    finishMaskSelection();
-    message('SAM 3 mask ready. Use Add / Subtract to refine, or apply your edit.');
-  }catch(error){
-    toast((error?.message||'SAM 3 unavailable.')+' Switch Wand to Color to keep editing.');
-    message('SAM 3 could not complete. Your existing selection was not changed.');
-  }finally{sam3WandInFlight=false}
-}
-
 function applyMagicWand(p){
   if(!state.selectionMask||!pointInImage(p)){message('Click inside the image to select a connected color region.');return}
   render();
@@ -1247,7 +1187,7 @@ function pointerDown(e){if(e.target.closest('form,button,input,textarea,select')
     else if(state.selectedPatchId){const originalTool=state.tool;editExisting(state.selectedPatchId);selectTool(originalTool)}
     else{toast('Upload a variation to begin masking.');return}}
   const p=canvasPoint(e,!['lasso','rect','ellipse'].includes(state.tool));
-  if(state.tool==='wand'){if($('wandEngine').value==='sam3')void applySAM3Wand(p);else applyMagicWand(p);return}
+  if(state.tool==='wand'){applyMagicWand(p);return}
   state.drawing=true;e.preventDefault();e.currentTarget.setPointerCapture(e.pointerId);
   if(state.tool==='lasso'){state.pointerStart=p;state.dragFreehand=false;state.hoverPoint=p;if(!state.lasso.length)state.lasso=[p];drawOverlay()}
   else if(state.tool==='rect'||state.tool==='ellipse'){state.shapeStart=p;state.shapeEnd=p;state.constrainShape=e.shiftKey;drawOverlay()}
@@ -1395,12 +1335,6 @@ function finishProjectRename(save){if(projectNameInput.classList.contains('hidde
 projectNameInput.addEventListener('blur',()=>finishProjectRename(true));
 projectNameInput.addEventListener('keydown',event=>{if(event.key==='Enter'||event.key==='Escape'){event.preventDefault();event.stopPropagation();finishProjectRename(event.key==='Enter')}});
 $('wandTolerance').addEventListener('input',e=>{$('wandValue').textContent=e.target.value});
-$('wandEngine').addEventListener('change',e=>{
-  sam3WandRevision++;
-  $('wandToleranceWrap').classList.toggle('hidden',e.target.value==='sam3');
-  $('wandAiHint').classList.toggle('hidden',e.target.value!=='sam3');
-  if(state.tool==='wand')message(e.target.value==='sam3'?'AI Wand sends the current image to Hugging Face ZeroGPU. Click an object to select it.':'Color Wand stays local and free. Click a connected color area.');
-});
 $('commitBtn').addEventListener('click',applySelection);
 $('undoBtn').addEventListener('click',()=>historyStep(state.undo,state.redo));$('redoBtn').addEventListener('click',()=>historyStep(state.redo,state.undo));
 $('clearSelectionBtn').addEventListener('click',()=>{resetSelection();render();message('Selection cleared.')});
