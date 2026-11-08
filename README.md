@@ -21,7 +21,7 @@ The prompt can also be copied directly from the interface. Manual image processi
 - Automatic Group matching requires strong **actual mask intersection**, not just similar bounding boxes. Use the **+ beside Groups** in the right sidebar for a new Group. Desktop drag/drop can move options between Groups without adding a fifth option button.
 - Use **Select** to move or reshape an applied image and its mask together. Use the option's **Edit** action to change only its selection. **Edit** beside Base, Master, or a pending upload opens the image position editor. Changes to one option preserve source images shared by other options.
 - Maximum import size defaults to 2400 pixels on the longest side to limit browser memory; hidden Base image can be imported at up to 4000 pixels.
-- Live project data is kept **in browser memory** and refresh clears unsaved changes. Use **Save project** before leaving and **Open project** to restore it. No backend database/persistence or synchronization is required.
+- Live project data is kept **in browser memory** and refresh clears unsaved changes. Use **Save project** before leaving and **Open project** to restore it. Editable image content remains local. Account access and metadata analytics use Supabase in production, with an isolated file store for local developer mode.
 - Final AI harmonization is done manually and can still reinterpret visual references.
 
 ## Run locally
@@ -30,20 +30,19 @@ Node.js 18 or newer is required. The included local server serves both the stati
 editor and the `/api/ai/*` routes that connect to OpenAI:
 
 ```bash
-npm start
+npm run dev:local
 ```
 
 Open http://127.0.0.1:8000, click **✦ Add API key**, and enter your OpenAI API
-key. No `.env` file or npm dependency installation is required. The key stays in
+key. Local auto-login uses an isolated development account; production requires Supabase setup described in [Phase 2 setup](docs/phase2-setup.md). The OpenAI key stays in
 the current browser tab and is forwarded only by the local same-origin server for
 each OpenAI request.
 
-You can still open `index.html` directly for manual editing, but AI features need
-the Node.js server (or a Vercel deployment) because `/api/ai/*` must run server-side.
+Run the Node.js server or use Vercel for both application authentication and AI endpoints. Opening `index.html` directly cannot establish an application session.
 
 ## Deploy to Vercel
 
-The public GitHub repository `arieladhidevara/Mosaic` is connected to its Vercel deployment. Pushing to the `main` branch automatically updates its production deployment. Framework: Other/static site. No build or environment variables are required.
+The public GitHub repository `arieladhidevara/Mosaic` is connected to its Vercel deployment. Pushing to the `main` branch automatically updates its production deployment. Framework: Other/static site with serverless API functions. No bundling step is required. Supabase server environment variables and the Phase 2 database migration are required for login. See [Phase 2 setup](docs/phase2-setup.md).
 
 ## Structure
 
@@ -74,7 +73,7 @@ API-generated images are not perfectly geometry-constrained; masking guarantees 
 
 ### API key and security
 
-- **No mozAI admin credentials, cookie sessions, signup, or server environment variables are needed.** Remove-key control disconnects the current tab.
+- Application login uses verified Supabase sessions and invitation membership. Local auto-login is explicitly enabled with `npm run dev:local` and is blocked on Vercel. The BYOK Remove-key control disconnects only the OpenAI key; it does not sign out of the application.
 - OpenAI API key entry uses a masked input, stays only in the current browser tab's JavaScript memory and disappears after a refresh or tab close. It is **never** stored in cookies, `localStorage`, GitHub, the project file or a server environment variable.
 - On each AI action, the browser sends the key in the HTTPS POST body to the mozAI same-origin serverless function. That function checks the request origin, validates the key's format, and forwards it to OpenAI. The app never embeds or shares an API key in its source code.
 - This is **BYOK**: every user uses their own API key and is responsible for their OpenAI API charges. ChatGPT subscriptions do not include OpenAI API credit.
@@ -156,3 +155,7 @@ Browser regression scripts: `tests/workspace-scenarios.js` covers the pointer, L
 - `tests/selection-scenarios.js` checks independent points, deliberate point controls, image placement versus mask editing, brush size/intensity, project naming, and portable Undo/Redo.
 
 - `tests/hover-group-scenarios.js` / `await runHoverGroupChecks()` verifies Select hover, sharp SVG contours, exact 85% two-way grouping at native resolution, no empty draft Groups, and repeated generation as alternatives.
+
+## Phase 2 accounts and local development
+
+See [the complete Vercel + Supabase setup guide](docs/phase2-setup.md). Use `npm run dev:local` for loopback-only automatic login as `dev@mosaic.local`, `npm run dev:login` for real Supabase login, and `npm run dev:reset` to reset only isolated local test data. `/admin` uses the same application session. All AI operations still require your own OpenAI key. `npm test` includes auth/security and in-memory PostgreSQL migration tests.

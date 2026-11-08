@@ -6,8 +6,13 @@ const ROOT = __dirname;
 const HOST = process.env.HOST || '127.0.0.1';
 const PORT = Number(process.env.PORT || 8000);
 const MAX_BODY_BYTES = 5 * 1024 * 1024;
+const {loopback}=require('./lib/dev-auth');
+if(process.env.MOSAIC_DEV_AUTH==='true'&&!loopback(HOST)&&HOST!=='localhost')throw Error('MOSAIC_DEV_AUTH requires a loopback-only server binding.');
 
 const apiRoutes = new Map([
+  ['/api/session', require('./api/session')],
+  ['/api/activity', require('./api/activity')],
+  ['/api/admin', require('./api/admin')],
   ['/api/ai/master', require('./api/ai/master')],
   ['/api/ai/edit', require('./api/ai/edit')],
   ['/api/ai/harmonize', require('./api/ai/harmonize')],
@@ -19,6 +24,11 @@ const publicFiles = new Set([
   'index.html',
   'styles.css',
   'auth.js',
+  'account.js',
+  'account.css',
+  'admin.html',
+  'admin.js',
+  'admin.css',
   'app.js',
   'mask-geometry.js',
   'premium.js',
@@ -48,7 +58,7 @@ function jsonResponse(res) {
   };
 }
 
-function readJsonBody(req) {
+function readJsonBody(req,limit=MAX_BODY_BYTES) {
   return new Promise((resolve, reject) => {
     let size = 0;
     let tooLarge = false;
@@ -57,7 +67,7 @@ function readJsonBody(req) {
     req.on('data', chunk => {
       if (tooLarge) return;
       size += chunk.length;
-      if (size > MAX_BODY_BYTES) {
+      if (size > limit) {
         tooLarge = true;
         chunks.length = 0;
         return;
@@ -87,7 +97,7 @@ function readJsonBody(req) {
 async function serveApi(req, res, handler) {
   jsonResponse(res);
   try {
-    req.body = await readJsonBody(req);
+    req.body = await readJsonBody(req,req.url.startsWith('/api/ai/')?MAX_BODY_BYTES:16384);
     await handler(req, res);
   } catch (error) {
     if (res.writableEnded) return;
@@ -105,7 +115,7 @@ function serveStatic(req, res, pathname) {
     return;
   }
 
-  const fileName = pathname === '/' ? 'index.html' : pathname.slice(1);
+  const fileName = pathname === '/' ? 'index.html' : pathname==='/admin'||pathname==='/admin/'?'admin.html':pathname.slice(1);
   if (!publicFiles.has(fileName)) {
     res.statusCode = 404;
     res.end('Not found');
@@ -157,6 +167,7 @@ server.headersTimeout = 305_000;
 server.listen(PORT, HOST, () => {
   console.log(`mozAI local server: http://${HOST}:${PORT}`);
   console.log('Open the URL above, then add your OpenAI API key in the mozAI toolbar.');
+  if(process.env.NODE_ENV==='development'&&process.env.MOSAIC_DEV_AUTH==='true')console.log('Local auto-login enabled: dev@mosaic.local. Development data stays in .mosaic-dev.');
 });
 
 server.on('error', error => {

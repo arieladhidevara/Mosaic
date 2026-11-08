@@ -1,0 +1,9 @@
+.mosaic-dev
+.env*
+!.env.example
+tests
+scripts
+supabase
+docs
+.codex
+.agents

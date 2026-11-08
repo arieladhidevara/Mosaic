@@ -1,4 +1,4 @@
-/* BYOK image generation. No mozAI account: OpenAI key lives only in this tab's JS memory. */
+/* OpenAI BYOK is independent of the application account and stays in tab memory. */
 const $=id=>document.getElementById(id);
 const dialog=$('apiKeyDialog'),form=$('apiKeyForm'),button=$('apiKeyStatusBtn');
 let key='',pending=null,finishPending=null;
@@ -34,13 +34,8 @@ async function request(path,body){
     throw Error('Unsupported AI request.');
   // HTTPS to mozAI's same-origin function, which forwards this key to OpenAI.
   // Do not place keys in URLs, cookies, localStorage or project files.
-  const response=await fetch(path,{
-    method:'POST',credentials:'omit',cache:'no-store',
-    headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({...body,apiKey:key})
-  });
-  const result=await response.json().catch(()=>({error:'Unexpected AI response'}));
-  if(!response.ok)throw Error(result.error||'AI request failed');
+  await window.MosaicAccount.ready();
+  const result=await window.MosaicAccount.request(path,{method:'POST',body:{...body,apiKey:key,projectId:await window.MosaicAccount.projectId()}});
   return result;
 }
 form.addEventListener('submit',event=>{
@@ -56,5 +51,5 @@ $('apiKeyRemoveBtn').addEventListener('click',()=>{
   key='';form.reset();complete(false);dialog.close();updateButton();
 });
 button.addEventListener('click',openKeyDialog);
-window.MosaicAuth={ensure,request,status:async()=>Boolean(key),isReady:()=>Boolean(key)};
+window.MosaicAuth={clear:()=>{key='';form.reset();complete(false);updateButton()},ensure,request,status:async()=>Boolean(key),isReady:()=>Boolean(key)};
 updateButton();

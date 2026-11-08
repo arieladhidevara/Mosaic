@@ -1,0 +1,11 @@
+.account-pending #app,.account-signed-out #app,.account-pending #adminApp,.account-signed-out #adminApp{visibility:hidden;pointer-events:none}
+.account-gate{position:fixed;inset:0;z-index:1000;display:grid;place-items:center;background:#111318;padding:24px;overflow:auto;font-family:Inter,system-ui,sans-serif;color:#eeedf6}
+.account-gate[hidden],.account-gate [hidden]{display:none!important}
+.account-card{width:min(420px,100%);background:#1b1d25;border:1px solid #383a49;border-radius:18px;padding:32px;box-shadow:0 20px 80px #0006}
+.account-brand{font-size:28px;font-weight:800;color:#fff;text-decoration:none}
+.account-card h1{font-size:22px;margin:28px 0 10px}.account-card p{color:#b6b3c8;font-size:14px;line-height:1.6}
+.account-card form{display:grid;gap:18px;margin:24px 0}.account-card label{display:grid;gap:8px;font-size:13px;font-weight:600}
+.account-card input{width:100%;box-sizing:border-box;background:#111318;color:#fff;border:1px solid #4a475d;border-radius:8px;padding:12px;font:inherit}
+.account-card small{display:block;font-size:12px;color:#aaa6be;line-height:1.6}.account-card #accountError{color:#ffb4b4;white-space:pre-wrap;overflow-wrap:anywhere}
+.account-controls{display:flex;align-items:center;gap:8px;font-size:11px;color:#c3bdd8}.account-controls>span{max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+@media(max-width:900px){.account-controls>span{display:none}}

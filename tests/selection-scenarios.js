@@ -94,9 +94,11 @@ window.runSelectionChecks=async function(){
     try{
       $('saveProjectBtn').click();await wait(()=>Boolean(blob&&filename));assert(filename==='Cabin_study.moz','Renamed project does not control the .moz filename');
       const data=JSON.parse(await blob.text());assert(data.state.projectTitleManual&&data.state.brushSize===74&&data.state.brushIntensity===42,'Project name or brush settings were not serialized');
+      assert(data.analytics?.projectId===await window.MosaicAccount.projectId(),'Tracked project ID was not saved');
       const transfer=new DataTransfer();transfer.items.add(new File([blob],filename,{type:'application/json'}));$('projectOpenInput').files=transfer.files;$('projectOpenInput').dispatchEvent(new Event('change'));
       await wait(()=>$('openProjectBtn').disabled);await wait(()=>!$('openProjectBtn').disabled);
       assert($('projectName').textContent==='Cabin study'&&Number($('brushIntensity').value)===42&&Number($('brushSize').value)===74,'Project preferences did not round-trip');
+      assert(data.analytics.projectId===await window.MosaicAccount.projectId(),'Opening an owned project changed its analytics identity');
       const loaded=state.patches.get(savedPatch.id);assert(loaded.maskPaths?.length,'Editable paths were lost');$('undoBtn').click();assert(loaded.sourceId===oldId,'Saved image placement undo did not survive .moz save/open');$('redoBtn').click();assert(loaded.sourceId!==oldId,'Saved image placement redo failed');
     }finally{URL.createObjectURL=createURL;HTMLAnchorElement.prototype.click=anchorClick;window.confirm=confirm}
     checks.push('Rename survives generation; .moz filename, brush preferences, editable paths, placement Undo/Redo survive save/open');

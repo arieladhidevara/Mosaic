@@ -1,7 +1,7 @@
 /* Small BYOK semantic naming step. Keeps raw edit prompts in patch metadata. */
 const {send,guard,requireApiKey}=require('../../lib/auth');
 module.exports=async function handler(req,res){
-  if(!guard(req,res,'POST')||!requireApiKey(req,res))return;
+  if(!await guard(req,res,'POST')||!requireApiKey(req,res))return;
   const body=typeof req.body==='string'?JSON.parse(req.body):req.body||{};
   const key=body.apiKey,prompt=String(body.prompt||'').trim().slice(0,1400);
   const category=String(body.category||'Region').slice(0,60);

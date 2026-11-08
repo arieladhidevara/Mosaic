@@ -8,8 +8,11 @@
   <title>mozAI — Compose the best of every image</title>
   <link rel="icon" type="image/svg+xml" href="./assets/mosaic-logo.svg" />
   <link rel="stylesheet" href="./styles.css" />
+  <link rel="stylesheet" href="./account.css" />
 </head>
-<body>
+<body class="account-pending">
+  <section id="accountGate" class="account-gate" aria-label="Account access"><p>Opening mozAI...</p></section>
+  <noscript>JavaScript is required to sign in and use mozAI.</noscript>
   <div id="app">
     <header class="topbar">
       <div class="brand" aria-label="mozAI home"><img class="brand-logo" src="./assets/mosaic-logo.svg" alt=""/><span class="brand-name">mozAI</span></div>
@@ -78,6 +81,7 @@
     <div id="toast" class="toast hidden" role="status"></div>
   </div>
   <script src="./mask-geometry.js"></script>
+  <script type="module" src="./account.js"></script>
   <script type="module" src="./auth.js"></script>
   <script type="module" src="./app.js"></script>
   <script type="module" src="./premium.js"></script>
