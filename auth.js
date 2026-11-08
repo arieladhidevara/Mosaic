@@ -1,4 +1,4 @@
-/* BYOK image generation. No Mosaic account: OpenAI key lives only in this tab's JS memory. */
+/* BYOK image generation. No mozAI account: OpenAI key lives only in this tab's JS memory. */
 const $=id=>document.getElementById(id);
 const dialog=$('apiKeyDialog'),form=$('apiKeyForm'),button=$('apiKeyStatusBtn');
 let key='',pending=null,finishPending=null;
@@ -32,7 +32,7 @@ async function request(path,body){
   if(!key)throw Error('Add your OpenAI API key to generate images.');
   if(!/^\/api\/ai\/(?:master|edit|harmonize|classify|option-name)$/.test(path))
     throw Error('Unsupported AI request.');
-  // HTTPS to Mosaic's same-origin function, which forwards this key to OpenAI.
+  // HTTPS to mozAI's same-origin function, which forwards this key to OpenAI.
   // Do not place keys in URLs, cookies, localStorage or project files.
   const response=await fetch(path,{
     method:'POST',credentials:'omit',cache:'no-store',

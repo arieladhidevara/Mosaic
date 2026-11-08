@@ -1,0 +1,98 @@
+/* Browser regression checks for the mozAI workspace. Run in a fresh test tab. */
+window.runMozAIWorkspaceChecks=async function(){
+  const core=window.MosaicCore,{state,canvas,overlay,makeCanvas}=core,$=id=>document.getElementById(id),checks=[];
+  const assert=(value,message)=>{if(!value)throw Error(message)};
+  const wait=async(predicate)=>{for(let i=0;i<100;i++){if(predicate())return;await new Promise(resolve=>setTimeout(resolve,20))}throw Error('Timed out waiting for browser action')};
+  const frame=(w,h,color)=>{const c=makeCanvas(w,h),x=c.getContext('2d');x.fillStyle=color;x.fillRect(0,0,w,h);return c};
+  const capture=Element.prototype.setPointerCapture,release=Element.prototype.releasePointerCapture,hasCapture=Element.prototype.hasPointerCapture;
+  Element.prototype.setPointerCapture=()=>{};Element.prototype.releasePointerCapture=()=>{};Element.prototype.hasPointerCapture=()=>false;
+  const send=(target,type,x,y,options={})=>target.dispatchEvent(new PointerEvent(type,{bubbles:true,pointerId:19,pointerType:'mouse',button:0,clientX:x,clientY:y,...options}));
+  const at=(type,x,y,options={})=>{const r=overlay.getBoundingClientRect();send(overlay,type,r.left+x/canvas.width*r.width,r.top+y/canvas.height*r.height,options)};
+  const click=(x,y,options={})=>{at('pointerdown',x,y,options);at('pointerup',x,y,options)};
+  try{
+    assert(document.title.startsWith('mozAI')&&document.querySelector('.brand-name').textContent==='mozAI','App name was not updated');
+    assert(document.querySelector('[data-tool="lasso"]').textContent.includes('Line'),'Line label is missing');
+    state.reference=frame(960,640,'#547786');core.setMaster(frame(800,500,'#243344'),'Workspace validation');
+    core.selectTool('lasso');click(100,100);click(350,100);click(330,280);click(100,100);
+    assert(state.tool==='select'&&!state.lasso.length,'Closed Line did not return to Select');
+    assert(state.boundaryCanvas&&state.selectionPoints.length===3,'Closed selection lost outline or clicked vertices');
+    const originalMask=state.selectionMask.toDataURL(),originalPoints=JSON.stringify(state.selectionPoints);
+    at('pointerdown',100,100);at('pointermove',125,115);at('pointerup',125,115);
+    assert(Math.abs(state.selectionPoints[0].x-125)<.1&&Math.abs(state.selectionPoints[0].y-115)<.1,'Select did not edit the mask vertex');
+    $('undoBtn').click();assert(state.selectionMask.toDataURL()===originalMask&&JSON.stringify(state.selectionPoints)===originalPoints,'Undo did not restore the draft mask');
+    checks.push('Line closes to Select; mask vertices immediately editable; draft mask undo');
+    const id=core.uid('workspace_source');state.sources.set(id,{id,name:'Warm walnut finish',canvas:frame(800,500,'#b98652')});state.pendingSourceId=id;core.updateApplyButton();$('commitBtn').click();
+    const group=state.groups.find(g=>g.active),patch=state.patches.get(group.active);
+    assert(state.tool==='select'&&state.selectionTargetPatchId===patch.id,'Applied option did not show an editable selection in Select');
+    const savedMask=patch.mask.toDataURL(),source=state.sources.get(patch.sourceId).canvas,corners=JSON.stringify(patch.corners||null);
+    const point={...state.selectionPoints[0]};
+    const fixed=JSON.stringify(state.selectionPoints.slice(1));
+    at('pointerdown',point.x,point.y);at('pointermove',point.x+15,point.y+10);at('pointerup',point.x+15,point.y+10);
+    assert(patch.mask.toDataURL()!==savedMask&&state.sources.get(patch.sourceId).canvas!==source,'Select did not skew the image with its mask');
+    assert(JSON.stringify(state.selectionPoints.slice(1))===fixed,'Skewing one image vertex moved the other points');
+    $('undoBtn').click();assert(patch.mask.toDataURL()===savedMask&&state.sources.get(patch.sourceId).canvas===source,'Image skew undo did not restore its source and mask');
+    document.querySelector('.variant-row[data-patch="'+patch.id+'"] [data-action="edit-mask"]').click();
+    assert(state.maskEditOnly,'Edit did not switch to selection-only editing');
+    at('pointerdown',point.x,point.y);at('pointermove',point.x+15,point.y+10);at('pointerup',point.x+15,point.y+10);
+    assert(state.sources.get(patch.sourceId).canvas===source&&JSON.stringify(patch.corners||null)===corners,'Editing a mask moved or replaced the source image');
+    $('undoBtn').click();assert(patch.mask.toDataURL()===savedMask&&state.selectionMask.toDataURL()===savedMask,'Saved mask undo did not restore the visible selection');
+    let row=document.querySelector('.variant-row[data-patch="'+patch.id+'"]');row.click();
+    row=document.querySelector('.variant-row[data-patch="'+patch.id+'"]');
+    assert(state.tool==='select'&&state.boundaryCanvas&&state.selectionTargetPatchId===patch.id,'Selecting an option did not expose its editable mask');
+    const rowBox=row.getBoundingClientRect(),actions=[...row.querySelectorAll('.option-actions button')];
+    assert(actions.length===4,'Option actions are missing');
+    for(const button of actions){const box=button.getBoundingClientRect();assert(box.top>=rowBox.top&&box.bottom<=rowBox.bottom&&box.right<=rowBox.right+1,'Option action wrapped below its row')}
+    assert(document.querySelector('.group-heading-copy small').textContent==='Group 01','Group identity is unclear');
+    assert($('inspectorPanel').getBoundingClientRect().width>=300,'Inspector is not wider');
+    assert($('advancedSettings').previousElementSibling.classList.contains('sources-panel'),'Advanced Settings is not below Sources');
+    window.MosaicSourceEditor.openOption(patch.id);
+    assert(window.MosaicSourceEditor.isEditing()&&$('groupCount'),'Edit option broke the Groups inspector');
+    $('sourceEditX').value=Number($('sourceEditX').value)+20;$('sourceEditX').dispatchEvent(new Event('input'));
+    $('sourceEditApply').click();
+    assert(!window.MosaicSourceEditor.isEditing()&&$('groupCount'),'Applying Edit broke the Groups inspector');
+    assert(state.selectionMask.toDataURL()===core.displayedPatchMask(patch).toDataURL(),'Edit left the selected mask outline at its old position');
+    checks.push('Select skews image and mask with independent vertices; Edit changes only the mask; undo; image position editor; wider Groups with fixed actions');
+    const colored=frame(800,500,'#102030'),c=colored.getContext('2d');c.fillStyle='#f6f6fa';c.fillRect(100,100,200,150);c.fillRect(500,100,100,150);
+    core.setMaster(colored,'Wand validation');core.selectTool('wand');click(150,150);
+    const alpha=(x,y)=>state.selectionMask.getContext('2d').getImageData(x,y,1,1).data[3];
+    assert(state.tool==='select'&&alpha(150,150)===255&&alpha(550,150)===0&&alpha(20,20)===0,'Wand did not select the connected color region and return to Select');
+    assert(state.boundaryCanvas&&state.selectionPoints.length>0,'Wand result has no editable outline');
+    checks.push('Wand works, selects connected colors only, and returns to Select with editable points');
+    core.showQuickPrompt();const prompt=$('quickAreaPromptForm'),input=$('quickAreaPromptInput'),handle=$('quickAreaDragHandle');input.value='Warm walnut';
+    const beforeMask=state.selectionMask.toDataURL(),box=prompt.getBoundingClientRect();
+    send(input,'pointerdown',box.left+30,box.top+50);
+    assert(!prompt.classList.contains('hidden')&&state.selectionMask.toDataURL()===beforeMask,'Clicking AI prompt deselected the mask');
+    send(handle,'pointerdown',box.left+35,box.top+15);send(handle,'pointermove',box.left-35,box.top-15);send(handle,'pointerup',box.left-35,box.top-15);
+    const moved=prompt.getBoundingClientRect();assert(Math.hypot(moved.left-box.left,moved.top-box.top)>20,'AI popup did not move');
+    assert(input.value==='Warm walnut'&&state.selectionMask.toDataURL()===beforeMask,'Moving the popup changed its prompt or mask');
+    handle.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowRight',bubbles:true}));
+    assert(prompt.getBoundingClientRect().left>=moved.left,'Keyboard popup movement failed');
+    core.hideQuickPrompt();checks.push('AI popup drag and keyboard movement preserve text and selection; popup clicks do not reach the canvas');
+    const wheel=delta=>{const r=overlay.getBoundingClientRect();overlay.dispatchEvent(new WheelEvent('wheel',{bubbles:true,cancelable:true,deltaY:delta,clientX:r.left+r.width/2,clientY:r.top+r.height/2}))};
+    core.selectTool('select');const zoom=state.zoom;wheel(-100);assert(state.zoom>zoom,'Mouse wheel did not zoom in');wheel(100);assert(Math.abs(state.zoom-zoom)<.001,'Mouse wheel did not zoom out');
+    assert($('zoomValue').textContent==='Fit'&&!document.querySelector('[data-tool="zoom"]'),'Zoom tool or numeric Fit label remains visible');
+    wheel(-100);wheel(-100);wheel(-100);core.selectTool('pan');
+    const viewport=$('viewport'),v=viewport.getBoundingClientRect(),left=viewport.scrollLeft,top=viewport.scrollTop;
+    send(overlay,'pointerdown',v.left+v.width/2,v.top+v.height/2);send(overlay,'pointermove',v.left+v.width/2-30,v.top+v.height/2-25);send(overlay,'pointerup',v.left+v.width/2-30,v.top+v.height/2-25);
+    assert(viewport.scrollLeft>left||viewport.scrollTop>top,'Pan did not move the zoomed image');
+    assert(!state.panAnchor,'Pan did not release');$('zoomValue').click();assert(Math.abs(state.zoom-state.fitZoom)<.001&&$('zoomValue').textContent==='Fit','Fit did not reset the canvas');checks.push('Mouse-wheel zoom without a Zoom tool; Fit label; Pan and scrolling preserve access to the full image');
+    const createURL=URL.createObjectURL,anchorClick=HTMLAnchorElement.prototype.click;let blob,filename;
+    URL.createObjectURL=value=>{if(value.type==='image/png')blob=value;return createURL(value)};
+    HTMLAnchorElement.prototype.click=function(){if(this.download?.startsWith('mozAI_'))filename=this.download;else anchorClick.call(this)};
+    try{
+      $('exportBtn').click();await wait(()=>Boolean(blob&&filename));
+      assert(blob.type==='image/png'&&filename.endsWith('.png'),'Save image did not download a single PNG');
+      const image=await createImageBitmap(blob);assert(image.width===800&&image.height===500,'Saved PNG dimensions do not match the image');
+      blob=null;filename=null;state.master=null;$('exportBtn').click();await wait(()=>Boolean(blob&&filename));
+      const base=await createImageBitmap(blob);assert(base.width===960&&base.height===640,'Base-only image cannot be saved');
+      checks.push('Save image downloads one mozAI PNG, including Base-only projects, without ZIP or prompt');
+    }finally{URL.createObjectURL=createURL;HTMLAnchorElement.prototype.click=anchorClick}
+    // Leave a representative workspace for a visual review.
+    core.setMaster(colored,'Interior composition');const sourceId=core.uid('demo_source');state.sources.set(sourceId,{id:sourceId,name:'Warm walnut',canvas:frame(800,500,'#b98652')});
+    const mask=makeCanvas(800,500);mask.getContext('2d').fillRect(100,100,200,150);
+    const option={id:core.uid('demo_patch'),sourceId,mask,bbox:{x:100,y:100,w:200,h:150},maskPoints:[{x:100,y:100},{x:300,y:100},{x:300,y:250},{x:100,y:250}],name:'Warm walnut finish',manualName:true};
+    const demo=core.assignGroup(option);demo.name='Living room wall';demo.manualName=true;demo.category='Wall';
+    core.renderGroups();core.selectGroupMask(demo);core.showQuickPrompt();$('advancedSettings').open=false;
+    return {passed:checks.length,checks};
+  }finally{Element.prototype.setPointerCapture=capture;Element.prototype.releasePointerCapture=release;Element.prototype.hasPointerCapture=hasCapture}
+};

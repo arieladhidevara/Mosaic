@@ -7,6 +7,11 @@ const stage=$('sourceEditOverlay'),paint=stage.getContext('2d');
 const panel=$('sourceEditorPanel'),inspector=$('inspectorPanel');
 let editing=null,drag=null;
 const clamp=(v,min,max)=>Math.max(min,Math.min(max,v));
+function inspectorTitle(text){
+  const heading=$('inspectorHeading'),count=$('groupCount');
+  heading.replaceChildren(document.createTextNode(text));
+  if(count)heading.append(document.createTextNode(' '),count);
+}
 function syncControls(){
   if(!editing)return;
   const t=editing.transform;
@@ -95,7 +100,7 @@ function redraw(){
 function start(kind,patchId=null){
   if(state.busy||state.editingPatchId){toast('Finish the current mask edit first.');return}
   if(editing)cancel();
-  let original,sourceId=null,label='',optionMask=null,optionPoints=[],startingTransform=null;
+  let original,sourceId=null,label='',optionMask=null,optionPoints=[],optionPaths=[],startingTransform=null;
   if(kind==='base'){original=state.reference;label='BASE'}
   else if(kind==='master'){original=state.master;label='MASTER'}
   else if(kind==='source'){
@@ -113,6 +118,7 @@ function start(kind,patchId=null){
         const w=Math.max(1,Math.min(canvas.width-x,Math.ceil(bounds.x+bounds.w)-x));
         const h=Math.max(1,Math.min(canvas.height-y,Math.ceil(bounds.y+bounds.h)-y));
         original=makeCanvas(w,h);original.getContext('2d').drawImage(visible,-x,-y);
+        optionPaths=core.patchSelectionPaths(patch).map(path=>path.map(point=>({x:point.x-x,y:point.y-y})));
         optionPoints=core.patchControlPoints(patch).map(point=>({x:point.x-x,y:point.y-y}));
         optionMask=makeCanvas(w,h);optionMask.getContext('2d').drawImage(mask,-x,-y);
         startingTransform={x:x+w/2-canvas.width/2,y:y+h/2-canvas.height/2,scale:1,rotation:0,opacity:.20};
@@ -133,16 +139,16 @@ function start(kind,patchId=null){
     $('canvasWrap').style.width=Math.round(canvas.width*z)+'px';
     $('canvasWrap').style.height=Math.round(canvas.height*z)+'px';
     canvas.style.width=overlay.style.width='100%';canvas.style.height=overlay.style.height='100%';
-    $('zoomValue').textContent=Math.round(z*100)+'%';
+    $('zoomValue').textContent='Fit';
   }
   const guideWasCollapsed=inspector.classList.contains('is-collapsed');
   if(guideWasCollapsed){$('inspectorToggle').click()}
-  editing={kind,patchId,sourceId,image:original,label,optionMask,optionPoints,
+  editing={kind,patchId,sourceId,image:original,label,optionMask,optionPoints,optionPaths,
     wasBaseOnly,initialTransform:startingTransform||{x:0,y:0,scale:1,rotation:0,opacity:.20},
     transform:{...(startingTransform||{x:0,y:0,scale:1,rotation:0,opacity:.20})}};
   inspector.classList.add('source-editor-active');
   document.querySelector('.workspace').classList.add('source-editor-in-progress');
-  $('inspectorHeading').textContent='IMAGE EDIT';
+  inspectorTitle('IMAGE EDIT');
   panel.classList.remove('hidden');
   $('sourceEditTitle').textContent='Edit '+label;
   stage.classList.add('active');
@@ -155,7 +161,7 @@ function finish(){
   stage.classList.remove('active');paint.clearRect(0,0,stage.width,stage.height);
   panel.classList.add('hidden');inspector.classList.remove('source-editor-active');
   document.querySelector('.workspace').classList.remove('source-editor-in-progress');
-  $('inspectorHeading').textContent='GROUPS';editing=null;drag=null;
+  inspectorTitle('GROUPS');editing=null;drag=null;
   if(!state.master){$('welcome').classList.remove('hidden');$('canvasWrap').classList.add('hidden');ctx.clearRect(0,0,canvas.width,canvas.height)}
   else{render();updateSourceActions()}
 }
@@ -183,6 +189,7 @@ function apply(){
       state.sources.set(id,{id,name:source.name+' edited',canvas:raster});
       patch.sourceId=id;patch.mask=transformedMask;
       patch.bbox=core.maskBoundingBox(transformedMask)||patch.bbox;
+      patch.maskPaths=current.optionPaths.map(path=>path.map(point=>transformedPoint(point,current.image,current.transform)));
       patch.maskPoints=current.optionPoints.map(point=>transformedPoint(point,current.image,current.transform));
       patch.corners=null; // Previous warp is now included in the raster and mask.
       core.invalidateDisplayedMask(patch);
@@ -195,12 +202,16 @@ function apply(){
         const movedSelection=makeCanvas(canvas.width,canvas.height);
         drawTransformed(movedSelection.getContext('2d'),state.selectionMask,current.transform,1);
         state.selectionMask=movedSelection;
+        state.selectionPaths=(state.selectionPaths||[]).map(path=>path.map(point=>transformedPoint(point,current.image,current.transform)));
         state.selectionPoints=(state.selectionPoints||[]).map(point=>transformedPoint(point,current.image,current.transform));
         core.updateSelectionOutline();
       }
     }
   }
   finish();updateSourceActions();
+  if(current.kind==='source'&&current.patchId===state.selectionTargetPatchId){
+    const group=state.groups.find(g=>g.active===current.patchId);if(group)core.selectGroupMask(group);
+  }
   toast(current.label+' image position updated.');
 }
 function point(e){

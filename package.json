@@ -1,11 +1,12 @@
 {
-  "name": "mosaic",
+  "name": "mozai",
   "version": "1.0.0",
   "private": true,
-  "description": "Local server for the Mosaic AI collage workspace",
+  "description": "Local server for the mozAI collage workspace",
   "scripts": {
     "start": "node local-server.js",
-    "dev": "node local-server.js"
+    "dev": "node local-server.js",
+    "test": "node --test tests/image-provider.test.cjs tests/mask-geometry.test.cjs"
   },
   "engines": {
     "node": ">=18"

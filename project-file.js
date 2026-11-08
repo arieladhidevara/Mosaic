@@ -1,4 +1,4 @@
-/* Mosaic v1 portable project file (.mosaic).
+/* Mosaic v1 portable project file (.moz; legacy .mosaic supported).
    Local-only, lossless canvas snapshots; never serializes Premium credentials. */
 const core=window.MosaicCore;
 const premium=window.MosaicPremium;
@@ -96,9 +96,9 @@ function projectState(){
   const fields=[
     'reference','master','rawBase','rawMaster','masterIsBase','alignmentTransforms',
     'sources','groups','patches','pendingSourceId','editingPatchId','selectedPatchId',
-    'selectionMask','selectionPoints','selectionMode','tool','pendingRevealOnly','serial',
+    'selectionMask','selectionPoints','selectionPaths','selectionTargetPatchId','selectionMode','tool','pendingRevealOnly','serial',
     'draftGroupId','queuedGroupId','selectionGeneration','brushTargetId',
-    'undo','redo','zoom','fitZoom'
+    'undo','redo','zoom','fitZoom','projectTitle','projectTitleManual','brushSize','brushIntensity','maskEditOnly'
   ];
   return Object.fromEntries(fields.map(name=>[name,state[name]]));
 }
@@ -124,14 +124,14 @@ async function saveProject(){
     const queue=await encodeQueue(codec.pack);
     const file={
       format:MAGIC,version:VERSION,createdAt:new Date().toISOString(),
-      app:'Mosaic',state:packedState,premium:packedPremium,queue,
+      app:'mozAI',state:packedState,premium:packedPremium,queue,
       ui:{projectName:$('projectName').textContent||'Untitled composition'},
       images:codec.registry
     };
     const blob=new Blob([JSON.stringify(file)],{type:'application/json'});
-    const name=(file.ui.projectName||'Mosaic_project').replace(/[^a-z0-9_-]+/gi,'_').slice(0,48)||'Mosaic_project';
+    const name=(file.ui.projectName||'mozAI_project').replace(/[^a-z0-9_-]+/gi,'_').slice(0,48)||'mozAI_project';
     const url=URL.createObjectURL(blob),a=document.createElement('a');
-    a.href=url;a.download=name+'.mosaic';document.body.appendChild(a);a.click();a.remove();
+    a.href=url;a.download=name+'.moz';document.body.appendChild(a);a.click();a.remove();
     setTimeout(()=>URL.revokeObjectURL(url),20000);
     toast('Saved '+a.download+' with editable images, masks, Groups and Master history.');
   }catch(error){toast('Save project failed: '+error.message)}
@@ -164,7 +164,10 @@ function restoreUI(saved,ui){
   $('basePreview').classList.add('hidden');$('welcomeBaseThumb').classList.add('hidden');$('masterPreview').classList.add('hidden');
   if(hasBase){core.setSourcePreview('basePreview',state.reference);core.setSourcePreview('welcomeBaseThumb',state.reference)}
   if(realMaster)core.setSourcePreview('masterPreview',state.master);
-  $('projectName').textContent=ui?.projectName||'Mosaic project';
+  state.projectTitle=String(saved.projectTitle||ui?.projectName||'Untitled composition');state.projectTitleManual=Boolean(saved.projectTitleManual);core.setProjectTitle(state.projectTitle);
+  state.brushSize=Number(saved.brushSize)||36;state.brushIntensity=Number.isFinite(saved.brushIntensity)?saved.brushIntensity:100;
+  $('brushSize').value=state.brushSize;$('brushValue').textContent=state.brushSize;
+  $('brushIntensity').value=state.brushIntensity;$('brushIntensityValue').textContent=state.brushIntensity+'%';
   $('projectSize').textContent=hasMaster?canvas.width+' × '+canvas.height:'';
   if(hasMaster)core.updateZoomFit();
   if(hasMaster&&Number.isFinite(saved.zoom)&&saved.zoom>0){
@@ -173,7 +176,7 @@ function restoreUI(saved,ui){
     $('canvasWrap').style.width=Math.round(canvas.width*z)+'px';
     $('canvasWrap').style.height=Math.round(canvas.height*z)+'px';
   }
-  core.selectTool(['select','lasso','rect','ellipse','wand','reveal','erase','transform','pan'].includes(saved.tool)?saved.tool:'select');
+  core.selectTool(['select','lasso','rect','ellipse','wand','reveal','erase','transform','zoom','pan'].includes(saved.tool)&&saved.tool!=='zoom'?saved.tool:'select');
   core.setMode(['new','add','subtract'].includes(saved.selectionMode)?saved.selectionMode:'new');
   core.updateSelectionOutline();core.updateApplyButton();
   core.updateSourceActions();renderGroups();render();
@@ -190,7 +193,7 @@ async function loadProjectFile(file){
   try{
     const data=JSON.parse(await file.text());
     if(data?.format!==MAGIC||data.version!==VERSION||!data.state||!data.premium)
-      throw Error('This file is not a supported .mosaic project.');
+      throw Error('This file is not a supported .moz project.');
     // Decode/validate all images BEFORE mutating the existing open project.
     const images=await decodeImages(data.images);
     const saved=unpack(data.state,images),restoredPremium=unpack(data.premium,images);
@@ -202,8 +205,9 @@ async function loadProjectFile(file){
     if(!saved.master&&!saved.reference)throw Error('Project contains no images.');
     Object.assign(state,saved);
     state.selectionPoints=Array.isArray(saved.selectionPoints)?saved.selectionPoints:[];
+    state.selectionPaths=Array.isArray(saved.selectionPaths)?saved.selectionPaths:[];
     state.queue=restoredQueue;
-    state.busy=false;state.before=false;state.transformDrag=null;state.drawing=false;
+    state.busy=false;state.before=false;state.transformDrag=null;state.maskVertexDrag=null;state.maskMoveDrag=null;state.maskEditOnly=Boolean(saved.maskEditOnly);state.selectionTargetPatchId=saved.selectionTargetPatchId||null;state.drawing=false;
     state.lasso=[];state.hoverPoint=null;state.pointerStart=null;
     state.brushTargetId=null;state.hoveredGroupId=null;
     state.selectionMask=state.selectionMask||(state.master?makeCanvas(state.master.width,state.master.height):null);

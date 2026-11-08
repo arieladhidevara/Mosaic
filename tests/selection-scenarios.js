@@ -1,0 +1,105 @@
+/* Browser checks for point controls, placement vs mask edit, and brush settings. */
+window.runSelectionChecks=async function(){
+  const core=window.MosaicCore,{state,canvas,overlay,makeCanvas}=core,$=id=>document.getElementById(id),checks=[];
+  const assert=(value,message)=>{if(!value)throw Error(message)};
+  const same=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
+  const wait=async(predicate)=>{for(let i=0;i<300;i++){if(predicate())return;await new Promise(resolve=>setTimeout(resolve,20))}throw Error('Selection check timed out')};
+  const originalCapture=Element.prototype.setPointerCapture;Element.prototype.setPointerCapture=()=>{};
+  const send=(target,type,x,y,extra={})=>target.dispatchEvent(new PointerEvent(type,{bubbles:true,pointerId:31,pointerType:'mouse',button:0,clientX:x,clientY:y,...extra}));
+  const at=(type,x,y)=>{const box=overlay.getBoundingClientRect();send(overlay,type,box.left+x/canvas.width*box.width,box.top+y/canvas.height*box.height)};
+  const click=(x,y)=>{at('pointerdown',x,y);at('pointerup',x,y)};
+  const drag=(a,b)=>{at('pointerdown',a.x,a.y);at('pointermove',b.x,b.y);at('pointerup',b.x,b.y)};
+  const set=(id,value)=>{$(id).value=value;$(id).dispatchEvent(new Event('input',{bubbles:true}))};
+  const makeFrame=(color)=>{const image=makeCanvas(800,500),c=image.getContext('2d');c.fillStyle=color;c.fillRect(0,0,800,500);return image};
+  const points=[{x:100,y:100},{x:400,y:100},{x:400,y:300},{x:100,y:300}];
+  const draft=()=>{core.setMaster(makeFrame('#26384d'),'Point control check');core.selectTool('lasso');state.lasso=points.map(p=>({...p}));core.updateMaskWithLasso();core.hideQuickPrompt()};
+  const pressControl=(button,distance=0)=>{
+    const box=button.getBoundingClientRect(),x=box.left+box.width/2,y=box.top+box.height/2;
+    send(button,'pointerdown',x,y);send(button,'pointerup',x+distance,y);
+    button.dispatchEvent(new MouseEvent('click',{bubbles:true,detail:1,clientX:x+distance,clientY:y}));
+  };
+  try{
+    const sections=[...document.querySelectorAll('.toolbar-left>.toolbar-section')];
+    assert(same(sections.map(section=>section.querySelector('.toolbar-section-title').textContent),['Navigate','Select','Edit']),'Toolbar sections are in the wrong order');
+    assert(same([...sections[0].querySelectorAll('[data-tool]')].map(b=>b.dataset.tool),['select','pan']),'Navigate should contain Select and Pan only');
+    assert(sections[1].querySelector('.selection-modes')&&sections[2].querySelector('#brushSize')&&sections[2].querySelector('#brushIntensity'),'Selection modes or brush controls are in the wrong section');
+    assert(!document.querySelector('[data-tool="zoom"]')&&!$('promptAreaBtn'),'Removed Zoom or AI Edit tool is still visible');
+    core.selectTool('select');assert(document.querySelector('.selection-modes').classList.contains('hidden'),'Selection modes are visible before choosing a selection tool');
+    core.selectTool('lasso');assert(!document.querySelector('.selection-modes').classList.contains('hidden'),'Line did not reveal New/Add/Subtract');
+    core.selectTool('select');assert(document.querySelector('.selection-modes').classList.contains('hidden'),'Select did not hide selection modes');
+    checks.push('Navigate / Select / Edit hierarchy; modes only appear for selection tools; Size and Intensity under Edit; no Zoom or bottom AI Edit button');
+    draft();
+    const bitmap=state.selectionMask.toDataURL();
+    for(const tool of ['select','pan','lasso','rect','ellipse','wand']){
+      core.selectTool(tool);const zoom=state.zoom,box=overlay.getBoundingClientRect();
+      overlay.dispatchEvent(new WheelEvent('wheel',{bubbles:true,cancelable:true,deltaY:-50,clientX:box.left+box.width/2,clientY:box.top+box.height/2}));
+      assert(state.zoom>zoom&&state.tool===tool&&state.selectionMask.toDataURL()===bitmap,'Scroll zoom broke '+tool);
+      $('zoomValue').click();
+    }
+    core.selectTool('lasso');state.lasso=[{x:500,y:100},{x:650,y:200}];const line=JSON.stringify(state.lasso),box=overlay.getBoundingClientRect();
+    overlay.dispatchEvent(new WheelEvent('wheel',{bubbles:true,cancelable:true,deltaY:-50,clientX:box.left+200,clientY:box.top+150}));
+    assert(JSON.stringify(state.lasso)===line&&state.tool==='lasso','Scroll zoom lost an unfinished Line');$('zoomValue').click();core.selectTool('select');
+    checks.push('Plain scroll zoom works in Select, Pan, Line, Rectangle, Oval and Wand; Fit resets it without losing masks or unfinished lines');
+    const before=state.selectionPoints.map(p=>({...p}));
+    drag(before[0],{x:125,y:115});
+    assert(Math.abs(state.selectionPoints[0].x-125)<1e-6&&Math.abs(state.selectionPoints[0].y-115)<1e-6&&same(state.selectionPoints.slice(1),before.slice(1)),'Moving one point moved other vertices');
+    $('undoBtn').click();assert(same(state.selectionPoints,before),'Point undo did not restore vertices');
+    const originalMask=state.selectionMask.toDataURL();at('pointermove',250,100);
+    assert(!$('maskAddPoint').hidden,'Hovering near a line did not expose +');
+    pressControl($('maskAddPoint'));assert($('maskRemovePoint').hidden,'Adding a point immediately armed its delete control');assert(state.selectionPoints.length===5&&state.selectionMask.toDataURL()===originalMask,'Adding a line point changed the image or mask pixels');
+    const inserted=state.selectionPoints.find(p=>Math.abs(p.x-250)<1e-6&&Math.abs(p.y-100)<1e-6);assert(inserted,'New point is not on the clicked line');
+    click(inserted.x,inserted.y);assert(!$('maskRemovePoint').hidden&&state.selectionPoints.length===5,'Clicking a point removed it instead of exposing -');
+    const control=$('maskRemovePoint').getBoundingClientRect(),image=overlay.getBoundingClientRect(),px=image.left+inserted.x/canvas.width*image.width,py=image.top+inserted.y/canvas.height*image.height;
+    assert(Math.hypot(control.left+control.width/2-px,control.top+control.height/2-py)>20,'Delete control overlaps the draggable point');
+    pressControl($('maskRemovePoint'),10);assert(state.selectionPoints.length===5,'Dragging on the delete control accidentally deleted a point');
+    pressControl($('maskRemovePoint'));assert(state.selectionPoints.length===4,'Explicit - click did not remove the selected point');
+    $('undoBtn').click();assert(state.selectionPoints.length===5,'Point deletion cannot be undone');$('undoBtn').click();assert(state.selectionPoints.length===4,'Point insertion cannot be undone');
+    click(100,100);pressControl($('maskRemovePoint'));assert(state.selectionPoints.length===3,'Quad point deletion failed');
+    click(state.selectionPoints[0].x,state.selectionPoints[0].y);assert($('maskRemovePoint').disabled,'Delete should protect the last three points');
+    $('undoBtn').click();core.hideQuickPrompt();checks.push('Independent vertices; + inserts on a line without pixel changes; separate - requires a deliberate click; minimum 3 points; undo');
+    const moveBefore=state.selectionPoints.map(p=>({...p}));drag({x:250,y:200},{x:290,y:225});
+    assert(state.selectionPoints.every((p,i)=>Math.abs(p.x-moveBefore[i].x-40)<1e-6&&Math.abs(p.y-moveBefore[i].y-25)<1e-6),'Dragging inside a draft did not move all its vertices equally');
+    $('undoBtn').click();assert(same(state.selectionPoints,moveBefore),'Draft move undo failed');
+    checks.push('Drag inside a draft moves the entire selection; Undo restores it');
+    const source=makeFrame('#b98652'),c=source.getContext('2d');c.fillStyle='#fff';c.fillRect(145,125,20,20);
+    const id=core.uid('generated_test');state.sources.set(id,{id,name:'Generated region',canvas:source});state.pendingSourceId=id;core.updateApplyButton();$('commitBtn').click();
+    const group=state.groups.find(g=>g.active),patch=state.patches.get(group.active);patch.prompt='Generated material';const sourceId=patch.sourceId;
+    core.hideQuickPrompt();drag({x:250,y:200},{x:290,y:225});
+    assert(patch.corners?.length===4&&Math.abs(state.selectionPoints[0].x-140)<1e-6&&Math.abs(state.selectionPoints[0].y-125)<1e-6,'Select did not move the image and mask together');
+    $('undoBtn').click();assert(patch.sourceId===sourceId&&!patch.corners,'Image move undo failed');
+    core.hideQuickPrompt();const fixed=state.selectionPoints.slice(1).map(p=>({...p}));drag({x:100,y:100},{x:140,y:120});
+    assert(patch.sourceId!==sourceId&&same(state.selectionPoints.slice(1),fixed),'Image skew did not keep the remaining points fixed');
+    const placed=state.sources.get(patch.sourceId).canvas.getContext('2d').getImageData(181,148,1,1).data;
+    assert(placed[0]>230&&placed[1]>230&&placed[2]>230,'The image feature did not skew with its polygon');
+    $('undoBtn').click();assert(patch.sourceId===sourceId&&same(state.selectionPoints,points),'Image skew undo failed');
+    const row=()=>document.querySelector('.variant-row[data-patch="'+patch.id+'"]');row().querySelector('[data-action="edit-mask"]').click();
+    core.hideQuickPrompt();drag({x:250,y:200},{x:270,y:210});assert(patch.sourceId===sourceId&&!patch.corners&&state.maskEditOnly,'Edit mask moved the source image');
+    $('undoBtn').click();drag({x:100,y:100},{x:120,y:110});assert(patch.sourceId===sourceId&&same(state.selectionPoints.slice(1),fixed),'Edit mask changed the image or other vertices');$('undoBtn').click();
+    checks.push('Generated-region Select moves/skews pixels and mask; Edit modifies only the selection; other points stay fixed; both undo correctly');
+    draft();const brushSource=core.uid('brush_source');state.sources.set(brushSource,{id:brushSource,name:'Brush image',canvas:makeFrame('#b98652')});state.pendingSourceId=brushSource;core.resetSelection();
+    core.selectTool('reveal');set('brushSize',80);set('brushIntensity',25);at('pointermove',300,220);
+    const circle=document.querySelector('.brush-cursor');assert(!circle.hidden&&Math.abs(circle.getBoundingClientRect().width-80*state.zoom)<1,'Brush cursor does not match Size');
+    assert(!$('brushOptions').classList.contains('hidden')&&!$('brushIntensityOptions').classList.contains('hidden'),'Brush controls are not visible in Edit');
+    click(300,220);const alpha=state.selectionMask.getContext('2d').getImageData(300,220,1,1).data[3];assert(alpha>=62&&alpha<=65,'25% brush Intensity was not applied');
+    core.selectTool('erase');set('brushIntensity',50);click(300,220);const erased=state.selectionMask.getContext('2d').getImageData(300,220,1,1).data[3];assert(erased>=30&&erased<=33,'50% eraser Intensity was not applied');
+    core.selectTool('select');assert(circle.hidden,'Brush cursor remained visible in Select');state.pendingSourceId=null;core.resetSelection();
+    checks.push('Size controls the cursor circle and actual brush; Intensity controls paint and erase alpha; circle hides outside brush tools');
+    $('projectName').click();$('projectNameInput').value='Cabin study';$('projectNameInput').dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}));
+    assert($('projectName').textContent==='Cabin study'&&state.projectTitleManual,'Project rename was not saved');core.setProjectTitle('Generated Master');assert($('projectName').textContent==='Cabin study','Generation labels overwrite a renamed project');
+    draft();const savedId=core.uid('saved_shape');state.sources.set(savedId,{id:savedId,name:'Saved image',canvas:makeFrame('#b98652')});state.pendingSourceId=savedId;core.updateApplyButton();$('commitBtn').click();
+    const savedPatch=state.patches.get(state.selectionTargetPatchId),oldId=savedPatch.sourceId;core.hideQuickPrompt();drag({x:100,y:100},{x:125,y:115});
+    set('brushSize',74);set('brushIntensity',42);
+    const createURL=URL.createObjectURL,anchorClick=HTMLAnchorElement.prototype.click,confirm=window.confirm;let blob,filename;
+    URL.createObjectURL=value=>{if(value.type==='application/json')blob=value;return createURL(value)};HTMLAnchorElement.prototype.click=function(){if(this.download?.endsWith('.moz'))filename=this.download;else anchorClick.call(this)};window.confirm=()=>true;
+    try{
+      $('saveProjectBtn').click();await wait(()=>Boolean(blob&&filename));assert(filename==='Cabin_study.moz','Renamed project does not control the .moz filename');
+      const data=JSON.parse(await blob.text());assert(data.state.projectTitleManual&&data.state.brushSize===74&&data.state.brushIntensity===42,'Project name or brush settings were not serialized');
+      const transfer=new DataTransfer();transfer.items.add(new File([blob],filename,{type:'application/json'}));$('projectOpenInput').files=transfer.files;$('projectOpenInput').dispatchEvent(new Event('change'));
+      await wait(()=>$('openProjectBtn').disabled);await wait(()=>!$('openProjectBtn').disabled);
+      assert($('projectName').textContent==='Cabin study'&&Number($('brushIntensity').value)===42&&Number($('brushSize').value)===74,'Project preferences did not round-trip');
+      const loaded=state.patches.get(savedPatch.id);assert(loaded.maskPaths?.length,'Editable paths were lost');$('undoBtn').click();assert(loaded.sourceId===oldId,'Saved image placement undo did not survive .moz save/open');$('redoBtn').click();assert(loaded.sourceId!==oldId,'Saved image placement redo failed');
+    }finally{URL.createObjectURL=createURL;HTMLAnchorElement.prototype.click=anchorClick;window.confirm=confirm}
+    checks.push('Rename survives generation; .moz filename, brush preferences, editable paths, placement Undo/Redo survive save/open');
+    return {passed:checks.length,checks};
+  }finally{Element.prototype.setPointerCapture=originalCapture}
+};

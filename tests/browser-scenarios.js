@@ -81,9 +81,9 @@ window.runMosaicBrowserChecks=async function(){
       const rect=core.overlay.getBoundingClientRect();
       const event=new PointerEvent('pointerdown',{bubbles:true,pointerId:8,pointerType:'mouse',button:0,
         clientX:rect.left+x/canvas.width*rect.width,clientY:rect.top+y/canvas.height*rect.height});
-      core.overlay.dispatchEvent(event);
-      core.overlay.dispatchEvent(new PointerEvent('pointerup',{bubbles:true,pointerId:8,pointerType:'mouse',button:0,
-        clientX:event.clientX,clientY:event.clientY}));
+      const capture=core.overlay.setPointerCapture;core.overlay.setPointerCapture=()=>{};
+      try{core.overlay.dispatchEvent(event);core.overlay.dispatchEvent(new PointerEvent('pointerup',{bubbles:true,pointerId:8,pointerType:'mouse',button:0,clientX:event.clientX,clientY:event.clientY}))}
+      finally{core.overlay.setPointerCapture=capture}
     };
     const originalPixels=pixels(),groupId=selected.groupId,maskBefore=selected.mask.toDataURL();
     // This point is inside the polygon's bounding box, but outside its mask.
@@ -158,7 +158,7 @@ window.runMosaicBrowserChecks=async function(){
     set('preserveOriginalGeometry',true);set('regionRenderQuality','low');set('harmonizeQuality','medium');
     let savedBlob;const createURL=URL.createObjectURL,anchorClick=HTMLAnchorElement.prototype.click,confirm=window.confirm;
     URL.createObjectURL=blob=>{if(blob.type==='application/json')savedBlob=blob;return createURL(blob)};
-    HTMLAnchorElement.prototype.click=function(){if(!this.download?.endsWith('.mosaic'))return anchorClick.call(this)};
+    HTMLAnchorElement.prototype.click=function(){if(!this.download?.endsWith('.moz'))return anchorClick.call(this)};
     window.confirm=()=>true;
     try{
       $('saveProjectBtn').click();await wait(()=>Boolean(savedBlob),'project save');

@@ -20,6 +20,7 @@ const publicFiles = new Set([
   'styles.css',
   'auth.js',
   'app.js',
+  'mask-geometry.js',
   'premium.js',
   'regions.js',
   'source-editor.js',
@@ -154,8 +155,8 @@ server.requestTimeout = 300_000;
 server.headersTimeout = 305_000;
 
 server.listen(PORT, HOST, () => {
-  console.log(`Mosaic local server: http://${HOST}:${PORT}`);
-  console.log('Open the URL above, then add your OpenAI API key in the Mosaic toolbar.');
+  console.log(`mozAI local server: http://${HOST}:${PORT}`);
+  console.log('Open the URL above, then add your OpenAI API key in the mozAI toolbar.');
 });
 
 server.on('error', error => {

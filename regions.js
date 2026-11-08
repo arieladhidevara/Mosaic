@@ -4,9 +4,7 @@ if(!core)throw Error('Mosaic core must load first.');
 const {state,canvas,overlay,renderGroups,render,groupMask,selectGroupMask,CATEGORIES,updateGroupCategory}=core;
 const list=document.getElementById('groupList'),viewport=document.getElementById('viewport');
 const wrap=document.getElementById('canvasWrap');
-const ghost=document.createElement('canvas');ghost.id='regionGhostCanvas';ghost.className='region-ghost-canvas';
-ghost.setAttribute('aria-hidden','true');wrap.append(ghost);
-const ghostCtx=ghost.getContext('2d');
+const ghost=core.vectorLayer('regionHoverVectors');
 const hint=document.createElement('div');hint.className='group-hover-hint hidden';hint.id='groupHoverHint';
 hint.setAttribute('aria-hidden','true');viewport.append(hint);
 let hovering=null;
@@ -24,7 +22,7 @@ function decorate(){
     if(state.draftGroupId===g.id)section.classList.add('region-focused');
     const label=head.querySelector('.group-name');
     if(label)label.textContent=g.name;
-    head.append(makeButton('✎','rename-group','Rename group'));
+    (head.querySelector('.group-head-actions')||head).append(makeButton('✎','rename-group','Rename group'));
     const details=document.createElement('div');details.className='group-details';
     const select=document.createElement('select');select.className='group-category';
     select.dataset.regionCategory=g.id;select.title='Set object category';select.setAttribute('aria-label','Object category');
@@ -40,7 +38,7 @@ function decorate(){
       if(!patch)continue;
       const text=row.querySelector('.variant-text');
       if(text)text.textContent=patch.name;
-      const edit=row.querySelector('[data-action="edit-image"]');if(edit)edit.textContent='✎';
+      const edit=row.querySelector('[data-action="edit-mask"]');if(edit){edit.setAttribute('aria-pressed',String(state.maskEditOnly&&state.selectionTargetPatchId===patch.id));edit.setAttribute('aria-label','Edit selection mask')}if(edit)edit.textContent='✎';
       const rename=row.querySelector('[data-region-action="rename-option"]');if(rename)rename.textContent='Aa';
       const remove=row.querySelector('[data-action="delete"]');if(remove)remove.textContent='×';
       const regen=row.querySelector('[data-region-action="regen-option"]');
@@ -221,48 +219,43 @@ list.addEventListener('keydown',e=>{
 function clearHover(){
   hovering=null;state.hoveredGroupId=null;
   hint.classList.add('hidden');hint.setAttribute('aria-hidden','true');
-  ghostCtx.clearRect(0,0,ghost.width,ghost.height);
+  ghost.replaceChildren();
 }
 function onPointerMove(e){
-  if(!state.master||state.busy||state.before||state.drawing||state.transformDrag||
-    state.panAnchor||window.MosaicPremium?.isPreviewing()||e.pointerType==='touch'){
-    if(hovering)clearHover();return;
+  if(!state.master||state.busy||state.before||state.drawing||state.transformDrag||state.maskVertexDrag||state.maskMoveDrag||
+    state.panAnchor||window.MosaicSourceEditor?.isEditing()||state.tool!=='select'||window.MosaicPremium?.isPreviewing()||e.pointerType==='touch'){
+    clearHover();return;
   }
   const rect=overlay.getBoundingClientRect(),v=viewport.getBoundingClientRect();
-  if(!rect.width||!rect.height){if(hovering)clearHover();return}
+  if(!rect.width||!rect.height){clearHover();return}
   const x=(e.clientX-rect.left)/rect.width*canvas.width,y=(e.clientY-rect.top)/rect.height*canvas.height;
-  let found=null;
+  let found=null,paths=null;
   if(x>=0&&y>=0&&x<canvas.width&&y<canvas.height){
     const px=Math.floor(x),py=Math.floor(y);
     for(let i=state.groups.length-1;i>=0;i--){
       const g=state.groups[i],mask=groupMask(g);
-      if(mask.getContext('2d',{willReadFrequently:true}).getImageData(px,py,1,1).data[3]>128){found=g;break}
+      if(mask.getContext('2d',{willReadFrequently:true}).getImageData(px,py,1,1).data[3]>0){found=g;break}
+    }
+    // Unsubmitted selections have a hover area too, without creating a Group.
+    if(state.boundaryCanvas&&state.selectionMask.getContext('2d').getImageData(px,py,1,1).data[3]>0){
+      const target=state.groups.find(g=>g.id===state.draftGroupId);
+      found=target||{id:'draft',name:'Selection (unsaved)'};paths=state.selectionPaths;
     }
   }
-  if(!found){if(hovering)clearHover();return}
-  if(hovering!==found.id||ghost.width!==canvas.width||ghost.height!==canvas.height){
-    hovering=found.id;state.hoveredGroupId=found.id;
-    ghost.width=canvas.width;ghost.height=canvas.height;
-    ghostCtx.clearRect(0,0,ghost.width,ghost.height);
-    const mask=groupMask(found);
-    ghostCtx.save();ghostCtx.globalAlpha=.05;ghostCtx.fillStyle='#b19aff';ghostCtx.drawImage(mask,0,0);ghostCtx.restore();
-    const width=Math.min(mask.width,720),height=Math.max(1,Math.round(mask.height*width/mask.width));
-    const sample=document.createElement('canvas');sample.width=width;sample.height=height;
-    const sc=sample.getContext('2d',{willReadFrequently:true});sc.drawImage(mask,0,0,width,height);
-    const pixels=sc.getImageData(0,0,width,height).data,outline=sc.createImageData(width,height);
-    for(let y=0;y<height;y++)for(let x=0;x<width;x++){
-      const i=y*width+x,k=i*4;if(pixels[k+3]<110)continue;
-      if(x>0&&x<width-1&&y>0&&y<height-1&&pixels[k-1*4+3]>=110&&pixels[k+4+3]>=110&&pixels[k-width*4+3]>=110&&pixels[k+width*4+3]>=110)continue;
-      outline.data[k]=180;outline.data[k+1]=145;outline.data[k+2]=255;outline.data[k+3]=215;
-    }
-    sc.clearRect(0,0,width,height);sc.putImageData(outline,0,0);
-    ghostCtx.save();ghostCtx.imageSmoothingEnabled=false;ghostCtx.drawImage(sample,0,0,mask.width,mask.height);ghostCtx.restore();
+  if(!found){clearHover();return}
+  if(hovering!==found.id||!ghost.childElementCount){
+    hovering=found.id;state.hoveredGroupId=found.id==='draft'?null:found.id;
+    ghost.replaceChildren();
+    const active=state.patches.get(found.active);
+    paths=paths||(active?core.patchSelectionPaths(active):core.maskPathsFromRaster(groupMask(found)));
+    core.drawVectorPaths(ghost,paths,{color:'#bca9ff',fill:'#b19aff30',width:1.5});
   }
-  hint.textContent=found.category&&found.category!=='Region'?found.category:found.name;
-  hint.title='Click '+found.name+' in Layers to reuse its mask';
-  hint.style.left=Math.min(Math.max(5,e.clientX-v.left+14),Math.max(5,v.width-130))+'px';
-  hint.style.top=Math.min(Math.max(5,e.clientY-v.top+16),Math.max(5,v.height-38))+'px';
+  hint.textContent=found.name;
+  hint.title='Click to select '+found.name;
   hint.classList.remove('hidden');hint.setAttribute('aria-hidden','false');
+  const width=hint.getBoundingClientRect().width;
+  hint.style.left=Math.min(Math.max(v.left+5,e.clientX+14),Math.max(v.left+5,v.right-width-5))+'px';
+  hint.style.top=Math.min(Math.max(v.top+5,e.clientY+16),Math.max(v.top+5,v.bottom-38))+'px';
 }
 viewport.addEventListener('pointerdown',clearHover);
 window.MosaicRegions={decorate,handleGroupEvent,onPointerMove,clearHover};
