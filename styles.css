@@ -871,3 +871,47 @@ body:has(.source-editor-active) .mask-edit-controls,body:has(.source-editor-acti
 .group-icon:has(.group-cutout){width:45px;height:40px;padding:0;overflow:hidden;background:transparent}
 .region-group .group-head{gap:10px}
 .region-group .variant-row{min-height:43px}
+
+/* Masking progress is fixed to the viewport so it remains visible before the
+   first image upload (and cannot be clipped by the canvas). */
+.mask-progress-hud{
+  position:fixed;left:auto;top:auto;right:22px;bottom:22px;transform:none;
+  z-index:1200;width:min(310px,calc(100vw - 32px));padding:10px 13px;
+  background:#211f2bf2;border-color:#927dc44d;
+  box-shadow:0 10px 30px #0005
+}
+.mask-progress-title{font-size:11px}
+.mask-progress-track{height:4px;margin-top:3px}
+@media(max-width:650px){.mask-progress-hud{bottom:12px;right:12px}}
+/* A restrained purple/white shimmer over the selected object (or the image
+   during full-image Auto Create). The region mask controls its alpha. */
+.canvas-wrap .mask-processing-shimmer{
+  position:absolute;inset:0;width:100%;height:100%;pointer-events:none;
+  z-index:5;opacity:.17;
+  background:linear-gradient(110deg,rgba(159,114,239,.30) 0%,
+    rgba(211,187,255,.44) 36%,rgba(255,255,255,.70) 49%,
+    rgba(169,135,244,.38) 62%,rgba(137,102,220,.2) 100%);
+  background-size:230% 100%;
+  mask-size:100% 100%;mask-repeat:no-repeat;
+  -webkit-mask-size:100% 100%;-webkit-mask-repeat:no-repeat;
+  animation:mask-soft-shimmer 2.1s linear infinite;
+}
+.canvas-wrap .mask-processing-shimmer.hidden{display:none!important}
+@keyframes mask-soft-shimmer{
+  0%{background-position:160% 50%}
+  100%{background-position:-85% 50%}
+}
+/* Muted 0.7-0.95px marching ants; no blur is applied to stroke geometry. */
+#selectionOutlineVectors path{
+  stroke-dasharray:4 6;stroke-width:.95px;opacity:.36;
+  animation:mask-ants-march 6s linear infinite
+}
+#selectionOutlineVectors path:first-child:not(:last-child){opacity:.10;animation:none}
+#selectionOutlineVectors.is-quiet path{
+  stroke-width:.70px;opacity:.19;stroke-dasharray:3.5 7
+}
+#selectionOutlineVectors.is-quiet path:first-child:not(:last-child){opacity:.04}
+@keyframes mask-ants-march{to{stroke-dashoffset:-40}}
+@media(prefers-reduced-motion:reduce){
+  #selectionOutlineVectors path,.canvas-wrap .mask-processing-shimmer{animation:none}
+}

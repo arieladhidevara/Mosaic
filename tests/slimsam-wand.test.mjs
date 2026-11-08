@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {contentDimensions,selectSlimMask} from '../slimsam-mask-utils.mjs';
+import {cleanAutoMask} from '../mask-cleanup.mjs';
 
 const size=256;
 const empty = () => new Float32Array(3*size*size).fill(-1);
@@ -45,4 +46,22 @@ test('SlimSAM rejects an object that does not contain the click',()=>{
 test('SlimSAM ignores click outside image bounds',()=>{
   const logits=empty();
   assert.equal(selectSlimMask(logits,[.9,.8,.7],256,128,300,40),null);
+});
+
+test('SAM 3 mask cleanup drops isolated islands and seals pinholes',()=>{
+  const w=40,h=40,data=new Uint8Array(w*h);
+  for(let y=8;y<29;y++)for(let x=9;x<28;x++)data[y*w+x]=1;
+  data[20*w+18]=0;
+  data[2*w+2]=1;
+  const out=cleanAutoMask(data,w,h);
+  assert.equal(out[20*w+18],1);
+  assert.equal(out[2*w+2],0);
+  assert.equal(out[12*w+12],1);
+});
+test('SAM 3 mask cleanup keeps meaningful thin objects intact',()=>{
+  const w=40,h=40,data=new Uint8Array(w*h);
+  for(let y=8;y<30;y++)for(let x=18;x<20;x++)data[y*w+x]=1;
+  const out=cleanAutoMask(data,w,h);
+  assert.equal(out[20*w+18],1);
+  assert.equal(out[20*w+19],1);
 });

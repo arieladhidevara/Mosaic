@@ -1,5 +1,6 @@
 /* mozAI Auto Create: detect candidate objects, preview only on the image,
    creates reusable Group drafts immediately; Options still appear only on Generate. */
+import {cleanAutoMask} from './mask-cleanup.mjs';
 const core = window.MosaicCore;
 const $ = id => document.getElementById(id);
 const button = $('autoCreateGroupsBtn');
@@ -91,18 +92,26 @@ function hover(event) {
   hint.classList.remove('hidden');
 }
 function createMask(id) {
-  const candidate = core.makeCanvas(labelWidth, labelHeight);
-  const context = candidate.getContext('2d');
-  const pixels = context.createImageData(labelWidth, labelHeight);
-  let total = 0;
-  for (let i = 0; i < labels.length; i++) {
-    if (labels[i] !== id) continue;
-    const j = i*4;
-    pixels.data[j] = pixels.data[j+1] = pixels.data[j+2] = pixels.data[j+3] = 255;
-    total++;
+  if(!labels||!labelWidth||!labelHeight)return null;
+  const total=labelWidth*labelHeight,binary=new Uint8Array(total);
+  let original=0;
+  for(let i=0;i<total;i++)if(labels[i]===id){binary[i]=1;original++}
+  if(original<50||original>=total*.92)return null;
+  const clean=cleanAutoMask(binary,labelWidth,labelHeight);
+  const candidate=core.makeCanvas(labelWidth,labelHeight);
+  const context=candidate.getContext('2d');
+  const pixels=context.createImageData(labelWidth,labelHeight);
+  let area=0;
+  for(let i=0;i<total;i++){
+    if(labels[i]===id&&!clean[i])labels[i]=0;
+    if(!clean[i]||(labels[i]&&labels[i]!==id))continue;
+    if(!labels[i])labels[i]=id;
+    const j=i*4;
+    pixels.data[j]=pixels.data[j+1]=pixels.data[j+2]=pixels.data[j+3]=255;
+    area++;
   }
-  if (total < 50 || total >= labels.length*0.92) return null;
-  context.putImageData(pixels, 0, 0);
+  if(area<50||area>=total*.92)return null;
+  context.putImageData(pixels,0,0);
   return candidate;
 }
 function selectRegion(event,id){
@@ -140,6 +149,7 @@ async function start() {
   updateButton();
   core.message('Auto Create is detecting candidate objects in your image…');
   window.MosaicMaskProgress?.show?.('auto','SAM 3 · Auto Create','Preparing image for segmentation…');
+  window.MosaicMaskProgress?.highlight?.('auto',{whole:true});
   try {
     core.render();
     const scale = Math.min(1, 768/Math.max(sourceCanvas.width, sourceCanvas.height));
@@ -178,6 +188,11 @@ async function start() {
     regionGroups.clear();
     let created=0,reused=0;
     for(let id=1;id<=detected;id++){
+      if(serial!==revision)return;
+      window.MosaicMaskProgress?.show?.('auto','SAM 3 · Auto Create',
+        'Cleaning masks and organizing Groups…',Math.round(id/detected*100));
+      if(id%3===0)await new Promise(resolve=>setTimeout(resolve,0));
+      if(serial!==revision||master!==state.master)return;
       const smallMask=createMask(id);
       if(!smallMask)continue;
       const fullMask=core.makeCanvas(sourceCanvas.width,sourceCanvas.height);
@@ -195,6 +210,7 @@ async function start() {
     }
     if(!regionGroups.size)throw Error('All detected masks were too small or too broad.');
     core.renderGroups();
+    window.MosaicMaskProgress?.show?.('auto','SAM 3 · Auto Create','Groups ready.',100);
     preview.width = width;
     preview.height = height;
     active = true;

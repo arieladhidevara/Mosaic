@@ -17,7 +17,7 @@ const selectionCtx = selectionPreview.getContext('2d');
 let worker = null, active = false, ready = false, epoch = 0, requestSerial = 0;
 let encodedWidth = 0, encodedHeight = 0, pendingHover = null;
 let inFlightHover = false, lastHoverPoint = null, lastPreview = null, pendingClick = null;
-let hoverTimer = null, stopped = false;
+let hoverTimer = null, stopped = false, modelPreloaded = false, preloadStarted = false;
 const MIN_HOVER_DELTA = 14;
 
 function updateStatus(text, isError = false) {
@@ -26,9 +26,9 @@ function updateStatus(text, isError = false) {
     status.classList.toggle('error', isError);
     status.title = isError ? text : 'SlimSAM model runs on your device — no masking API credits';
   }
-  const busy=!isError&&/download|loading|prepar|analyz|selecting|queued|initializ/i.test(text);
-  if(busy)window.MosaicMaskProgress?.show?.('wand','AI Wand · SlimSAM',text);
-  else window.MosaicMaskProgress?.hide?.('wand');
+  const busy=!isError&&/download|loading|prepar|analyz|selecting|queued|initializ|generat|predict/i.test(text);
+  if(active&&busy)window.MosaicMaskProgress?.show?.('wand','Wand · AI Mask',text);
+  else if(!busy||isError)window.MosaicMaskProgress?.hide?.('wand');
 }
 function clearHover() {
   if (hoverTimer) clearTimeout(hoverTimer);
@@ -37,6 +37,19 @@ function clearHover() {
   lastHoverPoint = null;
   lastPreview = null;
   previewCtx.clearRect(0, 0, previewCanvas.width, previewCanvas.height);
+}
+function preload(){
+  if(preloadStarted)return;
+  preloadStarted=true;
+  window.MosaicMaskProgress?.show?.('preload','Preparing Wand','Loading segmentation model and browser cache…');
+  try{
+    ensureWorker();
+    worker.postMessage({type:'preload'});
+  }catch(error){
+    window.MosaicMaskProgress?.hide?.('preload');
+    preloadStarted=false;
+    console.warn('Wand preload failed:',error);
+  }
 }
 function onToolChange(tool) {
   if (tool !== 'wand') {
@@ -50,7 +63,7 @@ function onToolChange(tool) {
   active = true;ready = false;stopped = false;
   const version = ++epoch;
   pendingClick = null;inFlightHover = false;clearHover();
-  updateStatus('Loading AI · Tiny…');
+  updateStatus(modelPreloaded?'Preparing image for masking…':'Loading segmentation model…');
   ensureWorker();
   core.render();
   const scale = Math.min(1, 1024 / Math.max(core.canvas.width, core.canvas.height));
@@ -86,8 +99,9 @@ function ensureWorker() {
     if (!active) return;
     ready=false;stopped=true;pendingClick=null;
     clearHover();
-    const error = 'AI Tiny could not load in this browser. Check your connection and try Wand again.';
-    updateStatus(error, true);core.toast(error);
+    window.MosaicMaskProgress?.hide?.('preload');
+    const error = 'Wand model could not load. Check your connection and browser storage.';
+    updateStatus(error,true);core.toast(error);
   });
 }
 function scaledPoint(point) {
@@ -104,12 +118,17 @@ function sendInfer(point, click=false) {
   if (!active || !ready || !inside(point) || stopped) return null;
   const source=scaledPoint(point), id=++requestSerial;
   worker.postMessage({type:'infer',epoch,id,click,x:source.x,y:source.y});
-  if (!click) {
+  if(!click){
     inFlightHover=true;
     lastHoverPoint={...point};
-  } else {
+    if(!lastPreview){
+      window.MosaicMaskProgress?.show?.('wand','Wand · AI Mask','Predicting object mask…');
+      window.MosaicMaskProgress?.highlight?.('wand',{point});
+    }
+  }else{
     pendingClick={id,point:{...point}};
-    updateStatus('Selecting object…');
+    updateStatus('Generating mask…');
+    window.MosaicMaskProgress?.highlight?.('wand',lastPreview?{mask:previewCanvas}:{point});
   }
   return id;
 }
@@ -185,17 +204,38 @@ function selectAt(point) {
   if(ready)sendInfer(point,true);
   else{
     pendingClick={id:null,point:{...point}};
-    updateStatus('Preparing AI Tiny · selection queued…');
+    updateStatus('Preparing Wand model · selection queued…');
+    window.MosaicMaskProgress?.highlight?.('wand',{point});
   }
 }
 function onWorkerMessage(msg) {
   if(msg.type==='status'){
-    if(active && (msg.epoch==null||msg.epoch===epoch))updateStatus(msg.status);
+    if(msg.stage==='model'){
+      const detail=String(msg.status||'Loading model…');
+      if(!modelPreloaded){
+        window.MosaicMaskProgress?.show?.('preload','Preparing Wand',detail,
+          Number.isFinite(msg.percent)?msg.percent:null);
+      }
+      if(active)window.MosaicMaskProgress?.show?.('wand','Wand · AI Mask',detail,
+        Number.isFinite(msg.percent)?msg.percent:null);
+    }else if(active && msg.epoch===epoch)updateStatus(msg.status);
+    return;
+  }
+  if(msg.type==='preloaded'){
+    modelPreloaded=true;
+    window.MosaicMaskProgress?.hide?.('preload');
+    return;
+  }
+  if(msg.stage==='preload'&&msg.type==='error'){
+    window.MosaicMaskProgress?.hide?.('preload');
+    preloadStarted=false;
+    if(active)updateStatus('Unable to download mask model.',true);
     return;
   }
   if(msg.epoch!==epoch || !active)return;
   if(msg.type==='ready'){
     ready=true;stopped=false;
+    window.MosaicMaskProgress?.hide?.('preload');
     updateStatus('Hover object · click to select');
     if(pendingClick && pendingClick.id===null)sendInfer(pendingClick.point,true);
     else queueHover();
@@ -207,8 +247,8 @@ function onWorkerMessage(msg) {
     if(msg.stage==='prepare'){ready=false;stopped=true;}
     clearHover();
     const text = msg.stage==='prepare'
-      ? 'AI Tiny could not prepare the model. Check connectivity or browser memory.'
-      : 'AI Tiny could not identify this object.';
+      ? 'Could not prepare Wand model. Check connectivity or browser memory.'
+      : 'Wand could not identify this object.';
     updateStatus(text,true);
     core.toast(text);
     return;
@@ -218,12 +258,13 @@ function onWorkerMessage(msg) {
     const click = pendingClick;
     if(!click || click.id!==msg.id)return;
     pendingClick=null;
-    if(!msg.mask){updateStatus('Object not found · try another spot');core.toast('Try clicking farther inside the object.');queueHover();return;}
+    if(!msg.mask){window.MosaicMaskProgress?.hide?.('wand');updateStatus('Object not found · try another spot');core.toast('Try clicking farther inside the object.');queueHover();return;}
     window.MosaicMaskProgress?.hide?.('wand');
     commit(msg);
     return;
   }
   inFlightHover=false;
+  window.MosaicMaskProgress?.hide?.('wand');
   // Ignore stale predictions after the cursor has moved to another object.
   const point=lastHoverPoint;
   if(msg.mask && point && distance(point,pendingHover)<=30 && inside(pendingHover)){
@@ -237,4 +278,6 @@ function onWorkerMessage(msg) {
   if(distance(point,pendingHover)>=MIN_HOVER_DELTA)queueHover();
 }
 
-window.MosaicSlimWand = {onToolChange,hoverAt,selectAt,reset,leave};
+window.MosaicSlimWand = {onToolChange,hoverAt,selectAt,reset,leave,preload};
+// Start download/cache warming before a user uploads an image or selects Wand.
+preload();

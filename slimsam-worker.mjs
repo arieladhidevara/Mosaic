@@ -14,18 +14,21 @@ function report(type, extra = {}) {self.postMessage({type, ...extra});}
 async function loadModel() {
   if (!loader) {
     loader = (async () => {
-      report('status', {status:'Downloading SlimSAM (~14 MB)…'});
+      report('status', {stage:'model',status:'Loading segmentation model…'});
       const hf = await import(CDN);
       Tensor = hf.Tensor;
       RawImage = hf.RawImage;
       hf.env.allowRemoteModels = true;
       hf.env.allowLocalModels = false;
+      // Keep quantized model files in the browser Cache API across sessions.
+      // The browser may still evict cached weights under storage pressure.
+      hf.env.useBrowserCache = true;
       if (hf.env?.backends?.onnx?.wasm) hf.env.backends.onnx.wasm.numThreads = 1;
       const opts = {
         dtype:'q8',
         progress_callback: info => {
           if (info?.status === 'progress' && Number.isFinite(info.progress)) {
-            report('status', {status:'Downloading SlimSAM ' + Math.min(100, Math.round(info.progress)) + '%…'});
+            report('status', {stage:'model',status:'Downloading mask model file…',percent:Math.min(100,Math.round(info.progress))});
           }
         }
       };
@@ -33,7 +36,7 @@ async function loadModel() {
         hf.SamModel.from_pretrained(MODEL, opts),
         hf.AutoProcessor.from_pretrained(MODEL),
       ]);
-      report('status', {status:'AI Tiny ready · preparing image…'});
+      report('status', {stage:'model',status:'Model cached and ready.'});
     })().catch(error => {loader = null; throw error;});
   }
   await loader;
@@ -47,7 +50,7 @@ async function prepare(job) {
     report('ready', {epoch: job.epoch, reused:true});
     return;
   }
-  report('status', {epoch:job.epoch,status:'Analyzing image locally…'});
+  report('status', {epoch:job.epoch,stage:'prepare',status:'Preparing image for masking…'});
   const raw = new RawImage(new Uint8ClampedArray(job.pixels), job.width, job.height, 4);
   const inputs = await processor(raw);
   const nextEmbedding = await model.get_image_embeddings(inputs);
@@ -92,8 +95,11 @@ self.onmessage = event => {
   const data = event.data;
   if (data.type === 'prepare') activeEpoch = data.epoch;
   jobs = jobs.then(async () => {
-    if (data.type === 'prepare') await prepare(data);
-    else if (data.type === 'infer') await infer(data);
+    if(data.type==='preload'){
+      await loadModel();
+      report('preloaded',{cached:true});
+    }else if(data.type==='prepare') await prepare(data);
+    else if(data.type==='infer') await infer(data);
   }).catch(error => {
     report('error', {epoch:data.epoch,id:data.id,click:!!data.click,
       stage:data.type,message:String(error?.message || error).slice(0,260)});
