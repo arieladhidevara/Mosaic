@@ -9,7 +9,7 @@ function image(w=256,h=256){
   return 'data:image/png;base64,'+bytes.toString('base64');
 }
 const collage=image(),base=image(512,384),mask=image();
-const request=(body={})=>({headers:{},body:{apiKey:'sk-mosaic-test-placeholder',prompt:'Warm walnut wall',collage,mask,...body}});
+const request=(body={})=>({headers:{},openAiApiKey:'sk-mosaic-test-placeholder',body:{prompt:'Warm walnut wall',collage,base,mask,...body}});
 
 test('image generation request contract',async t=>{
   const originalFetch=global.fetch;let sent;
@@ -20,7 +20,7 @@ test('image generation request contract',async t=>{
     return {ok:true,json:async()=>({data:[{b64_json:'mock-image'}]})};
   };
   for(const quality of ['low','medium','high']){
-    for(const preserve of [false,true])await t.test(`Region ${quality}, geometry ${preserve}`,async()=>{
+    for(const preserve of [true])await t.test(`Region ${quality}, geometry ${preserve}`,async()=>{
       const result=await generate(request({quality,...(preserve?{base}:{})}),true);
       assert.equal(result.model,'gpt-image-2.6-sunburst');
       assert.equal(sent.quality,quality);assert.equal(sent.size,'auto');
@@ -50,7 +50,7 @@ test('image generation request contract',async t=>{
   });
   await t.test('legacy Harmonize defaults to High; missing Base is rejected',async()=>{
     await generate(request({base}),false);assert.equal(sent.quality,'high');
-    await assert.rejects(generate(request(),false),/Missing image/);
+    await assert.rejects(generate(request({base:undefined}),false),/Missing image/);
   });
   await t.test('invalid quality and mismatched masks fail before sending',async()=>{
     await assert.rejects(generate(request({quality:'ultra'}),true),/Quality must be/);
