@@ -678,7 +678,7 @@ function escapeHTML(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':
 const optionThumbCache=new WeakMap();
 function cutoutThumbnail(image,mask){
   if(!image||!mask)return '';
-  const b=exactMaskBoundingBox(mask);if(!b)return '';
+  const b=maskBoundingBox(mask);if(!b)return '';
   const width=52,height=42,pad=3,scale=Math.min((width-pad*2)/b.w,(height-pad*2)/b.h);
   const dw=b.w*scale,dh=b.h*scale,dx=(width-dw)/2,dy=(height-dh)/2;
   const thumb=makeCanvas(width,height),t=thumb.getContext('2d');
@@ -704,10 +704,9 @@ function patchThumbnail(patch){
   return data;
 }
 function groupThumbnail(group){
-  const active=state.patches.get(group.active),fallback=state.patches.get(group.patchIds.at(-1));
-  const patch=active||fallback;
-  if(patch){
-    const url=patchThumbnail(patch);
+  const active=state.patches.get(group.active);
+  if(active){
+    const url=patchThumbnail(active);
     if(url)return url;
   }
   return cutoutThumbnail(state.master,groupMask(group));
