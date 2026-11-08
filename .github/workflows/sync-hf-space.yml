@@ -25,7 +25,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Upload only the SAM 3 Space files
+      - name: Upload SAM 3 app and dependencies (preserve HF Space README and hardware settings)
         env:
           HF_SPACE_WRITE_TOKEN: ${{ secrets.HF_SPACE_WRITE_TOKEN }}
           GITHUB_SHA: ${{ github.sha }}
@@ -42,7 +42,7 @@ jobs:
           from huggingface_hub import HfApi
 
           folder = Path("integrations/hf-sam3-space")
-          required = ["app.py", "requirements.txt", "README.md"]
+          required = ["app.py", "requirements.txt"]
           missing = [name for name in required if not (folder / name).is_file()]
           if missing:
               raise SystemExit("Missing Space files: " + ", ".join(missing))
