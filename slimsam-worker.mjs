@@ -3,7 +3,7 @@
 // jsDelivr hosts Transformers.js v3.8.1. Browser's WASM runtime performs inference.
 import {selectSlimMask} from './slimsam-mask-utils.mjs';
 
-const CDN = 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.8.1';
+const CDN = 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.8.1/+esm';
 const MODEL = 'Xenova/slimsam-77-uniform';
 let loader = null, model = null, processor = null, Tensor = null, RawImage = null;
 let embedding = null, imageWidth = 0, imageHeight = 0, imageFingerprint = '';
@@ -20,7 +20,7 @@ async function loadModel() {
       RawImage = hf.RawImage;
       hf.env.allowRemoteModels = true;
       hf.env.allowLocalModels = false;
-      if (hf.env?.backends?.onnx?.wasm) hf.env.backends.onnx.wasm.numThreads = 2;
+      if (hf.env?.backends?.onnx?.wasm) hf.env.backends.onnx.wasm.numThreads = 1;
       const opts = {
         dtype:'q8',
         progress_callback: info => {
