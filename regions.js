@@ -158,7 +158,13 @@ function handleGroupEvent(e){
     }
     return true;
   }
-  if(e.target.closest('.group-head')){core.hideQuickPrompt();selectGroupMask(group);return true}
+  if(e.target.closest('.group-head')){
+    const append=e.ctrlKey||e.metaKey;
+    core.hideQuickPrompt();
+    selectGroupMask(group,{append,showOutline:append});
+    if(append)core.showQuickPrompt();
+    return true;
+  }
   return false;
 }
 list.addEventListener('contextmenu',event=>{
@@ -213,7 +219,11 @@ list.addEventListener('change',e=>{
 list.addEventListener('keydown',e=>{
   if(e.target.classList.contains('group-head')&&(e.key==='Enter'||e.key===' ')){
     e.preventDefault();const group=state.groups.find(g=>g.id===e.target.dataset.group);
-    if(group)selectGroupMask(group);
+    if(group){
+      const append=e.ctrlKey||e.metaKey;
+      selectGroupMask(group,{append,showOutline:append});
+      if(append)core.showQuickPrompt();
+    }
   }
 });
 function clearHover(){
@@ -223,7 +233,7 @@ function clearHover(){
 }
 function onPointerMove(e){
   if(!state.master||state.busy||state.before||state.drawing||state.transformDrag||state.maskVertexDrag||state.maskMoveDrag||
-    state.panAnchor||window.MosaicSourceEditor?.isEditing()||state.tool!=='select'||window.MosaicPremium?.isPreviewing()||e.pointerType==='touch'){
+    state.panAnchor||window.MosaicSourceEditor?.isEditing()||state.tool!=='select'||state.selectionOverlayHidden||window.MosaicPremium?.isPreviewing()||e.pointerType==='touch'){
     clearHover();return;
   }
   const rect=overlay.getBoundingClientRect(),v=viewport.getBoundingClientRect();
