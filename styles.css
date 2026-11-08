@@ -137,11 +137,6 @@
 .canvas-viewport:has(.canvas-wrap.pan:active){cursor:grabbing}
 .canvas-wrap.brush #overlayCanvas,.canvas-wrap.eraser #overlayCanvas{cursor:crosshair}
 .canvas-wrap.transform #overlayCanvas{cursor:move}
-.wand-options{display:flex;align-items:center;gap:7px;color:#c4c5d1;font-size:11px;white-space:nowrap;flex:none}
-.wand-options input{width:76px;accent-color:#a5a3ff}
-.wand-options output{min-width:19px;font-variant-numeric:tabular-nums}
-@media(max-width:730px){.wand-options{gap:3px}.wand-options input{width:52px}}
-
 /* V0.3 - simple, discoverable grouped tool bar */
 .tool-row{display:flex;align-items:center;gap:8px;min-height:64px;height:64px;padding:5px 11px;overflow:hidden}
 .toolbar-left{display:flex;align-items:center;gap:10px;min-width:0;flex:1;overflow-x:auto;scrollbar-width:thin;scrollbar-color:#343848 transparent}
@@ -819,11 +814,6 @@ body:has(.source-editor-active) .mask-edit-controls,body:has(.source-editor-acti
 /* AI Wand is opt-in; existing color flood fill remains the default. */
 .wand-context{display:flex;align-items:center;gap:8px;min-width:0;flex-wrap:wrap}
 .wand-engine-label{display:flex;align-items:center;gap:5px;color:#c4c5d1;font-size:11px;white-space:nowrap}
-#wandEngine{background:#21242d;color:#e8e7f7;border:1px solid #535362;border-radius:6px;padding:5px 6px;font:inherit;max-width:112px;cursor:pointer}
-#wandEngine:focus-visible{outline:2px solid #aa9cff;outline-offset:2px}
-.wand-ai-hint{font-size:10px;color:#bdb7f4;white-space:nowrap}
-@media(max-width:730px){.wand-context{gap:5px}.wand-engine-label{font-size:10px}#wandEngine{max-width:106px}}
-
 /* AI Auto Create is a temporary segmentation layer, never a persistent Group. */
 .inspector-bar .auto-create-groups{font-size:10px;white-space:nowrap;padding:6px 9px;line-height:1.2;border-radius:8px;letter-spacing:0;font-weight:700}
 .inspector-bar .auto-create-groups[aria-pressed="true"]{background:#332d48;color:#d9d1ff;border-color:#8170c0}
@@ -831,3 +821,22 @@ body:has(.source-editor-active) .mask-edit-controls,body:has(.source-editor-acti
 .canvas-wrap .auto-regions-overlay{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:4}
 .canvas-wrap .auto-regions-hint{position:absolute;z-index:5;padding:5px 8px;background:#1d1c2ee5;color:#f8f5ff;font-size:11px;font-weight:650;line-height:1.3;white-space:nowrap;border:1px solid #a990e94d;border-radius:7px;box-shadow:0 3px 12px #0004;pointer-events:none}
 .group-pending-options{display:block;font-size:11px;line-height:1.5;color:#8b8b9a;padding:9px 11px 13px}
+
+/* Wand is AI-only. SlimSAM runs client-side and previews a translucent purple
+   object mask only while the Wand tool is active. No overlay receives clicks. */
+.canvas-wrap .slimsam-hover-overlay{
+  position:absolute;inset:0;width:100%;height:100%;
+  z-index:4;pointer-events:none;image-rendering:auto
+}
+.wand-context .wand-engine-label{
+  display:inline-flex;align-items:center;gap:5px;white-space:nowrap;
+  font-weight:760;font-size:11px;color:#d5c9ff
+}
+.slimsam-wand-status{
+  display:inline-flex;align-items:center;max-width:285px;min-height:22px;
+  font-size:10px;color:#adb2c5;line-height:1.35;white-space:nowrap
+}
+.slimsam-wand-status.error{color:#ffb7ae}
+@media(max-width:730px){
+  .slimsam-wand-status{max-width:150px;white-space:normal}
+}
