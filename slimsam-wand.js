@@ -26,6 +26,9 @@ function updateStatus(text, isError = false) {
     status.classList.toggle('error', isError);
     status.title = isError ? text : 'SlimSAM model runs on your device — no masking API credits';
   }
+  const busy=!isError&&/download|loading|prepar|analyz|selecting|queued|initializ/i.test(text);
+  if(busy)window.MosaicMaskProgress?.show?.('wand','AI Wand · SlimSAM',text);
+  else window.MosaicMaskProgress?.hide?.('wand');
 }
 function clearHover() {
   if (hoverTimer) clearTimeout(hoverTimer);
@@ -39,6 +42,7 @@ function onToolChange(tool) {
   if (tool !== 'wand') {
     active = false; ready = false; pendingClick = null; inFlightHover = false;
     epoch++;clearHover();core.overlay.style.cursor = '';
+    window.MosaicMaskProgress?.hide?.('wand');
     return;
   }
   window.MosaicAutoRegions?.reset?.();
@@ -71,6 +75,7 @@ function onToolChange(tool) {
 function reset() {
   epoch++;active=false;ready=false;stopped=false;pendingClick=null;inFlightHover=false;
   clearHover();core.overlay.style.cursor='';
+  window.MosaicMaskProgress?.hide?.('wand');
   updateStatus('Hover to preview · click to select');
 }
 function ensureWorker() {
@@ -214,6 +219,7 @@ function onWorkerMessage(msg) {
     if(!click || click.id!==msg.id)return;
     pendingClick=null;
     if(!msg.mask){updateStatus('Object not found · try another spot');core.toast('Try clicking farther inside the object.');queueHover();return;}
+    window.MosaicMaskProgress?.hide?.('wand');
     commit(msg);
     return;
   }
