@@ -829,7 +829,6 @@ function maskPathsFromRaster(mask,points=[]){
   }
   return paths.filter(path=>path.length>=3);
 }
-}
 function setSelectionPaths(paths){
   state.selectionPaths=MaskGeometry.copyPaths(paths);state.selectionPoints=state.selectionPaths.flat();
   activeMaskVertex=null;hoverMaskEdge=null;maskEditVersion++;
