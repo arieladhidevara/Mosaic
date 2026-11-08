@@ -627,7 +627,7 @@ async function generateSelection(prompt,groupId=null,referenceFiles=[]){
   const savedMask=cloneCanvas(state.selectionMask),generation=state.selectionGeneration;
   const savedPoints=state.selectionPoints?.map(point=>({...point}))||[];
   const savedPaths=window.MozMaskGeometry.copyPaths(state.selectionPaths);
-  const requestedGroupId=groupId||(state.selectionTargetPatchId?state.draftGroupId:null);
+  const requestedGroupId=groupId||state.draftGroupId||null;
   try{
     const referenceImages=await prepareReferenceImages(referenceFiles);
     if(generation!==state.selectionGeneration){toast('The project changed. Please select the region again.');return}
