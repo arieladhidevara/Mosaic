@@ -251,7 +251,7 @@ function prepareSelectionGroup(){
   }
   renderGroups();
 }
-function assignGroup(patch,targetGroupId=state.selectionTargetPatchId?state.draftGroupId:null){
+function assignGroup(patch,targetGroupId=state.draftGroupId){
   let group=state.groups.find(g=>g.id===(patch.groupId||targetGroupId))||matchingGroup(patch.mask);
   const category=categoryFromText(patch.prompt);
   if(!group)group=newGroup(patch.mask,category||'Region');
