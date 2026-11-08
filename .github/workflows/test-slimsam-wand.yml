@@ -6,6 +6,9 @@ on:
       - 'index.html'
       - 'styles.css'
       - 'slimsam-*'
+      - 'auto-regions.js'
+      - 'regions.js'
+      - 'mask-progress.js'
       - 'tests/slimsam-wand.test.mjs'
       - 'package.json'
       - '.github/workflows/test-slimsam-wand.yml'
@@ -16,6 +19,9 @@ on:
       - 'index.html'
       - 'styles.css'
       - 'slimsam-*'
+      - 'auto-regions.js'
+      - 'regions.js'
+      - 'mask-progress.js'
       - 'tests/slimsam-wand.test.mjs'
       - 'package.json'
       - '.github/workflows/test-slimsam-wand.yml'
@@ -32,6 +38,10 @@ jobs:
           node --check slimsam-worker.mjs
           node --check slimsam-mask-utils.mjs
           node --check slimsam-wand.js
+          node --check app.js
+          node --check auto-regions.js
+          node --check regions.js
+          node --check mask-progress.js
       - name: Run mask and region unit tests
         run: node --test tests/slimsam-wand.test.mjs
       - name: Check frontend references and Color removal
@@ -45,4 +55,15 @@ jobs:
           if(html.includes('id="wandTolerance"') || html.includes('id="wandEngine"')) throw Error('Obsolete Color Wand UI');
           if(app.includes('applyMagicWand(')) throw Error('Obsolete Color Wand processor');
           if(!app.includes('applyWandMask(')) throw Error('SlimSAM does not commit masks to editor');
+          const auto = fs.readFileSync('auto-regions.js','utf8');
+          const regions = fs.readFileSync('regions.js','utf8');
+          const css = fs.readFileSync('styles.css','utf8');
+          if(!auto.includes('core.newGroup(fullMask)') || !auto.includes('core.matchingGroup(fullMask')) throw Error('SAM3 must create/reuse Groups immediately');
+          if(!auto.includes('MosaicMaskProgress?.show')) throw Error('SAM3 progress HUD missing');
+          if(!app.includes('selectionOverlayHidden') || !regions.includes('state.selectionOverlayHidden')) throw Error('Sidebar selection hide contract missing');
+          if(!app.includes('appendGroupSelection(group)')) throw Error('Ctrl multi-select missing');
+          if(!app.includes('group-cutout') || !app.includes('option-cutout')) throw Error('Transparent thumbnails missing');
+          if(!css.includes('.mask-progress-hud') || !html.includes('./mask-progress.js')) throw Error('Progress HUD not loaded');
+          if(!app.includes("tc.filter='blur(1.4px)'")) throw Error('Cutout-only feather missing');
+
           NODE
