@@ -184,7 +184,7 @@ async function start() {
       const ctx=fullMask.getContext('2d');
       ctx.imageSmoothingEnabled=false;
       ctx.drawImage(smallMask,0,0,sourceCanvas.width,sourceCanvas.height);
-      let group=core.matchingGroup(fullMask);
+      let group=core.matchingGroup(fullMask,.70);
       if(group)reused++;
       else{
         group=core.newGroup(fullMask);
