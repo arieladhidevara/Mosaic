@@ -27,6 +27,7 @@ test('parses queued Gradio completion as PNG data URI',()=>{
   assert.equal(parseCompleteEvent(s),'data:image/png;base64,AAAA');
   assert.throws(()=>parseCompleteEvent('event: error\ndata: null\n\n'),/failed/);
   assert.throws(()=>parseCompleteEvent('event: error\ndata: {"error":"You have exceeded your ZeroGPU quota"}\n\n'),error=>error.status===429&&error.code==='SAM3_QUOTA');
+  assert.throws(()=>parseCompleteEvent('event: error\ndata: {"error":"You have exceeded your ZeroGPU runs limit.","title":"ZeroGPU quota exceeded"}\n\n'),error=>error.status===429&&error.code==='SAM3_QUOTA');
 });
 
 test('SAM3 performs exactly two calls to fixed Space endpoint',async()=>{
