@@ -129,7 +129,9 @@ def segment_object(image_data_uri: str, label: str, left: float, top: float, rig
             stage = "box"
             result = processor.add_geometric_prompt([(left+right)/2/w, (top+bottom)/2/h, (right-left)/w, (bottom-top)/h], True, state)
         stage = "validate"
-        binary = choose_object_mask(result["masks"].detach().cpu().numpy(), result["scores"].detach().cpu().numpy(), (left, top, right, bottom))
+        # ZeroGPU inference may produce bfloat16 scores. NumPy cannot consume
+        # bfloat16 tensors directly; normalize both outputs before validation.
+        binary = choose_object_mask(result["masks"].detach().float().cpu().numpy(), result["scores"].detach().float().cpu().numpy(), (left, top, right, bottom))
         rgba = np.full((h, w, 4), 255, dtype=np.uint8)
         rgba[:, :, 3] = binary.astype(np.uint8) * 255
         out = io.BytesIO()
