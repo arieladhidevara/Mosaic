@@ -79,6 +79,7 @@ function revealMaster(previous){
 }
 function beginAIProgress(label,detail='Preparing request…',target={scope:'master'}){
   const id=String(++aiProgressSerial),patch=target.patchId?state.patches.get(target.patchId):null;
+  const owner='generation:'+id;
   let item,percent,track,fill,description;
   if(!patch){
     item=document.createElement('section');const title=document.createElement('strong');percent=document.createElement('span');
@@ -95,7 +96,12 @@ function beginAIProgress(label,detail='Preparing request…',target={scope:'mast
   let value=6,settled=false,currentDetail=detail;
   const set=(next,nextDetail,status='')=>{
     value=Math.max(value,Math.min(100,Math.round(next)));if(nextDetail)currentDetail=nextDetail;
-    if(patch){patch.aiProgress={id,label,detail:currentDetail,value,status};renderGroups();return}
+    if(patch){
+      patch.aiProgress={id,label,detail:currentDetail,value,status};
+      if(status)window.MosaicMaskProgress?.hide(owner);
+      else window.MosaicMaskProgress?.show(owner,label,currentDetail);
+      renderGroups();return;
+    }
     item.classList.toggle('success',status==='success');item.classList.toggle('error',status==='error');
     fill.style.width=value+'%';percent.textContent=value+'%';description.textContent=currentDetail;track.setAttribute('aria-valuenow',String(value));
   };
@@ -108,7 +114,7 @@ function beginAIProgress(label,detail='Preparing request…',target={scope:'mast
       else item.remove();
     },target.scope==='canvas'&&kind==='success'?500:2600);
   };
-  return {update:(next,nextDetail)=>{if(!settled)set(next,nextDetail)},done:nextDetail=>finish('success',nextDetail||'Done.'),fail:nextDetail=>finish('error',nextDetail||'Failed.')};
+  return {highlight:mask=>window.MosaicMaskProgress?.highlight(owner,{mask}),update:(next,nextDetail)=>{if(!settled)set(next,nextDetail)},done:nextDetail=>finish('success',nextDetail||'Done.'),fail:nextDetail=>finish('error',nextDetail||'Failed.')};
 }
 const welcomeGenerateButton=$('welcomeBaseGenerateSubmit');
 welcomeGenerateButton.classList.remove('sr-only');welcomeGenerateButton.classList.add('welcome-prompt-generate-button');
@@ -380,7 +386,7 @@ function encodeRequest(prompt,patch=null,masterSource=null,extraReferences=[]){
 function regionalCropWindow(mask){
   const bounds=core.exactMaskBoundingBox(mask);
   if(!bounds)throw Error('Select a visible part of the image before generating.');
-  const context=Math.max(48,Math.ceil(Math.max(bounds.w,bounds.h)*.15));
+  const context=Math.max(96,Math.ceil(Math.max(bounds.w,bounds.h)*.40));
   const x=Math.max(0,Math.floor(bounds.x-context));
   const y=Math.max(0,Math.floor(bounds.y-context));
   const right=Math.min(canvas.width,Math.ceil(bounds.x+bounds.w+context));
@@ -408,7 +414,9 @@ function encodeRegionalCrop(patch){
   const visualMask=cloneCanvas(core.displayedPatchMask(patch));
   const region=regionalCropWindow(visualMask);
   const collage=currentComposite(),base=state.reference||premium.initialMaster||state.master;
+  const group=state.groups.find(group=>group.patchIds.includes(patch.id));
   for(const maxDimension of [1152,960,768]){
+    const contextScale=Math.min(1,maxDimension/Math.max(canvas.width,canvas.height));
     const scale=Math.max(128/Math.min(region.w,region.h),Math.min(1,maxDimension/Math.max(region.w,region.h)));
     const w=Math.max(128,Math.round(region.w*scale));
     const h=Math.max(128,Math.round(region.h*scale));
@@ -418,6 +426,9 @@ function encodeRegionalCrop(patch){
       quality:premium.settings.regionQuality,
       projectPrompt:premium.projectPrompt,
       prompt:patch.prompt,
+      targetObject:group?.manualName?group.name:(group?.category&&group.category!=='Region'?group.category:''),
+      crop:{x:region.x,y:region.y,width:region.w,height:region.h,imageWidth:canvas.width,imageHeight:canvas.height},
+      context:resizedFrame(collage,Math.max(128,Math.round(canvas.width*contextScale)),Math.max(128,Math.round(canvas.height*contextScale))),
       regions:annotationNotes(patch.id),
       references:patch.referenceImages||[]
     };
@@ -488,6 +499,7 @@ async function generateRegion(patchId,regenerate=false){
       progress.update(20,'Checking OpenAI connection…');
       if(!await window.MosaicAuth.ensure())throw Error('OpenAI API key entry canceled.');
       const {payload,region,visibleMask}=capture;
+      progress.highlight(visibleMask);
       message('Generating only the selected area with nearby architectural context…');
       progress.update(30,'OpenAI is generating the selected area…');
       const answer=await window.MosaicAuth.request('/api/ai/edit',payload);

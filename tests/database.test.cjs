@@ -9,6 +9,8 @@ test('Phase 2 migration and invitation security in PostgreSQL',async t=>{
   await pg.exec('create schema auth; create table auth.users(id uuid primary key,email text unique,email_confirmed_at timestamptz); create role anon; create role authenticated; create role service_role bypassrls;');
   const migration=await fs.readFile(path.resolve(__dirname,'../supabase/migrations/202611070001_phase2.sql'),'utf8');
   await pg.exec(migration);await pg.exec(migration);
+  const analyticsMigration=await fs.readFile(path.resolve(__dirname,'../supabase/migrations/202611080002_mask_usage_analytics.sql'),'utf8');
+  await pg.exec(analyticsMigration);await pg.exec(analyticsMigration);
   const ids={admin:randomUUID(),first:randomUUID(),second:randomUUID(),unconfirmed:randomUUID()};
   for(const [name,id] of Object.entries(ids))await pg.query('insert into auth.users values($1,$2,$3)',[id,name+'@example.com',name==='unconfirmed'?null:new Date()]);
   const scalar=async(sql,args=[])=>Object.values((await pg.query(sql,args)).rows[0])[0];
@@ -71,5 +73,21 @@ test('Phase 2 migration and invitation security in PostgreSQL',async t=>{
     const overview=await scalar('select public.mosaic_admin_overview($1)',['production']);assert.equal(overview.exports,1);assert.equal(overview.projects,1);assert.equal(overview.total_tokens,null);
     const preview=await scalar('select public.mosaic_admin_overview($1)',['preview']);assert.equal(preview.exports,0);assert.equal(preview.projects,0);
     await assert.rejects(()=>pg.query('select public.mosaic_record_event($1,$2,$3,$4,$5)',[randomUUID(),ids.first,'production',project,'FAKE_EVENT']),/check constraint/);
+  });
+  await t.test('tool and generation aggregates are private, scoped and preserve unknown costs',async()=>{
+    const project=await scalar('select id from public.mosaic_projects where user_id=$1 limit 1',[ids.first]);
+    for(const type of ['wand_used','wand_used','auto_create_used','mask_edited','selection_simplified'])
+      await pg.query('select public.mosaic_record_event($1,$2,$3,$4,$5)',[randomUUID(),ids.first,'production',project,type]);
+    for(const [operation,cost] of [['edit',.05],['harmonize',null]])await pg.query("insert into public.mosaic_generations(id,user_id,project_id,environment,operation,model,quality,preserve_original_geometry,status,estimated_cost_usd) values($1,$2,$3,'production',$4,'test','medium',true,'success',$5)",[randomUUID(),ids.first,project,operation,cost]);
+    const report=await scalar('select public.mosaic_admin_analytics($1,$2,$3)',['production',ids.first,project]);
+    assert.equal(report.summary.wand,2);assert.equal(report.summary.auto_create,1);assert.equal(report.summary.mask_edits,1);
+    assert.equal(report.summary.masking,1);assert.equal(report.summary.harmonize,1);assert.equal(report.summary.cost_records,1);assert.equal(report.summary.estimated_cost_usd,.05);
+    assert.equal(report.daily.length,30);assert.equal(report.daily.at(-1).wand,2);
+    const other=await scalar('select public.mosaic_admin_analytics($1,$2)',['production',ids.second]);assert.equal(other.summary.edits,0);assert.equal(other.summary.estimated_cost_usd,null);
+    const preview=await scalar('select public.mosaic_admin_analytics($1)',['preview']);assert.equal(preview.summary.wand,0);
+    for(const role of ['anon','authenticated']){
+      await pg.exec('set role '+role);
+      try{await assert.rejects(()=>pg.query("select public.mosaic_admin_analytics('production')"),/permission denied/)}finally{await pg.exec('reset role')}
+    }
   });
 });

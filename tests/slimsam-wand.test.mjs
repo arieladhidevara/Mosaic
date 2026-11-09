@@ -1,9 +1,33 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {readFile} from 'node:fs/promises';
+import vm from 'node:vm';
 import {contentDimensions,selectSlimMask} from '../slimsam-mask-utils.mjs';
 import {cleanAutoMask} from '../mask-cleanup.mjs';
 
 const size=256;
+test('an in-flight image analysis is reused when a newer tool request targets the same pixels',async()=>{
+  let encodes=0,release,started;
+  const gate=new Promise(resolve=>{release=resolve});
+  const encoding=new Promise(resolve=>{started=resolve});
+  const messages=[];
+  const model={get_image_embeddings:async()=>{encodes++;started();if(encodes===1)await gate;return {image_embeddings:'fixture'}}};
+  const context=vm.createContext({self:{postMessage:message=>messages.push(message)},hf:{
+    Tensor:class{},RawImage:class{},env:{},
+    SamModel:{from_pretrained:async()=>model},AutoProcessor:{from_pretrained:async()=>async()=>({})}
+  }});
+  const source=(await readFile(new URL('../slimsam-worker.mjs',import.meta.url),'utf8'))
+    .replace(/^import .*;\r?\n/m,'').replace('await import(CDN)','globalThis.hf');
+  vm.runInContext(source,context);
+  const prepare=(epoch,fingerprint)=>context.self.onmessage({data:{type:'prepare',epoch,fingerprint,width:2,height:2,pixels:new Uint8Array(16)}});
+  prepare(1,'same');await encoding;
+  prepare(2,'same');release();await vm.runInContext('jobs',context);
+  assert.equal(encodes,1);
+  assert(messages.some(message=>message.type==='ready'&&message.epoch===2&&message.reused));
+  assert(!messages.some(message=>message.type==='ready'&&message.epoch===1));
+  prepare(3,'changed');await vm.runInContext('jobs',context);
+  assert.equal(encodes,2,'Changed image must be reanalyzed');
+});
 const empty = () => new Float32Array(3*size*size).fill(-1);
 const paint = (logits, index, x1,y1,x2,y2) => {
   for(let y=y1;y<y2;y++)for(let x=x1;x<x2;x++)logits[index*size*size+y*size+x]=2;

@@ -36,7 +36,7 @@ window.runMosaicBrowserChecks=async function(){
     for(const quality of ['low','medium','high'])for(const preserve of [false,true]){
       initialize();set('regionRenderQuality',quality);set('preserveOriginalGeometry',preserve);
       const before=pixels(),mask=state.selectionMask,bounds=core.exactMaskBoundingBox(mask);
-      const padding=Math.max(48,Math.ceil(Math.max(bounds.w,bounds.h)*.15));
+      const padding=Math.max(96,Math.ceil(Math.max(bounds.w,bounds.h)*.40));
       const crop={x:Math.max(0,bounds.x-padding),y:Math.max(0,bounds.y-padding),right:Math.min(canvas.width,bounds.x+bounds.w+padding),bottom:Math.min(canvas.height,bounds.y+bounds.h+padding)};
       const tool=state.tool,points=JSON.stringify(state.selectionPoints);
       await ai.generateSelection('Make this wall red');
@@ -47,7 +47,7 @@ window.runMosaicBrowserChecks=async function(){
       assert(('base' in sent.body)===preserve,'Geometry toggle did not control Base');
       assert(!('guide' in sent.body),'Region Guide still sent');
       const input=await image(sent.body.collage),editMask=await image(sent.body.mask);
-      assert(input.width===crop.right-crop.x&&input.height===crop.bottom-crop.y,'Crop did not use exact bounds plus 15% padding');
+      assert(input.width===crop.right-crop.x&&input.height===crop.bottom-crop.y,'Crop did not use exact bounds plus 40% padding');
       assert(input.width===editMask.width&&input.height===editMask.height,'Mask and collage dimensions differ');
       if(preserve){const reference=await image(sent.body.base);assert(Math.abs(reference.width/reference.height-1.5)<.005,'Base was cropped or distorted')}
       const mc=makeCanvas(editMask.width,editMask.height);mc.getContext('2d').drawImage(editMask,0,0);
@@ -113,12 +113,12 @@ window.runMosaicBrowserChecks=async function(){
     state.pendingSourceId=null;core.resetSelection();
     assert(edgeGroup.active===edgePatch.id,'Deselecting hid an approved option');
     checks.push('Outside clicks: deselect mask and handles, preserve saved pixels/layers, reselect inside, ignore viewport padding, protect unfinished imports');
-    // A tiny edge selection exercises the 48px minimum and canvas clipping.
+    // A tiny edge selection exercises the 96px minimum and canvas clipping.
     initialize();core.resetSelection();state.selectionMask.getContext('2d').fillRect(0,0,8,10);core.updateSelectionOutline();
     await ai.generateSelection('Tiny red corner');await wait(finished,'edge selection');
     let sent=requests.filter(r=>r.path==='/api/ai/edit').at(-1),input=await image(sent.body.collage);
-    assert(Math.abs(input.width/input.height-56/58)<.015,'Minimum padding or proportional scaling is wrong');
-    checks.push('Edge crop: 48px minimum padding, proportional resizing, canvas clipping');
+    assert(Math.abs(input.width/input.height-104/106)<.015,'Minimum padding or proportional scaling is wrong');
+    checks.push('Edge crop: 96px minimum padding, proportional resizing, canvas clipping');
     // Regenerate an already transformed patch and move it while queued.
     initialize();core.resetSelection();
     const mask=makeCanvas(canvas.width,canvas.height),m=mask.getContext('2d');m.fillStyle='#fff';m.fillRect(200,200,300,180);

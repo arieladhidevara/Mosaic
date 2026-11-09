@@ -27,6 +27,7 @@ const publicFiles = new Set([
   'index.html',
   'privacy.html',
   'terms.html',
+  'legal.css',
   'styles.css',
   'auth.js',
   'key-vault.js',
@@ -41,11 +42,13 @@ const publicFiles = new Set([
   'auth-callback.html',
   'auth-callback.js',
   'assets/atelier.svg',
+  'assets/mozai-homepage-demo.mov',
   'admin.html',
   'admin.js',
   'admin.css',
   'app.js',
   'mask-geometry.js',
+  'mask-feather.js',
   // Keep the local origin in sync with the production editor module graph.
   // Module workers require explicit allowlisting and JavaScript MIME types.
   'mask-progress.js',
@@ -68,6 +71,7 @@ const contentTypes = {
   '.js': 'text/javascript; charset=utf-8',
   '.mjs': 'text/javascript; charset=utf-8',
   '.svg': 'image/svg+xml; charset=utf-8',
+  '.mov': 'video/quicktime',
 };
 
 function jsonResponse(res) {
@@ -139,7 +143,8 @@ function serveStatic(req, res, pathname) {
     return;
   }
 
-  const fileName = pathname === '/' ? 'index.html' : pathname==='/admin'||pathname==='/admin/'?'admin.html':pathname.slice(1);
+  const cleanPage = pathname.match(/^\/(admin|privacy|terms)\/?$/);
+  const fileName = pathname === '/' ? 'index.html' : cleanPage ? `${cleanPage[1]}.html` : pathname.slice(1);
   if (!publicFiles.has(fileName)) {
     res.statusCode = 404;
     res.end('Not found');

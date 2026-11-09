@@ -83,7 +83,7 @@ limit BYOK generation when depleted. See [onboarding setup](docs/onboarding.md).
 1. Upload **Base**. A compact prompt bar appears under Base: type the first prompt and press **Enter** to generate a Master, or click the image icon to attach up to 3 visual references. Paste (Ctrl/Cmd+V) or drag image references into the bar too; small thumbnails appear only when attached. Alternatively upload Master manually. Base remains the camera/geometry reference.
 2. Draw a Line, Rectangle or Oval selection, click **Area**, and enter the instruction for that region. Each requested area receives a new colored contour and numbered label. Multiple areas can have different prompts.
 2a. **Generate Master from Base** uses **high** image quality for a full-resolution first Master; **Advanced Settings** provides Low / Medium / High quality for **AI Edit** (default Medium) and **Harmonize** (default High). Preferences are saved in each `.moz` project; older projects use these defaults.
-3. **AI Edit** crops the exact selected mask bounds with 15% padding based on the longest dimension (minimum 48px per side), clipped to the canvas edges. It sends the proportional cropped collage and transparent edit mask, prompt notes and any attached user references. **Preserve Original Geometry** defaults to Off; enable it to include the full original Base as an extra geometry reference. Colored Region Guide images are never sent to OpenAI. Output uses the model's supported `auto` size and is fitted back to the captured crop window.
+3. **AI Edit** crops the selected mask bounds with 40% context padding based on the longest dimension (minimum 96px per side), clipped to the canvas edges. It sends the proportional collage crop and transparent mask, the full current composition as scene context, original Base geometry, crop coordinates, the Group's object description, prompt notes and any attached references. Material changes preserve the selected object's identity and details (for example a door's frame and hardware), rather than requesting a material swatch. Colored Region Guide images are never sent to OpenAI. Output uses the model's supported `auto` size and is fitted back to the captured crop window, then clipped to the exact submitted mask.
 4. The returned **crop-only output** is resized to the original crop window and composited into the correct position on a transparent full-size working layer. The original selection mask limits the applied pixels; all pixels outside the selected area remain unchanged. Use **✦ Regen** on an option to retry or regenerate; this does not erase the approved option if generation fails.
 5. **Harmonize** sends the full approved collage and Base (no local crop) at the selected Harmonize quality to produce a new full Master. Base is always included, regardless of the geometry toggle. The Groups panel retains prior alternatives, and Master 2/3/etc. appear in the Master Versions browser. Previous editable snapshots remain in memory for branching.
 
@@ -103,6 +103,8 @@ API-generated images are not perfectly geometry-constrained; masking guarantees 
 
 ## Move & Skew layers
 
+Patch edges use an inward alpha feather: image texture stays sharp, the editable mask stays unchanged, and pixels outside the mask are preserved. Selection outlines remain fully opaque black/white. Click **Simplify** beside Clear selection to straighten noisy edges; Undo restores the previous mask. Wand hover previews use a translucent fill without an outline.
+
 Click an existing region or variation in **Layers** to select it. mozAI activates **Move / Skew** on the canvas:
 
 - Drag inside the outlined mask to move the mask and image together.
@@ -114,6 +116,10 @@ Click an existing region or variation in **Layers** to select it. mozAI activate
 The original Base geometry is preserved separately from the working Master.
 
 ## Non-blocking AI generation and masking
+
+Regional generation displays persistent progress and a purple/white shimmer clipped to the submitted mask, even before its new Option appears. Wand analyzes the approved image as soon as it is ready; switching selection tools reuses that analysis. Changed composition pixels trigger fresh analysis. Auto Create also caches its region map for unchanged pixels and shares those detected object masks with Wand.
+
+For an isolated browser regression check, inject `tests/mask-worker-fixture.js` before modules by setting `MOSAIC_BROWSER_INIT_SCRIPT=mask-worker-fixture.js`, then run `python tests/browser-runner.py mask-workflow-scenarios.js runMaskWorkflowChecks` against the local test server and test Chrome described in that runner. This uses fixture generation/segmentation and does not assess live image quality.
 
 - The quick selection prompt's **+ Reference image** and the per-Group inline **+ Ref** controls are explicit buttons that open a native file picker. Both also support pasted images and drag/drop directly into the prompt.
 - Canvas pointer events do not intercept clicks inside the floating prompt, so opening the picker or typing cannot dismiss it.
@@ -177,6 +183,10 @@ Browser regression scripts: `tests/workspace-scenarios.js` covers the pointer, L
 - `tests/hover-group-scenarios.js` / `await runHoverGroupChecks()` verifies Select hover, sharp SVG contours, exact 85% two-way grouping at native resolution, no empty draft Groups, and repeated generation as alternatives.
 
 ## Phase 2 accounts and local development
+
+The admin Overview and per-user/project pages include action breakdowns and 30-day UTC graphs for generations, tool activity and known estimated API cost. **Wand** counts successful object selections (not hovers); **Auto Create** counts valid user runs, including cached runs; **Mask adjustments** counts completed brush/point/selection adjustments and Simplify actions. AI mask edits, Master and Harmonize counts come from server generation records. Old tool actions cannot be reconstructed. Dollar estimates sum only provider-reported usage; unavailable cost data is shown as unknown.
+
+Production tool tracking and aggregate RPCs require [the analytics migration](supabase/migrations/202611080002_mask_usage_analytics.sql) in the linked Supabase database. The admin portal falls back to existing metadata queries before that migration is applied; local development stores the same event types in its isolated file store.
 
 See [the complete Vercel + Supabase setup guide](docs/phase2-setup.md). Use `npm run dev:local` for loopback-only automatic login as `dev@mosaic.local`, `npm run dev:login` for real Supabase login, and `npm run dev:reset` to reset only isolated local test data. `/admin` uses the same application session. All AI operations still require your own OpenAI key. `npm test` includes auth/security and in-memory PostgreSQL migration tests.
 

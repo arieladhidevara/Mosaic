@@ -15,13 +15,13 @@ shimmer.className='mask-processing-shimmer hidden';
 shimmer.setAttribute('aria-hidden','true');
 canvasWrap.append(shimmer);
 const jobs=new Map();
-const priority={preload:0,wand:1,auto:2};
-let glowOwner=null;
+const priority=owner=>owner.startsWith('generation:')?3:({preload:0,image:0,wand:1,auto:2}[owner]??0);
+const highlights=new Map();
 
 function drawProgress(){
   if(!jobs.size){hud.classList.add('hidden');return}
   const entries=[...jobs.entries()];
-  entries.sort(([a],[b])=>(priority[b]??0)-(priority[a]??0));
+  entries.sort(([a],[b])=>priority(b)-priority(a));
   const [,entry]=entries[0];
   hud.classList.remove('hidden');
   document.getElementById('maskProgressTitle').textContent=entry.title;
@@ -47,11 +47,17 @@ function show(owner,title,detail,percent=null){
 }
 function hide(owner){
   if(owner)jobs.delete(owner);else jobs.clear();
-  if(!owner||owner===glowOwner)clearHighlight(owner);
+  clearHighlight(owner);
   drawProgress();
 }
 function highlight(owner,{mask=null,point=null,whole=false}={}){
-  glowOwner=owner;
+  highlights.set(owner,{mask,point,whole});
+  drawHighlight();
+}
+function drawHighlight(){
+  const next=[...highlights.entries()].sort(([a],[b])=>priority(b)-priority(a))[0];
+  if(!next){shimmer.classList.add('hidden');return}
+  const {mask,point,whole}=next[1];
   shimmer.classList.remove('hidden');
   shimmer.style.webkitMaskImage='';
   shimmer.style.maskImage='';
@@ -68,8 +74,8 @@ function highlight(owner,{mask=null,point=null,whole=false}={}){
   }
 }
 function clearHighlight(owner){
-  if(owner&&glowOwner!==owner)return;
-  glowOwner=null;shimmer.classList.add('hidden');
+  if(owner)highlights.delete(owner);else highlights.clear();
   shimmer.style.maskImage='';shimmer.style.webkitMaskImage='';
+  drawHighlight();
 }
 window.MosaicMaskProgress={show,hide,highlight,clearHighlight};

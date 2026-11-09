@@ -105,5 +105,5 @@
     }
     return paths;
   }
-  return {copyPaths,closestEdge,moveVertex,insertVertex,removeVertex,traceMask,contains,triangulate};
+  return {copyPaths,closestEdge,moveVertex,insertVertex,removeVertex,traceMask,contains,triangulate,simplify};
 });

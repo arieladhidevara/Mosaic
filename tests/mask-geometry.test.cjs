@@ -2,6 +2,12 @@ const {test}=require('node:test');
 const assert=require('node:assert/strict');
 const geometry=require('../mask-geometry');
 const square=[[{x:10,y:10},{x:110,y:10},{x:110,y:90},{x:10,y:90}]];
+test('simplification straightens noisy edges and retains corners without changing its input',()=>{
+  const path=[{x:0,y:0},...Array.from({length:19},(_,i)=>({x:(i+1)*5,y:i%2?1:-1})),{x:100,y:0},{x:100,y:100},{x:0,y:100}];
+  const original=JSON.stringify(path),simple=geometry.simplify(path,2);
+  assert.equal(simple.length,4);assert(simple.some(p=>p.x===100&&p.y===100));assert.equal(JSON.stringify(path),original);
+  assert.equal(geometry.simplify([{x:1,y:1},{x:2,y:1},{x:2,y:2}],10).length,3);
+});
 test('moving one point keeps every other point fixed and leaves the input untouched',()=>{
   const moved=geometry.moveVertex(square,0,1,{x:125,y:28});
   assert.deepEqual(moved[0][1],{x:125,y:28});

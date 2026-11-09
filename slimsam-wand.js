@@ -18,6 +18,7 @@ let worker = null, active = false, ready = false, epoch = 0, requestSerial = 0;
 let encodedWidth = 0, encodedHeight = 0, pendingHover = null;
 let inFlightHover = false, lastHoverPoint = null, lastPreview = null, pendingClick = null;
 let hoverTimer = null, stopped = false, modelPreloaded = false, preloadStarted = false;
+let prepareTimer=null, imageFingerprint='', lastHoverId=0;
 const MIN_HOVER_DELTA = 14;
 
 function updateStatus(text, isError = false) {
@@ -36,6 +37,7 @@ function clearHover() {
   pendingHover = null;
   lastHoverPoint = null;
   lastPreview = null;
+  lastHoverId=0;
   previewCtx.clearRect(0, 0, previewCanvas.width, previewCanvas.height);
 }
 function preload(){
@@ -53,42 +55,59 @@ function preload(){
 }
 function onToolChange(tool) {
   if (tool !== 'wand') {
-    active = false; ready = false; pendingClick = null; inFlightHover = false;
-    epoch++;clearHover();core.overlay.style.cursor = '';
+    active = false; pendingClick = null; inFlightHover = false;
+    clearHover();core.overlay.style.cursor = '';
     window.MosaicMaskProgress?.hide?.('wand');
     return;
   }
   window.MosaicAutoRegions?.reset?.();
   if (!core.state.master || active) return;
-  active = true;ready = false;stopped = false;
-  const version = ++epoch;
+  active = true;stopped = false;
   pendingClick = null;inFlightHover = false;clearHover();
-  updateStatus(modelPreloaded?'Preparing image for masking…':'Loading segmentation model…');
+  prepareImage();
+  updateStatus(ready?'Hover object · click to select':'Analyzing image once · selection queued…');
+}
+function imageFrame(){
+  if(!core.state.master)return null;
+  const source=core.composeApprovedCanvas();
+  const scale=Math.min(1,1024/Math.max(source.width,source.height));
+  const width=Math.max(1,Math.round(source.width*scale)),height=Math.max(1,Math.round(source.height*scale));
+  const sample=core.makeCanvas(width,height),ctx=sample.getContext('2d',{willReadFrequently:true});
+  ctx.drawImage(source,0,0,width,height);
+  const pixels=ctx.getImageData(0,0,width,height).data;
+  let hash=2166136261;
+  for(const pixel of new Uint32Array(pixels.buffer))hash=Math.imul(hash^pixel,16777619)>>>0;
+  return {width,height,pixels,fingerprint:[width,height,hash.toString(16)].join(':')};
+}
+function prepareImage(){
+  if(prepareTimer)clearTimeout(prepareTimer);
+  prepareTimer=null;
+  const frame=imageFrame();
+  if(!frame||frame.fingerprint===imageFingerprint)return;
+  imageFingerprint=frame.fingerprint;ready=false;stopped=false;
+  const version=++epoch;
+  pendingClick=null;inFlightHover=false;clearHover();
   ensureWorker();
-  core.render();
-  const scale = Math.min(1, 1024 / Math.max(core.canvas.width, core.canvas.height));
-  encodedWidth = Math.max(1, Math.round(core.canvas.width * scale));
-  encodedHeight = Math.max(1, Math.round(core.canvas.height * scale));
-  const sample = core.makeCanvas(encodedWidth, encodedHeight);
-  const ctx = sample.getContext('2d', {willReadFrequently:true});
-  ctx.drawImage(core.canvas,0,0,encodedWidth,encodedHeight);
-  const pixels = ctx.getImageData(0,0,encodedWidth,encodedHeight).data;
-  // A deterministic sampled fingerprint avoids re-encoding an unchanged image
-  // when the user returns to Wand, without retaining the large RGBA buffer.
-  let hash = 2166136261;
-  for (let i = 0; i < pixels.length; i += 97) {
-    hash = Math.imul(hash ^ pixels[i], 16777619) >>> 0;
-  }
-  const fingerprint = [encodedWidth,encodedHeight,hash.toString(16)].join(':');
+  encodedWidth=frame.width;encodedHeight=frame.height;
+  const {fingerprint,pixels}=frame;
+  window.MosaicMaskProgress?.show('image','Preparing image','Analyzing this image once for object selection…');
   worker.postMessage({
     type:'prepare',epoch:version,width:encodedWidth,height:encodedHeight,
     fingerprint,pixels
   }, [pixels.buffer]);
 }
+function imageChanged(){
+  if(prepareTimer)clearTimeout(prepareTimer);
+  prepareTimer=setTimeout(prepareImage,250);
+}
 function reset() {
   epoch++;active=false;ready=false;stopped=false;pendingClick=null;inFlightHover=false;
+  imageFingerprint='';
+  if(prepareTimer)clearTimeout(prepareTimer);
+  prepareTimer=null;
   clearHover();core.overlay.style.cursor='';
   window.MosaicMaskProgress?.hide?.('wand');
+  window.MosaicMaskProgress?.hide?.('image');
   updateStatus('Hover to preview · click to select');
 }
 function ensureWorker() {
@@ -96,10 +115,11 @@ function ensureWorker() {
   worker = new Worker(new URL('./slimsam-worker.mjs', import.meta.url), {type:'module'});
   worker.addEventListener('message', event => onWorkerMessage(event.data));
   worker.addEventListener('error', event => {
-    if (!active) return;
-    ready=false;stopped=true;pendingClick=null;
+    ready=false;stopped=true;pendingClick=null;imageFingerprint='';preloadStarted=false;
     clearHover();
     window.MosaicMaskProgress?.hide?.('preload');
+    window.MosaicMaskProgress?.hide?.('image');
+    if (!active) return;
     const error = 'Wand model could not load. Check your connection and browser storage.';
     updateStatus(error,true);core.toast(error);
   });
@@ -119,6 +139,7 @@ function sendInfer(point, click=false) {
   const source=scaledPoint(point), id=++requestSerial;
   worker.postMessage({type:'infer',epoch,id,click,x:source.x,y:source.y});
   if(!click){
+    lastHoverId=id;
     inFlightHover=true;
     lastHoverPoint={...point};
     if(!lastPreview){
@@ -147,6 +168,8 @@ function hoverAt(point) {
   if (!active || stopped) return;
   if (!inside(point)) {leave();return;}
   pendingHover={...point};
+  const cached=window.MosaicAutoRegions?.maskAt?.(point,imageFingerprint);
+  if(cached){preview(cached,point);return}
   if(lastPreview && distance(point,lastPreview.point)>24){
     lastPreview=null;
     previewCtx.clearRect(0,0,previewCanvas.width,previewCanvas.height);
@@ -180,11 +203,9 @@ function preview(result, point) {
   for(let y=0;y<height;y++)for(let x=0;x<width;x++){
     const i=y*width+x;
     if(!mask[i])continue;
-    const edge=x===0||y===0||x===width-1||y===height-1||
-      !mask[i-1]||!mask[i+1]||!mask[i-width]||!mask[i+width];
     const o=i*4;
     pixels.data[o]=154;pixels.data[o+1]=104;pixels.data[o+2]=245;
-    pixels.data[o+3]=edge?210:76;
+    pixels.data[o+3]=90;
   }
   previewCtx.putImageData(pixels,0,0);
   lastPreview={...result,point:{...point}};
@@ -194,10 +215,12 @@ function commit(result) {
   if(!active||!result?.mask)return;
   if(core.state.tool!=='wand')return;
   createMaskCanvas(result,selectionCtx,selectionPreview);
-  core.applyWandMask(selectionPreview,result.coverage);
+  if(core.applyWandMask(selectionPreview,result.coverage))void window.MosaicAccount?.track('wand_used');
 }
 function selectAt(point) {
   if(!active||stopped||!inside(point))return;
+  const cached=window.MosaicAutoRegions?.maskAt?.(point,imageFingerprint);
+  if(cached){commit(cached);return}
   if(lastPreview && distance(point,lastPreview.point)<=24){
     commit(lastPreview);return;
   }
@@ -218,7 +241,10 @@ function onWorkerMessage(msg) {
       }
       if(active)window.MosaicMaskProgress?.show?.('wand','Wand · AI Mask',detail,
         Number.isFinite(msg.percent)?msg.percent:null);
-    }else if(active && msg.epoch===epoch)updateStatus(msg.status);
+    }else if(msg.epoch===epoch){
+      window.MosaicMaskProgress?.show('image','Preparing image',msg.status);
+      if(active)updateStatus(msg.status);
+    }
     return;
   }
   if(msg.type==='preloaded'){
@@ -232,15 +258,21 @@ function onWorkerMessage(msg) {
     if(active)updateStatus('Unable to download mask model.',true);
     return;
   }
-  if(msg.epoch!==epoch || !active)return;
+  if(msg.epoch!==epoch)return;
   if(msg.type==='ready'){
     ready=true;stopped=false;
+    window.MosaicMaskProgress?.hide?.('image');
     window.MosaicMaskProgress?.hide?.('preload');
     updateStatus('Hover object · click to select');
     if(pendingClick && pendingClick.id===null)sendInfer(pendingClick.point,true);
     else queueHover();
     return;
   }
+  if(msg.type==='error'&&msg.stage==='prepare'){
+    ready=false;stopped=true;imageFingerprint='';
+    window.MosaicMaskProgress?.hide?.('image');
+  }
+  if(!active)return;
   if(msg.type==='error'){
     if(msg.stage==='infer' && !msg.click)inFlightHover=false;
     if(msg.stage==='infer' && msg.click)pendingClick=null;
@@ -254,6 +286,7 @@ function onWorkerMessage(msg) {
     return;
   }
   if(msg.type!=='mask')return;
+  if(!msg.click&&msg.id!==lastHoverId)return;
   if(msg.click){
     const click = pendingClick;
     if(!click || click.id!==msg.id)return;
@@ -278,6 +311,6 @@ function onWorkerMessage(msg) {
   if(distance(point,pendingHover)>=MIN_HOVER_DELTA)queueHover();
 }
 
-window.MosaicSlimWand = {onToolChange,hoverAt,selectAt,reset,leave,preload};
+window.MosaicSlimWand = {onToolChange,hoverAt,selectAt,reset,leave,preload,imageChanged,imageKey:()=>imageFrame()?.fingerprint};
 // Start download/cache warming before a user uploads an image or selects Wand.
 preload();

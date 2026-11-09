@@ -20,6 +20,7 @@ imageWrap.append(hint);
 let active = false, fetching = false, serial = 0;
 let labels = null, labelWidth = 0, labelHeight = 0, labelCount = 0, hovered = 0;
 let detectedFor = null;
+let cachedDetection=null;
 const regionGroups = new Map();
 
 function updateButton() {
@@ -145,6 +146,8 @@ async function start() {
   const master = state.master;
   const generation = state.selectionGeneration;
   const activeOptions = state.groups.map(g => g.id + ':' + g.active).join('|');
+  const imageKey=window.MosaicSlimWand?.imageKey?.();
+  void window.MosaicAccount?.track('auto_create_used');
   fetching = true;
   updateButton();
   core.message('Auto Create is detecting candidate objects in your image…');
@@ -157,8 +160,9 @@ async function start() {
     const height = Math.max(1, Math.round(sourceCanvas.height*scale));
     const sample = core.makeCanvas(width, height);
     sample.getContext('2d').drawImage(sourceCanvas, 0, 0, width, height);
-    window.MosaicMaskProgress?.show?.('auto','SAM 3 · Auto Create','Analyzing objects on Hugging Face ZeroGPU…');
-    const response = await window.MosaicAccount.request('/api/ai/sam3', {
+    const cached=Boolean(imageKey&&cachedDetection?.key===imageKey);
+    window.MosaicMaskProgress?.show?.('auto','SAM 3 · Auto Create',cached?'Reusing saved image analysis…':'Analyzing objects on Hugging Face ZeroGPU…');
+    const response = cached?cachedDetection.response:await window.MosaicAccount.request('/api/ai/sam3', {
       method:'POST', body:{
         mode:'auto', image:sample.toDataURL('image/jpeg', 0.80), width, height
       }
@@ -180,6 +184,7 @@ async function start() {
     let detected = 0;
     for(let i=0;i<selected.length;i++){selected[i]=data[i*4];if(selected[i]>detected)detected=selected[i]}
     if (!detected || detected > 64) throw Error('Auto Create could not identify distinct objects.');
+    if(imageKey)cachedDetection={key:imageKey,response,labels:selected,width,height};
     labels = selected;
     labelWidth = width;
     labelHeight = height;
@@ -255,4 +260,16 @@ document.addEventListener('keydown',event=>{
   reset();
   core.message('Auto Create cancelled.');
 },true);
-window.MosaicAutoRegions = {start,reset,isActive:()=>active};
+function maskAt(point,key){
+  const cache=cachedDetection;
+  if(!key||cache?.key!==key)return null;
+  const x=Math.floor(point.x/sourceCanvas.width*cache.width),y=Math.floor(point.y/sourceCanvas.height*cache.height);
+  if(x<0||y<0||x>=cache.width||y>=cache.height)return null;
+  const id=cache.labels[y*cache.width+x];
+  if(!id)return null;
+  const mask=new Uint8Array(cache.labels.length);
+  let area=0;
+  for(let i=0;i<mask.length;i++)if(cache.labels[i]===id){mask[i]=1;area++}
+  return {mask,width:cache.width,height:cache.height,coverage:area/mask.length};
+}
+window.MosaicAutoRegions = {start,reset,maskAt,isActive:()=>active};

@@ -4,6 +4,8 @@ const fs=require('node:fs/promises');
 const os=require('node:os');
 const path=require('node:path');
 const {randomUUID}=require('node:crypto');
+// A user's locally saved key must never affect the missing-key regression case.
+process.env.MOSAIC_DEV_DATA_NAMESPACE='auth-tests-'+process.pid;
 const policy=require('../lib/dev-auth');
 const accounts=require('../lib/accounts');
 const {guard}=require('../lib/auth');
@@ -115,8 +117,8 @@ test('generation uses the saved account key and verified server identity',async(
   }finally{global.fetch=oldFetch;store.startGeneration=oldStart;store.finishGeneration=oldFinish;credentials.reveal=oldReveal}
 }));
 test('missing usage remains unknown instead of invented zero',()=>{
-  assert.deepEqual(usageFrom(undefined),{input_tokens:null,output_tokens:null,total_tokens:null});
-  assert.deepEqual(usageFrom({input_tokens:0,output_tokens:-1,total_tokens:NaN}),{input_tokens:0,output_tokens:null,total_tokens:null});
+  assert.deepEqual(usageFrom(undefined),{input_tokens:null,output_tokens:null,total_tokens:null,estimated_cost_usd:null});
+  assert.deepEqual(usageFrom({input_tokens:0,output_tokens:-1,total_tokens:NaN}),{input_tokens:0,output_tokens:null,total_tokens:null,estimated_cost_usd:null});
 });
 test('local records are isolated, deduplicated, redact secrets, and reset without remote calls',async()=>{
   const directory=await fs.mkdtemp(path.join(os.tmpdir(),'mozai-auth-')),file=path.join(directory,'data.json'),localStore=store.createStore(file),actor={...policy.DEV_USER},oldFetch=global.fetch;

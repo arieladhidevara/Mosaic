@@ -437,10 +437,16 @@ function patchTexture(patch, source) {
   const image=makeCanvas(Math.max(1,right-x),Math.max(1,bottom-y)),tc=image.getContext('2d');
   tc.drawImage(source.canvas,-x,-y);
   tc.globalCompositeOperation='destination-in';
-  // Feather only composited cutout alpha (not mask geometry or marching ants).
-  tc.filter='blur(1.8px)';
-  tc.drawImage(patch.mask,-x,-y);
-  tc.filter='none';
+  if(source.canvas===patch.mask||patch.isMasterVersion){tc.drawImage(patch.mask,-x,-y)}
+  else{
+    const feather=makeCanvas(image.width,image.height),fc=feather.getContext('2d',{willReadFrequently:true});
+    fc.drawImage(patch.mask,-x,-y);
+    const pixels=fc.getImageData(0,0,feather.width,feather.height);
+    const radius=Math.min(24,Math.max(4,Math.max(canvas.width,canvas.height)*.006),Math.min(b.w,b.h)/3);
+    const alpha=window.MozMaskFeather.featherAlpha(pixels.data,feather.width,feather.height,radius);
+    for(let i=0;i<alpha.length;i++)pixels.data[i*4+3]=alpha[i];
+    fc.putImageData(pixels,0,0);tc.drawImage(feather,0,0);
+  }
   const out={image,x,y,key,mask:patch.mask,source:source.canvas};
   patchTextures.set(patch,out);return out;
 }
@@ -653,6 +659,7 @@ function render(){
     }else{ctx.save();ctx.globalAlpha=.84;ctx.drawImage(pending.canvas,0,0);ctx.restore()}
   }
   drawOverlay();
+  window.MosaicSlimWand?.imageChanged?.();
 }
 function svgNode(tag,attributes={}){
   const node=document.createElementNS('http://www.w3.org/2000/svg',tag);
@@ -663,10 +670,10 @@ function vectorLayer(id){
   let layer=$(id);if(!layer){layer=svgNode('g',{id});$('selectionDraft').prepend(layer)}
   layer.replaceChildren();return layer;
 }
-function drawVectorPaths(layer,paths,{color='#f3efff',fill='none',width=.95,dashed=false}={}){
+function drawVectorPaths(layer,paths,{color='#fff',fill='none',width=.95,dashed=false}={}){
   const d=paths.filter(path=>path.length>=3).map(path=>path.map((point,index)=>(index?'L':'M')+point.x+' '+point.y).join(' ')+' Z').join(' ');
   const attributes={d,fill,'fill-rule':'evenodd',stroke:color,'stroke-width':width,'vector-effect':'non-scaling-stroke','stroke-linejoin':'round'};
-  if(dashed){layer.append(svgNode('path',{...attributes,stroke:'#17151e','stroke-width':width+.3,opacity:.22}));attributes['stroke-dasharray']='4 6'}
+  if(dashed){layer.append(svgNode('path',{...attributes,stroke:'#000','stroke-width':width+.65,opacity:1}));attributes.stroke='#fff';attributes['stroke-dasharray']='4 6';attributes.opacity=1}
   layer.append(svgNode('path',attributes));
 }
 function updateSelectionOutline(){state.boundaryCanvas=!state.selectionOverlayHidden&&state.selectionMask&&maskBoundingBox(state.selectionMask)?state.selectionMask:null;drawOverlay()}
@@ -935,6 +942,7 @@ function endMaskVertexDrag(cancel=false){
     if(drag.moved&&state.undo.at(-1)===drag.undoEntry)state.undo.pop();
   }else{
     if(drag.moved){
+      void window.MosaicAccount?.track('mask_edited');
       const image=drag.patchId&&state.patches.get(drag.patchId);
       if(image){
         const layer=state.sources.get(image.sourceId)?.canvas===drag.sourceCanvas?drag.layer:renderedPatchLayer(image);
@@ -963,7 +971,7 @@ function moveSelection(point){
 function endSelectionMove(cancel=false){
   const drag=state.maskMoveDrag;state.maskMoveDrag=null;if(!drag)return;
   if(cancel){state.selectionMask=drag.mask;setSelectionPaths(drag.paths);if(drag.moved&&state.undo.at(-1)===drag.undoEntry)state.undo.pop()}
-  else if(drag.moved)saveSelectionGeometry();
+  else if(drag.moved){saveSelectionGeometry();void window.MosaicAccount?.track('mask_edited')}
   updateSelectionOutline();updateApplyButton();renderGroups();render();if(!cancel&&!drag.moved)showQuickPrompt(state.lastCanvasPointer,true);
 }
 const maskPointControls=$('maskEditControls'),maskAddButton=document.createElement('button'),maskRemoveButton=document.createElement('button');
@@ -1035,6 +1043,7 @@ for(const button of [maskAddButton,maskRemoveButton]){
       const layer=renderedPatchLayer(image);snapshotPlacement(image);state.selectionMask=mask;setSelectionPaths(paths);commitImagePlacement(image,warpImagePaths(layer,from,to,mask));
     }else{snapshotPointEdit();state.selectionMask=mask;setSelectionPaths(paths);saveSelectionGeometry(pixels)}
     activeMaskVertex=selected;
+    void window.MosaicAccount?.track('mask_edited');
     updateSelectionOutline();updateApplyButton();renderGroups();render();
   });
 }
@@ -1096,11 +1105,13 @@ function applyWandMask(region, coverage=0){
   state.pendingRevealOnly=Boolean(state.pendingSourceId);
   finishMaskSelection();
   message('AI Wand selected an object. Refine the mask or enter a prompt to Generate.');
+  return true;
 }
 function snapshotSelection(){if(!state.selectionMask)return;state.undo.push({type:'selection',paths:MaskGeometry.copyPaths(state.selectionPaths),points:copyCorners(state.selectionPoints),image:state.selectionMask.getContext('2d').getImageData(0,0,canvas.width,canvas.height)});if(state.undo.length>12)state.undo.shift();state.redo=[]}
 function snapshotPatch(p){state.undo.push({type:'patch',patchId:p.id,paths:MaskGeometry.copyPaths(p.maskPaths),points:copyCorners(p.maskPoints),image:p.mask.getContext('2d').getImageData(0,0,canvas.width,canvas.height)});if(state.undo.length>12)state.undo.shift();state.redo=[]}
 function finishMaskSelection(){
   void window.MosaicAccount?.track('selection_created');
+  if(state.maskEditOnly||state.selectionMode!=='new')void window.MosaicAccount?.track('mask_edited');
   state.selectionOverlayHidden=false;updateSelectionOutline();ensureSelectionPaths();if(state.maskEditOnly&&state.selectionTargetPatchId)saveSelectionGeometry();prepareSelectionGroup();updateApplyButton();
   selectTool('select');render();
   if(!state.maskEditOnly&&!state.pendingSourceId)showQuickPrompt(state.lastCanvasPointer);
@@ -1312,6 +1323,7 @@ function pointerUp(e){if(state.maskVertexDrag){endMaskVertexDrag();return}if(sta
     state.pointerStart=null;state.dragFreehand=false}
   else if(tool==='rect'||tool==='ellipse'){if(state.shapeStart)updateMaskWithShape(state.shapeStart,p,tool,e.shiftKey);state.shapeStart=null;state.shapeEnd=null;drawOverlay()}
   else if(tool==='reveal'||tool==='erase'){
+    void window.MosaicAccount?.track('mask_edited');
     if(state.pendingSourceId||state.editingPatchId){updateSelectionOutline();prepareSelectionGroup()}
     else{
       const patch=state.patches.get(state.brushTargetId);
@@ -1430,6 +1442,22 @@ projectNameInput.addEventListener('keydown',event=>{if(event.key==='Enter'||even
 $('commitBtn').addEventListener('click',applySelection);
 $('undoBtn').addEventListener('click',()=>historyStep(state.undo,state.redo));$('redoBtn').addEventListener('click',()=>historyStep(state.redo,state.undo));
 $('clearSelectionBtn').addEventListener('click',()=>{resetSelection();render();message('Selection cleared.')});
+const simplifyButton=document.createElement('button');
+simplifyButton.id='simplifySelectionBtn';simplifyButton.type='button';simplifyButton.className='btn btn-quiet compact';
+simplifyButton.textContent='Simplify';simplifyButton.title='Straighten noisy selection edges (Undo available)';
+$('clearSelectionBtn').before(simplifyButton);
+simplifyButton.addEventListener('click',()=>{
+  if(!state.master||!state.selectionMask||!maskBoundingBox(state.selectionMask)||state.busy||state.before||window.MosaicPremium?.isPreviewing()||window.MosaicSourceEditor?.isEditing())return;
+  const original=ensureSelectionPaths(),tolerance=Math.max(2,Math.min(12,Math.max(canvas.width,canvas.height)*.004));
+  const paths=original.map(path=>MaskGeometry.simplify(path,tolerance));
+  if(paths.every((path,i)=>path.length===original[i].length)){toast('Selection edges are already simple.');return}
+  const mask=renderMaskPaths(paths);if(!maskBoundingBox(mask))return;
+  snapshotPointEdit();state.selectionMask=mask;setSelectionPaths(paths);state.selectionOverlayHidden=false;
+  saveSelectionGeometry();updateSelectionOutline();updateApplyButton();renderGroups();render();
+  void window.MosaicAccount?.track('mask_edited');
+  void window.MosaicAccount?.track('selection_simplified');
+  toast('Selection straightened. Undo restores the previous mask.');
+});
 $('resetTransformBtn').addEventListener('click',resetPatchTransform);
 const workspace=document.querySelector('.workspace'),inspectorPanel=$('inspectorPanel'),inspectorResizeHandle=$('inspectorResizeHandle');
 let inspectorResizeState=null;

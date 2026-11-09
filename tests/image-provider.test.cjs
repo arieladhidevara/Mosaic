@@ -45,8 +45,22 @@ test('image generation request contract',async t=>{
   }
   await t.test('Region Guide is ignored, including legacy payloads',async()=>{
     await generate(request({guide:'invalid-and-must-not-be-forwarded',references:[base]}),true);
-    assert.deepEqual(sent.images,[{image_url:collage},{image_url:base}]);
+    assert.deepEqual(sent.images,[{image_url:collage},{image_url:base},{image_url:base}]);
     assert.equal(sent.guide,undefined);assert.equal(sent.quality,'medium');
+  });
+  await t.test('masked material edits retain object identity and the current scene context',async()=>{
+    const context=image(1000,700),reference=image(384,384);
+    await generate(request({context,targetObject:'Door',crop:{x:200,y:100,width:256,height:256,imageWidth:1000,imageHeight:700},references:[reference]}),true);
+    assert.deepEqual(sent.images,[{image_url:collage},{image_url:base},{image_url:context},{image_url:reference}]);
+    assert.deepEqual(sent.mask,{image_url:mask});
+    assert.match(sent.prompt,/selected object is described as: Door/);
+    assert.match(sent.prompt,/preserve its leaf, frame, opening, handle/);
+    assert.match(sent.prompt,/Image 3 is the FULL CURRENT COMPOSITION/);
+    assert.match(sent.prompt,/x=200, y=100, width=256, height=256/);
+    assert.match(sent.prompt,/output only the crop in Image 1/);
+  });
+  await t.test('invalid scene crops fail before a provider request',async()=>{
+    await assert.rejects(generate(request({context:base,crop:{x:500,y:0,width:256,height:256,imageWidth:512,imageHeight:384}}),true),/Invalid crop context/);
   });
   await t.test('legacy Harmonize defaults to High; missing Base is rejected',async()=>{
     await generate(request({base}),false);assert.equal(sent.quality,'high');

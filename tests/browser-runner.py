@@ -37,6 +37,12 @@ async def run():
         width = int(os.environ.get('MOSAIC_WIDTH', '1440'))
         height = int(os.environ.get('MOSAIC_HEIGHT', '1000'))
         await call('Emulation.setDeviceMetricsOverride', {'width': width, 'height': height, 'deviceScaleFactor': 1, 'mobile': width < 600})
+        init_script = os.environ.get('MOSAIC_BROWSER_INIT_SCRIPT')
+        if init_script:
+            fixture = (pathlib.Path('tests') / init_script).resolve()
+            if not fixture.is_relative_to(pathlib.Path('tests').resolve()):
+                raise RuntimeError('Browser init fixtures must be inside tests/.')
+            await call('Page.addScriptToEvaluateOnNewDocument', {'source': fixture.read_text(encoding='utf-8')})
         await call('Page.navigate', {'url': url})
         for _ in range(200):
             ready = await call('Runtime.evaluate', {'expression': 'Boolean(window.MosaicAccount&&((window.MosaicCore&&window.MosaicCredits)||document.getElementById("adminApp")))', 'returnByValue': True})

@@ -54,12 +54,11 @@ async function prepare(job) {
   const raw = new RawImage(new Uint8ClampedArray(job.pixels), job.width, job.height, 4);
   const inputs = await processor(raw);
   const nextEmbedding = await model.get_image_embeddings(inputs);
-  if (job.epoch !== activeEpoch) return;
   embedding = nextEmbedding;
   imageWidth = job.width;
   imageHeight = job.height;
   imageFingerprint = job.fingerprint;
-  report('ready', {epoch:job.epoch,reused:false});
+  if(job.epoch===activeEpoch)report('ready', {epoch:job.epoch,reused:false});
 }
 
 async function infer(job) {
