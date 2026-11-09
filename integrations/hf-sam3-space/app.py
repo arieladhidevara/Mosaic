@@ -113,24 +113,31 @@ def segment_object(image_data_uri: str, label: str, left: float, top: float, rig
         raise gr.Error("Expected a small JPEG data URI.")
     if not isinstance(label, str) or not label.strip() or len(label) > 80:
         raise gr.Error("Expected an object label.")
+    stage = "decode"
     try:
         image = Image.open(io.BytesIO(base64.b64decode(image_data_uri.split(",", 1)[1], validate=True))).convert("RGB")
         w, h = image.size
         if not (1 <= w <= 1024 and 1 <= h <= 1024 and 0 <= left < right <= w and 0 <= top < bottom <= h):
             raise ValueError("Invalid object region.")
+        stage = "model"
         _, processor = gpu_model()
         with torch.inference_mode():
+            stage = "image"
             state = processor.set_image(image)
+            stage = "text"
             processor.set_text_prompt(label.strip(), state)
+            stage = "box"
             result = processor.add_geometric_prompt([(left+right)/2/w, (top+bottom)/2/h, (right-left)/w, (bottom-top)/h], True, state)
+        stage = "validate"
         binary = choose_object_mask(result["masks"].detach().cpu().numpy(), result["scores"].detach().cpu().numpy(), (left, top, right, bottom))
         rgba = np.full((h, w, 4), 255, dtype=np.uint8)
         rgba[:, :, 3] = binary.astype(np.uint8) * 255
         out = io.BytesIO()
         Image.fromarray(rgba, mode="RGBA").save(out, format="PNG")
         return "data:image/png;base64," + base64.b64encode(out.getvalue()).decode("ascii")
-    except (ValueError, OSError, IndexError) as exc:
-        raise gr.Error("No reliable object mask.") from exc
+    except Exception as exc:
+        # Static stage + class only; no request data, model paths or secrets.
+        raise gr.Error(f"Semantic SAM: {stage} ({type(exc).__name__})") from exc
 
 
 # All endpoints share an inference model and must not mutate its state concurrently.
