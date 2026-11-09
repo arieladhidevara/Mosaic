@@ -31,6 +31,7 @@ jobs:
           python3 -m unittest discover -s tests -p "test_sam3_mask_utils.py"
           python3 -m unittest discover -s tests -p "test_sam3_auto_regions.py"
           python3 -m unittest discover -s tests -p "test_sam3_space_contract.py"
+          python3 -m unittest discover -s tests -p "test_sam3_object_masks.py"
           python3 -m py_compile integrations/hf-sam3-space/app.py
 
       - name: Validate SAM 3 API bridge
@@ -53,7 +54,7 @@ jobs:
           from huggingface_hub import HfApi
 
           folder = Path("integrations/hf-sam3-space")
-          required = ["app.py", "requirements.txt", "mask_utils.py", "auto_regions.py"]
+          required = ["app.py", "requirements.txt", "mask_utils.py", "auto_regions.py", "object_masks.py"]
           missing = [name for name in required if not (folder / name).is_file()]
           if missing:
               raise SystemExit("Missing Space files: " + ", ".join(missing))

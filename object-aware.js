@@ -78,7 +78,7 @@ async function segment(frame,label,mask){
 }
 async function analyze(context,prompt,display=true){
   const fallback={mask:context.mask,paths:context.paths,intent:context.manualIntent||null,groupId:context.groupId};
-  if(context.manual||!window.MosaicAuth?.isReady?.()||state.pendingSourceId||state.maskEditOnly||prompt.trim().length<4)return fallback;
+  if(context.manual||!window.MosaicAuth?.isReady?.()||state.pendingSourceId||state.maskEditOnly||prompt.trim().length<2)return fallback;
   const frame=frameContext(context.mask),known=objects();
   const key=signature(new TextEncoder().encode(frame.image))+signature(data(context.mask))+JSON.stringify(known)+prompt.trim();
   let promise=intentCache.get(key);
@@ -98,7 +98,7 @@ async function analyze(context,prompt,display=true){
 }
 function promptInput(event){
   const input=event.target;
-  if(!['quickAreaPromptInput','areaPromptInput'].includes(input.id))return;
+  if(!['quickAreaPromptInput','areaPromptInput'].includes(input.id)&&!(input.type==='text'&&input.closest('.region-option-prompt')))return;
   const context=freeze();if(!context)return;
   revision++;clearTimeout(timer);restoreOriginal();
   context.owner=selection;context.revision=revision;

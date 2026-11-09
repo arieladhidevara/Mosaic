@@ -24,7 +24,7 @@ Space to enable `segment_object(image,label,left,top,right,bottom)`. Existing
 `segment` and `segment_all` endpoints are preserved. Semantic inference combines
 SAM 3's text and normalized box prompts; candidate scores and spatial overlap
 must pass validation. An older Space without the new endpoint leaves the user's
-original selection intact. This repository change does not deploy that Space.
+original selection intact. Pushes to main automatically sync all five inference files through `.github/workflows/sync-hf-space.yml`. The service must finish rebuilding before semantic selection is available.
 
 ## Local repair
 

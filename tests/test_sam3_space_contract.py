@@ -1,5 +1,6 @@
 """Static startup contract for SAM 3 on ZeroGPU (no checkpoint needed)."""
 import ast
+import re
 import unittest
 from pathlib import Path
 
@@ -47,6 +48,15 @@ class TestZeroGPUStartup(unittest.TestCase):
                             and isinstance(dec.func, ast.Name)
                             and dec.func.id == "lru_cache"
                             for dec in fn.decorator_list))
+
+    def test_deployment_contains_every_local_python_import(self):
+        workflow = SOURCE.parents[2] / '.github' / 'workflows' / 'sync-hf-space.yml'
+        names = ast.literal_eval(re.search(r'required = (\[[^\n]+\])', workflow.read_text(encoding='utf-8')).group(1))
+        for node in self.root.body:
+            if isinstance(node, ast.ImportFrom) and node.module:
+                filename = node.module + '.py'
+                if (SOURCE.parent / filename).is_file():
+                    self.assertIn(filename, names, 'Space deployment omits a required local module')
 
 
 if __name__ == "__main__":
