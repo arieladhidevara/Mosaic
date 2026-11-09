@@ -1,5 +1,6 @@
 /* Mosaic BYOK — masked AI editing and harmonization with an OpenAI API key. */
 import './generation-pool.js';
+import './object-aware.js';
 const core = window.MosaicCore;
 if (!core) throw new Error('Mosaic core must load before Premium');
 const {state, canvas, makeCanvas, uid, render, renderGroups, resetSelection, assignGroup, maskBoundingBox, toast, message} = core;
@@ -26,12 +27,13 @@ const cloneCanvas = input => {
 };
 function copyGraph(groups, patches, sources) {
   return {
-    groups: groups.map(g => ({...g, patchIds: [...g.patchIds],footprint: g.footprint?cloneCanvas(g.footprint):null})),
-    patches: new Map([...patches].map(([id,p]) => [id, {...p, mask: cloneCanvas(p.mask), corners: p.corners?.map(q=>({...q}))||null}])),
+    groups: groups.map(g => ({...g, objectBehind:g.objectBehind?[...g.objectBehind]:undefined,objectOriginal:g.objectOriginal?{...g.objectOriginal,repairs:[...g.objectOriginal.repairs]}:undefined,patchIds: [...g.patchIds],footprint: g.footprint?cloneCanvas(g.footprint):null})),
+    patches: new Map([...patches].map(([id,p]) => [id, {...p, objectRepairs:p.objectRepairs?[...p.objectRepairs]:undefined,mask: cloneCanvas(p.mask), corners: p.corners?.map(q=>({...q}))||null}])),
     sources: new Map([...sources].map(([id,s]) => [id, {...s, canvas: cloneCanvas(s.canvas)}]))
   };
 }
 function drawComposition(context, base, groups, patches, sources) {
+  if(window.MosaicObjects){window.MosaicObjects.drawComposition(context,base,groups,patches,sources);return}
   context.clearRect(0, 0, canvas.width, canvas.height);
   context.drawImage(base, 0, 0, canvas.width, canvas.height);
   for (const group of groups) {
@@ -415,7 +417,8 @@ function cropFrame(source,window,w,h,mask=false){
 }
 function encodeRegionalCrop(patch){
   const visualMask=cloneCanvas(core.displayedPatchMask(patch));
-  const region=regionalCropWindow(visualMask);
+  const editMask=window.MosaicObjects?.generationMask(patch)||visualMask;
+  const region=regionalCropWindow(editMask);
   const collage=currentComposite(),base=state.reference||premium.initialMaster||state.master;
   const group=state.groups.find(group=>group.patchIds.includes(patch.id));
   for(const maxDimension of [1152,960,768]){
@@ -425,11 +428,11 @@ function encodeRegionalCrop(patch){
     const h=Math.max(128,Math.round(region.h*scale));
     const payload={
       collage:cropFrame(collage,region,w,h),
-      mask:cropFrame(visualMask,region,w,h,true),
+      mask:cropFrame(editMask,region,w,h,true),
       quality:premium.settings.regionQuality,
       projectPrompt:premium.projectPrompt,
       prompt:patch.prompt,
-      targetObject:group?.manualName?group.name:(group?.category&&group.category!=='Region'?group.category:''),
+      targetObject:patch.objectLabel||(group?.manualName?group.name:(group?.category&&group.category!=='Region'?group.category:'')),
       crop:{x:region.x,y:region.y,width:region.w,height:region.h,imageWidth:canvas.width,imageHeight:canvas.height},
       context:resizedFrame(collage,Math.max(128,Math.round(canvas.width*contextScale)),Math.max(128,Math.round(canvas.height*contextScale))),
       regions:annotationNotes(patch.id),
@@ -439,7 +442,7 @@ function encodeRegionalCrop(patch){
       const baseScale=Math.min(1,maxDimension/Math.max(base.width,base.height));
       payload.base=resizedFrame(base,Math.max(128,Math.round(base.width*baseScale)),Math.max(128,Math.round(base.height*baseScale)));
     }
-    if(JSON.stringify(payload).length<3550000)return {payload,region,visibleMask:visualMask};
+    if(JSON.stringify(payload).length<3550000)return {payload,region,visibleMask:visualMask,collage};
   }
   throw Error('Selection crop is too large. Try fewer reference images or a smaller Base.');
 }
@@ -495,6 +498,7 @@ async function generateRegion(patchId,regenerate=false){
   try{capture=encodeRegionalCrop(patch)}
   catch(error){patch.generating=false;renderGroups();progress.fail('Could not prepare the selected area.');toast('Local AI edit: '+error.message);return}
   const submittedPatch={bbox:{...patch.bbox},corners:patch.corners?.map(point=>({...point}))||null};
+  const maskAtStart=window.MosaicObjects?.maskKey(patch.mask);
   const generationId=patch.sourceId;
   const canvasSize={width:canvas.width,height:canvas.height};
   progress.update(14,'Queued for generation…');
@@ -518,12 +522,22 @@ async function generateRegion(patchId,regenerate=false){
       }
       progress.update(92,'Applying result to the selected mask…');
       const placed=makeCanvas(canvasSize.width,canvasSize.height),placedContext=placed.getContext('2d');
+      placedContext.drawImage(capture.collage,0,0);
       placedContext.drawImage(image,region.x,region.y,region.w,region.h);
+      const validated=await window.MosaicObjects?.validateGenerated(existing,placed,visibleMask,capture.collage)||{mask:visibleMask,valid:true};
+      if(state.patches.get(patchId)!==patch||state.selectionGeneration!==projectAtStart||existing.sourceId!==generationId){existing.generating=false;return}
+      const currentMaskUnchanged=maskAtStart===window.MosaicObjects?.maskKey(existing.mask);
+      const finalMask=currentMaskUnchanged?validated.mask:visibleMask;
       placedContext.globalCompositeOperation='destination-in';
-      placedContext.drawImage(visibleMask,0,0);
+      placedContext.drawImage(finalMask,0,0);
       // Restore source coordinates before applying the option's existing warp.
       // A move/skew made while this request was queued remains in effect.
       const result=core.unwarpPatchSelection(placed,submittedPatch);
+      if(currentMaskUnchanged&&finalMask!==visibleMask){
+        existing.mask=core.unwarpPatchSelection(finalMask,submittedPatch);
+        existing.bbox=core.exactMaskBoundingBox(existing.mask)||existing.bbox;
+        existing.maskPaths=core.maskPathsFromRaster(existing.mask);existing.maskPoints=existing.maskPaths.flat();
+      }
       // Always fork on regeneration to preserve shared source images and older options.
       if(regenerate){
         const id=uid('ai_source');
@@ -533,6 +547,7 @@ async function generateRegion(patchId,regenerate=false){
         const source=state.sources.get(existing.sourceId);
         source.canvas=result;source.name='AI region '+patch.regionNumber;
       }
+      window.MosaicObjects?.generated(existing,existing.mask,validated.valid&&currentMaskUnchanged);
       core.invalidateDisplayedMask(existing);
       existing.awaitingResult=false;
       // New options enter the right sidebar only after a real image is ready.
@@ -619,7 +634,7 @@ async function suggestSemanticName(patchId,prompt){
     }
   }catch(error){/* Local semantic naming remains active if the optional model is offline. */}
 }
-function createRegionRequest(prompt,referenceImages=[],selectedMask=state.selectionMask,groupId=null,selectedPoints=state.selectionPoints,selectedPaths=state.selectionPaths) {
+function createRegionRequest(prompt,referenceImages=[],selectedMask=state.selectionMask,groupId=null,selectedPoints=state.selectionPoints,selectedPaths=state.selectionPaths,objectSelection=null) {
   const bbox = maskBoundingBox(selectedMask);
   if (!bbox) {toast('Selection has no pixels.');return;}
   const mask = cloneCanvas(selectedMask);
@@ -641,6 +656,7 @@ function createRegionRequest(prompt,referenceImages=[],selectedMask=state.select
   // activate this new option when its pixels are ready, unless the user makes
   // another option choice in the meantime.
   group.active=activeBefore.has(group.id)?activeBefore.get(group.id):null;
+  window.MosaicObjects?.capture(patch,group,objectSelection);
   void suggestSemanticName(patch.id,text);
   // The submitted mask is already an independent snapshot on patch.mask.
   // Keep the live selection and mask editor intact so another area can be
@@ -658,15 +674,18 @@ async function generateSelection(prompt,groupId=null,referenceFiles=[]){
   if(state.lasso.length>2)core.updateMaskWithLasso();
   const bbox=maskBoundingBox(state.selectionMask);
   if(!bbox){toast('Select a region before generating.');return}
-  const savedMask=cloneCanvas(state.selectionMask),generation=state.selectionGeneration;
-  const savedPoints=state.selectionPoints?.map(point=>({...point}))||[];
-  const savedPaths=window.MozMaskGeometry.copyPaths(state.selectionPaths);
-  const requestedGroupId=groupId||state.draftGroupId||null;
+  const initialMask=cloneCanvas(state.selectionMask),generation=state.selectionGeneration;
+  const initialPoints=state.selectionPoints?.map(point=>({...point}))||[];
+  const initialPaths=window.MozMaskGeometry.copyPaths(state.selectionPaths);
+  const initialGroup=groupId||state.draftGroupId||null;
   try{
-    const referenceImages=await prepareReferenceImages(referenceFiles);
+    const [referenceImages,objectSelection]=await Promise.all([prepareReferenceImages(referenceFiles),window.MosaicObjects?.prepare(prompt)]);
+    const savedMask=objectSelection?.mask||initialMask;
+    const savedPaths=objectSelection?.paths||initialPaths,savedPoints=objectSelection?.intent?savedPaths.flat():initialPoints;
+    const requestedGroupId=groupId||(objectSelection?objectSelection.groupId:initialGroup);
     if(generation!==state.selectionGeneration){toast('The project changed. Please select the region again.');return}
     const targetGroup=requestedGroupId&&state.groups.some(g=>g.id===requestedGroupId)?requestedGroupId:null;
-    const patchId=createRegionRequest(prompt,referenceImages,savedMask,targetGroup,savedPoints,savedPaths);
+    const patchId=createRegionRequest(prompt,referenceImages,savedMask,targetGroup,savedPoints,savedPaths,objectSelection);
     if(patchId)void generateRegion(patchId);
   }catch(error){toast('Reference upload: '+error.message)}
 }

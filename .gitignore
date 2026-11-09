@@ -5,3 +5,5 @@
 node_modules/
 .DS_Store
 .mosaic-dev/
+__pycache__/
+*.pyc

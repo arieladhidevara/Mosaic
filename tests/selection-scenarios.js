@@ -88,6 +88,7 @@ window.runSelectionChecks=async function(){
     assert($('projectName').textContent==='Cabin study'&&state.projectTitleManual,'Project rename was not saved');core.setProjectTitle('Generated Master');assert($('projectName').textContent==='Cabin study','Generation labels overwrite a renamed project');
     draft();const savedId=core.uid('saved_shape');state.sources.set(savedId,{id:savedId,name:'Saved image',canvas:makeFrame('#b98652')});state.pendingSourceId=savedId;core.updateApplyButton();$('commitBtn').click();
     const savedPatch=state.patches.get(state.selectionTargetPatchId),oldId=savedPatch.sourceId;core.hideQuickPrompt();drag({x:100,y:100},{x:125,y:115});
+    const savedCorners=JSON.stringify(savedPatch.corners||null),savedSource=savedPatch.sourceId;
     set('brushSize',74);set('brushIntensity',42);
     const createURL=URL.createObjectURL,anchorClick=HTMLAnchorElement.prototype.click,confirm=window.confirm;let blob,filename;
     URL.createObjectURL=value=>{if(value.type==='application/json')blob=value;return createURL(value)};HTMLAnchorElement.prototype.click=function(){if(this.download?.endsWith('.moz'))filename=this.download;else anchorClick.call(this)};window.confirm=()=>true;
@@ -99,7 +100,7 @@ window.runSelectionChecks=async function(){
       await wait(()=>$('openProjectBtn').disabled);await wait(()=>!$('openProjectBtn').disabled);
       assert($('projectName').textContent==='Cabin study'&&Number($('brushIntensity').value)===42&&Number($('brushSize').value)===74,'Project preferences did not round-trip');
       assert(data.analytics.projectId===await window.MosaicAccount.projectId(),'Opening an owned project changed its analytics identity');
-      const loaded=state.patches.get(savedPatch.id);assert(loaded.maskPaths?.length,'Editable paths were lost');$('undoBtn').click();assert(loaded.sourceId===oldId,'Saved image placement undo did not survive .moz save/open');$('redoBtn').click();assert(loaded.sourceId!==oldId,'Saved image placement redo failed');
+      const loaded=state.patches.get(savedPatch.id);assert(loaded.maskPaths?.length,'Editable paths were lost');$('undoBtn').click();assert(loaded.sourceId===oldId&&!loaded.corners,'Saved image placement undo did not survive .moz save/open');$('redoBtn').click();assert(loaded.sourceId===savedSource&&JSON.stringify(loaded.corners||null)===savedCorners,'Saved image placement redo failed');
     }finally{URL.createObjectURL=createURL;HTMLAnchorElement.prototype.click=anchorClick;window.confirm=confirm}
     checks.push('Rename survives generation; .moz filename, brush preferences, editable paths, placement Undo/Redo survive save/open');
     return {passed:checks.length,checks};

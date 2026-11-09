@@ -20,6 +20,7 @@ const apiRoutes = new Map([
   ['/api/ai/harmonize', require('./api/ai/harmonize')],
   ['/api/ai/classify', require('./api/ai/classify')],
   ['/api/ai/sam3', require('./api/ai/sam3')],
+  ['/api/ai/object-intent', require('./api/ai/object-intent')],
   ['/api/ai/option-name', require('./api/ai/option-name')],
 ]);
 
@@ -58,6 +59,9 @@ const publicFiles = new Set([
   'slimsam-worker.mjs',
   'slimsam-mask-utils.mjs',
   'auto-regions.js',
+  'object-aware.js',
+  'object-mask-utils.mjs',
+  'object-repair-worker.js',
   'premium.js',
   'regions.js',
   'source-editor.js',

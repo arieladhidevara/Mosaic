@@ -204,6 +204,7 @@ async function loadProjectFile(file){
     if(saved.master&&(!saved.master.width||!saved.master.height))
       throw Error('Invalid Master canvas.');
     if(!saved.master&&!saved.reference)throw Error('Project contains no images.');
+    window.MosaicObjects?.reset();
     Object.assign(state,saved);
     state.selectionPoints=Array.isArray(saved.selectionPoints)?saved.selectionPoints:[];
     state.selectionPaths=Array.isArray(saved.selectionPaths)?saved.selectionPaths:[];
@@ -213,7 +214,7 @@ async function loadProjectFile(file){
     state.brushTargetId=null;state.hoveredGroupId=null;
     state.selectionMask=state.selectionMask||(state.master?makeCanvas(state.master.width,state.master.height):null);
     premium.restoreProjectState(restoredPremium);
-    restoreUI(saved,data.ui);void window.MosaicAccount?.startProject(true,data.analytics?.projectId);void window.MosaicAccount?.track('project_opened');
+    restoreUI(saved,data.ui);window.dispatchEvent(new Event('mosaic:projectloaded'));void window.MosaicAccount?.startProject(true,data.analytics?.projectId);void window.MosaicAccount?.track('project_opened');
     toast('Project restored, including Groups, options, selections and Master history.');
   }catch(error){toast('Open project failed: '+error.message)}
   finally{fileBusy=false;button.disabled=false;button.innerHTML=old}
