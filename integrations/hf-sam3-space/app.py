@@ -107,7 +107,7 @@ def segment_all(image_data_uri: str) -> str:
         raise gr.Error("Auto Create could not find distinct objects. Try a clearer render or use Color Wand.") from exc
 
 
-@spaces.GPU(duration=120)
+@spaces.GPU(duration=90)
 def segment_object(image_data_uri: str, label: str, left: float, top: float, right: float, bottom: float) -> str:
     if not isinstance(image_data_uri, str) or not image_data_uri.startswith("data:image/jpeg;base64,") or len(image_data_uri) > 2_500_000:
         raise gr.Error("Expected a small JPEG data URI.")

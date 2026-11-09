@@ -5,6 +5,12 @@ window.runObjectAwareChecks=async function(){
   const assert=(v,m)=>{if(!v)throw Error(m)},pause=ms=>new Promise(r=>setTimeout(r,ms));
   const wait=async(fn,label)=>{for(let i=0;i<500;i++){if(fn())return;await pause(20)}throw Error('Timed out: '+label)};
   await window.MosaicAccount.ready();$('apiKeyDialog').close();
+  // Keep the real account transport here: replacing request() hid a missing
+  // endpoint allowlist entry in the first integration pass.
+  const transportFetch=window.fetch;let transported=false;
+  window.fetch=async(path,options)=>{if(path==='/api/ai/object-intent'){transported=options.method==='POST'&&JSON.parse(options.body).prompt==='door';return Response.json({kind:'object',label:'door',confidence:.95,geometry:'appearance',behind:[]})}return transportFetch(path,options)};
+  try{await window.MosaicAccount.request('/api/ai/object-intent',{method:'POST',body:{prompt:'door'}});assert(transported,'Intent never passed through the real account transport')}finally{window.fetch=transportFetch}
+  checks.push('Prompt intent passes through the real authenticated account transport');
   const saved={request:window.MosaicAccount.request,auth:window.MosaicAuth.request,ready:window.MosaicAuth.isReady,ensure:window.MosaicAuth.ensure,Worker:window.Worker};
   const stats={sam:0,intent:0,generation:0,repair:0},W=800,H=600;
   const frame=color=>{const c=core.makeCanvas(W,H),x=c.getContext('2d');x.fillStyle=color;x.fillRect(0,0,W,H);return c};

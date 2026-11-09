@@ -26,6 +26,7 @@ test('parses queued Gradio completion as PNG data URI',()=>{
   const s='event: generating\ndata: null\n\nevent: complete\ndata: ["data:image/png;base64,AAAA"]\n\n';
   assert.equal(parseCompleteEvent(s),'data:image/png;base64,AAAA');
   assert.throws(()=>parseCompleteEvent('event: error\ndata: null\n\n'),/failed/);
+  assert.throws(()=>parseCompleteEvent('event: error\ndata: {"error":"You have exceeded your ZeroGPU quota"}\n\n'),error=>error.status===429&&error.code==='SAM3_QUOTA');
 });
 
 test('SAM3 performs exactly two calls to fixed Space endpoint',async()=>{

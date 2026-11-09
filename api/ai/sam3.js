@@ -14,7 +14,7 @@ module.exports = async function handler(req,res) {
     return send(res,200,{mask});
   } catch (error) {
     const status = error.status || (error.message.startsWith('Invalid ') ? 400 : error.name === 'AbortError' ? 504 : 502);
-    return send(res,status,{error:status >= 500 && status !== 503 ? 'SAM 3 is unavailable. Switch Wand to Color and retry.' : error.message,code:'SAM3_UNAVAILABLE'});
+    return send(res,status,{error:status >= 500 && status !== 503 ? 'SAM 3 is unavailable. Switch Wand to Color and retry.' : error.message,code:error.code||'SAM3_UNAVAILABLE'});
   }
 };
 module.exports.config = {maxDuration:180};
