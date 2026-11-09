@@ -234,6 +234,7 @@ function matchingGroup(mask,threshold=.85){
 
 function releaseDraftGroupForNewSelection(){
   if(state.selectionMode!=='new'||state.editingPatchId)return;
+  window.MosaicObjects?.cancelSelection();
   const draft=state.groups.find(group=>group.id===state.draftGroupId);
   const keepEmptyDraft=Boolean(draft&&!draft.patchIds.length&&(draft.manualName||state.queuedGroupId===draft.id));
   if(draft&&!draft.patchIds.length&&!keepEmptyDraft)state.groups=state.groups.filter(group=>group!==draft);

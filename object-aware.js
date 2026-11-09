@@ -1,10 +1,11 @@
-/* Object state is metadata on existing Groups and Options. Legacy projects need
-   no migration, and no internal work creates UI, progress text or notifications. */
+/* Object state is metadata on existing Groups and Options. Smart Select is
+   explicitly enabled in the prompt; other object processing stays invisible. */
 import './app.js';
 import {binary,signature,count,combine,overlap,bounds,sceneOrder} from './object-mask-utils.mjs';
 const core=window.MosaicCore,{state,makeCanvas}=core;
 const config=window.MosaicObjectConfig||{};
 let selection=null,revision=0,timer,applying=false,preview=null,previewFrame,repairTimer,repairRevision=0,worker,workerSerial=0;
+let smartSelectEnabled=false,smartModeRevision=0,smartProgress=null;
 const maskCache=new Map(),intentCache=new Map(),inflight=new Map(),jobs=new Map(),failures=new Map(),identities=new WeakMap();let identitySerial=0;
 const binaryCache=new WeakMap(),originalDrawCache=new WeakMap(),repairClipCache=new WeakMap();
 const identity=value=>{if(!value)return '';if(!identities.has(value))identities.set(value,++identitySerial);return identities.get(value)};
@@ -12,9 +13,36 @@ const copy=source=>{const out=makeCanvas(source.width,source.height);out.getCont
 const data=mask=>{if(mask!==state.selectionMask&&binaryCache.has(mask))return binaryCache.get(mask);const bits=binary(mask.getContext('2d',{willReadFrequently:true}).getImageData(0,0,mask.width,mask.height).data);if(mask!==state.selectionMask)binaryCache.set(mask,bits);return bits};
 function raster(bits,w=core.canvas.width,h=core.canvas.height){const c=makeCanvas(w,h),x=c.getContext('2d'),frame=x.createImageData(w,h);for(let i=0;i<bits.length;i++)if(bits[i])frame.data.fill(255,i*4,i*4+4);x.putImageData(frame,0,0);return c}
 function remember(cache,key,value,max=48){cache.delete(key);cache.set(key,value);while(cache.size>max)cache.delete(cache.keys().next().value);return value}
+function mountSmartSelect(form){
+  if(!form||form.querySelector('[data-smart-select]'))return;
+  const row=document.createElement('div');row.className='smart-select-row';
+  const label=document.createElement('label');label.className='smart-select-toggle';
+  const input=document.createElement('input');input.type='checkbox';input.dataset.smartSelect='';input.checked=smartSelectEnabled;
+  const title=document.createElement('span');title.textContent='Smart Select';label.append(input,title);
+  const progress=document.createElement('div');progress.className='smart-select-progress';progress.dataset.smartSelectProgress='';progress.hidden=true;progress.setAttribute('role','progressbar');progress.setAttribute('aria-label','Smart Select');progress.append(document.createElement('span'));
+  row.append(label,progress);form.insertBefore(row,form.querySelector('.prompt-footer,.dialog-actions,[type="submit"]'));
+}
+function clearSmartProgress(){
+  smartProgress=null;document.querySelectorAll('[data-smart-select-progress]').forEach(bar=>{bar.hidden=true;bar.closest('form')?.removeAttribute('aria-busy')});window.MosaicMaskProgress?.hide('smart-select');
+}
+function showSmartProgress(context,detail){
+  if(!smartSelectEnabled||context.mode!==smartModeRevision||context.revision!==revision||context.owner!==selection)return;
+  smartProgress=context;
+  const form=context.form||document.getElementById('quickAreaPromptForm');
+  const bar=form?.querySelector('[data-smart-select-progress]');if(bar){bar.hidden=false;form.setAttribute('aria-busy','true')}
+  window.MosaicMaskProgress?.show('smart-select','Smart Select',detail);
+}
+function finishSmartProgress(context){if(smartProgress?.revision===context.revision&&smartProgress?.mode===context.mode)clearSmartProgress()}
+function smartSelectChanged(event){
+  const input=event.target;if(!input.matches('[data-smart-select]'))return;
+  smartSelectEnabled=input.checked;smartModeRevision++;revision++;clearTimeout(timer);clearSmartProgress();restoreOriginal();
+  if(smartSelectEnabled&&selection){selection.manual=false;selection.manualIntent=null}
+  document.querySelectorAll('[data-smart-select]').forEach(control=>{control.checked=smartSelectEnabled});
+  if(smartSelectEnabled){const prompt=input.closest('form')?.querySelector('textarea,input[type="text"]');if(prompt)promptInput({target:prompt})}
+}
 function currentGroup(){return state.groups.find(g=>g.id===state.draftGroupId||g.patchIds.includes(state.selectionTargetPatchId))}
-function reset(){clearTimeout(timer);clearTimeout(repairTimer);revision++;repairRevision++;selection=null;preview=null;cancelAnimationFrame(previewFrame);maskCache.clear();intentCache.clear();inflight.clear();failures.clear();if(worker){worker.terminate();worker=null}for(const job of jobs.values())job.reject(Error('Project changed'));jobs.clear()}
-function cancelSelection(){revision++;clearTimeout(timer);cancelAnimationFrame(previewFrame);selection=null;preview=null}
+function reset(){clearSmartProgress();clearTimeout(timer);clearTimeout(repairTimer);revision++;repairRevision++;selection=null;preview=null;cancelAnimationFrame(previewFrame);maskCache.clear();intentCache.clear();inflight.clear();failures.clear();if(worker){worker.terminate();worker=null}for(const job of jobs.values())job.reject(Error('Project changed'));jobs.clear()}
+function cancelSelection(){clearSmartProgress();revision++;clearTimeout(timer);cancelAnimationFrame(previewFrame);selection=null;preview=null}
 function selectionChanged(){
   if(applying)return;
   const mask=state.selectionMask;
@@ -22,13 +50,13 @@ function selectionChanged(){
   const hash=signature(data(mask));
   if(selection?.hash===hash&&selection.project===state.selectionGeneration&&selection.target===state.selectionTargetPatchId)return;
   const corrected=Boolean(preview&&selection?.project===state.selectionGeneration),manualIntent=corrected?preview.intent:null;
-  revision++;clearTimeout(timer);preview=null;
+  revision++;clearTimeout(timer);clearSmartProgress();preview=null;
   selection={hash,project:state.selectionGeneration,target:state.selectionTargetPatchId,mask:copy(mask),paths:window.MozMaskGeometry.copyPaths(state.selectionPaths),groupId:currentGroup()?.id||null,manual:corrected,manualIntent};
 }
 function freeze(){selectionChanged();if(!selection||!count(data(selection.mask)))return null;if(!preview)selection.paths=window.MozMaskGeometry.copyPaths(state.selectionPaths);return {...selection,groupId:currentGroup()?.id||selection.groupId}}
 function tint(mask){const out=copy(mask),x=out.getContext('2d');x.globalCompositeOperation='source-in';x.fillStyle='#9d78ef';x.fillRect(0,0,out.width,out.height);return out}
 function showMask(mask,context,intent){
-  if(context.project!==state.selectionGeneration||selection!==context.owner||context.revision!==revision||state.maskEditOnly||state.pendingSourceId||state.drawing||state.maskMoveDrag||state.maskVertexDrag||state.lasso.length)return;
+  if(!smartSelectEnabled||context.mode!==smartModeRevision||context.project!==state.selectionGeneration||selection!==context.owner||context.revision!==revision||state.maskEditOnly||state.pendingSourceId||state.drawing||state.maskMoveDrag||state.maskVertexDrag||state.lasso.length)return;
   const before=preview?.mask||context.mask;
   applying=true;
   state.selectionMask=copy(mask);state.selectionPaths=core.maskPathsFromRaster(mask);state.selectionPoints=state.selectionPaths.flat();state.selectionOverlayHidden=false;
@@ -78,37 +106,45 @@ async function segment(frame,label,mask){
 }
 async function analyze(context,prompt,display=true){
   const fallback={mask:context.mask,paths:context.paths,intent:context.manualIntent||null,groupId:context.groupId};
-  if(context.manual||!window.MosaicAuth?.isReady?.()||state.pendingSourceId||state.maskEditOnly||prompt.trim().length<2)return fallback;
+  if(!smartSelectEnabled||context.mode!==smartModeRevision||context.manual||!window.MosaicAuth?.isReady?.()||state.pendingSourceId||state.maskEditOnly||prompt.trim().length<2)return fallback;
+  showSmartProgress(context,'Finding object…');
   const frame=frameContext(context.mask),known=objects();
-  const key=signature(new TextEncoder().encode(frame.image))+signature(data(context.mask))+JSON.stringify(known)+prompt.trim();
+  const key=context.mode+':'+signature(new TextEncoder().encode(frame.image))+signature(data(context.mask))+JSON.stringify(known)+prompt.trim();
   let promise=intentCache.get(key);
   if(!promise){promise=(async()=>{
     const intent=await window.MosaicAccount.request('/api/ai/object-intent',{method:'POST',body:{image:frame.intentImage,prompt,objects:known}});
+    if(!smartSelectEnabled||context.mode!==smartModeRevision||context.revision!==revision){intentCache.delete(key);return fallback}
     if(intent.kind!=='object'||intent.confidence<.8||!intent.label)return fallback;
+    showSmartProgress(context,'Selecting object…');
     // A selected existing object can reuse its mask only if the semantic label
     // still matches. A new target noun must go back through SAM.
     const existing=state.groups.find(g=>g.id===context.groupId),same=existing?.objectLabel?.toLowerCase()===intent.label.toLowerCase();
     const mask=same&&!existing.objectMaskUncertain?copy(core.groupMask(existing)):await segment(frame,intent.label,context.mask);
-    if(!mask)return fallback;
+    if(!mask){intentCache.delete(key);return fallback}
     return {mask,paths:core.maskPathsFromRaster(mask),intent,groupId:same?existing.id:core.matchingGroup(mask)?.id||(!existing?.patchIds.length?context.groupId:null)};
-  })().catch(()=>fallback);remember(intentCache,key,promise,64)}
+  })().catch(()=>{intentCache.delete(key);return fallback});remember(intentCache,key,promise,64)}
   const result=await promise;
+  finishSmartProgress(context);
+  if(!smartSelectEnabled||context.mode!==smartModeRevision)return fallback;
   if(display&&result.intent)showMask(result.mask,context,result.intent);
   return result;
 }
 function promptInput(event){
   const input=event.target;
   if(!['quickAreaPromptInput','areaPromptInput'].includes(input.id)&&!(input.type==='text'&&input.closest('.region-option-prompt')))return;
+  if(!smartSelectEnabled)return;
   const context=freeze();if(!context)return;
-  revision++;clearTimeout(timer);restoreOriginal();
-  context.owner=selection;context.revision=revision;
+  revision++;clearTimeout(timer);clearSmartProgress();restoreOriginal();
+  context.owner=selection;context.revision=revision;context.mode=smartModeRevision;context.form=input.closest('form');
   const prompt=input.value;
   timer=setTimeout(()=>void analyze(context,prompt),config.debounceMs??650);
 }
 async function prepare(prompt){
+  if(!smartSelectEnabled)return null;
   clearTimeout(timer);const context=freeze();if(!context)return null;
-  context.owner=selection;context.revision=revision;
+  context.owner=selection;context.revision=revision;context.mode=smartModeRevision;
   const result=await analyze(context,prompt);
+  if(!smartSelectEnabled||context.mode!==smartModeRevision)return {mask:context.mask,paths:context.paths,intent:null,groupId:context.groupId,project:context.project};
   return {...result,project:context.project};
 }
 function orderedGroups(){return sceneOrder(state.groups)}
@@ -137,7 +173,7 @@ function capture(patch,group,objectSelection){
 }
 function generationMask(patch){
   const visual=core.displayedPatchMask(patch);
-  if(!patch.objectId||patch.geometryIntent==='appearance'||patch.corners?.length)return visual;
+  if(!smartSelectEnabled||!patch.objectId||patch.geometryIntent==='appearance'||patch.corners?.length)return visual;
   const bits=data(visual),box=bounds(bits,patch.mask.width,patch.mask.height,Math.max(12,Math.round(Math.max(patch.bbox.w,patch.bbox.h)*.12)));
   if(!box)return patch.mask;
   const mask=makeCanvas(patch.mask.width,patch.mask.height),x=mask.getContext('2d');x.fillStyle='#fff';x.fillRect(box.x,box.y,box.w,box.h);
@@ -154,6 +190,7 @@ function geometryUncertain(before,after,mask){
 }
 async function validateGenerated(patch,fullImage,originalMask,before){
   if(!patch.objectId)return {mask:originalMask,valid:true};
+  if(!smartSelectEnabled)return {mask:originalMask,valid:false};
   if(patch.corners?.length)return {mask:originalMask,valid:false};
   const group=state.groups.find(g=>g.id===patch.groupId),project=state.selectionGeneration;
   if(patch.geometryIntent==='appearance'&&!geometryUncertain(before,fullImage,originalMask))return {mask:originalMask,valid:true};
@@ -245,7 +282,10 @@ async function repairScene(version){
   }
 }
 document.addEventListener('input',promptInput);
+document.addEventListener('change',smartSelectChanged);
+for(const id of ['quickAreaPromptForm','areaPromptForm'])mountSmartSelect(document.getElementById(id));
+new MutationObserver(()=>{document.querySelectorAll('.region-option-prompt').forEach(mountSmartSelect)}).observe(document.getElementById('groupList'),{childList:true,subtree:true});
 window.addEventListener('mosaic:projectloaded',()=>{reset();scheduleRepair()});
-window.MosaicObjects={reset,cancelSelection,selectionChanged,prepare,capture,generationMask,validateGenerated,generated,drawPreview,orderedGroups,drawBase,drawOriginal,drawOptionRepairs,drawComposition,invalidated,scheduleRepair,maskKey:mask=>signature(data(mask)),
+window.MosaicObjects={reset,cancelSelection,selectionChanged,prepare,capture,generationMask,validateGenerated,generated,drawPreview,orderedGroups,drawBase,drawOriginal,drawOptionRepairs,drawComposition,invalidated,scheduleRepair,isSmartSelectEnabled:()=>smartSelectEnabled,maskKey:mask=>signature(data(mask)),
   // Useful for project codecs and deterministic integration scenarios.
   flushRepairs:async()=>{clearTimeout(repairTimer);await repairScene(++repairRevision)}};

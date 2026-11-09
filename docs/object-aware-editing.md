@@ -1,7 +1,13 @@
 # Object-aware editing
 
-The existing Groups and Options remain the editing interface. Rectangle, oval,
-polygon/freehand lasso, Wand and brush selections feed the same prompt analysis.
+The existing Groups and Options remain the editing interface. Smart Select is
+an unchecked-by-default checkbox in regional prompt bars. Only checking it
+enables prompt-based intent and SAM masking; typing and Generate otherwise
+keep the manual selection. The prompt shows an indeterminate progress bar
+while finding/selecting the object, with the existing HUD labeled Smart Select.
+Unchecking restores the original shape and rejects pending results. The same
+setting is synchronized across the canvas prompt, area dialog and Group prompt.
+Rectangle, oval, polygon/freehand lasso, Wand and brush selections feed the same prompt analysis.
 The original drawn region stays available for arbitrary area edits. Confident
 object intent changes only the selection preview; Generate remains explicit.
 
@@ -67,6 +73,7 @@ and the ZeroGPU service contract without requiring checkpoints. Browser suites:
 
 ```text
 python tests/browser-runner.py object-aware-scenarios.js runObjectAwareChecks
+python tests/browser-runner.py object-aware-scenarios.js runSmartSelectChecks
 python tests/browser-runner.py object-aware-scenarios.js runLocalOpenCVRepairCheck
 python tests/browser-runner.py object-aware-scenarios.js runLocalMIGANRepairCheck
 ```

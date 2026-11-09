@@ -11,6 +11,7 @@ window.runObjectAwareChecks=async function(){
   window.fetch=async(path,options)=>{if(path==='/api/ai/object-intent'){transported=options.method==='POST'&&JSON.parse(options.body).prompt==='door';return Response.json({kind:'object',label:'door',confidence:.95,geometry:'appearance',behind:[]})}return transportFetch(path,options)};
   try{await window.MosaicAccount.request('/api/ai/object-intent',{method:'POST',body:{prompt:'door'}});assert(transported,'Intent never passed through the real account transport')}finally{window.fetch=transportFetch}
   checks.push('Prompt intent passes through the real authenticated account transport');
+  const smartToggle=document.querySelector('#quickAreaPromptForm [data-smart-select]');smartToggle.checked=true;smartToggle.dispatchEvent(new Event('change',{bubbles:true}));
   const saved={request:window.MosaicAccount.request,auth:window.MosaicAuth.request,ready:window.MosaicAuth.isReady,ensure:window.MosaicAuth.ensure,Worker:window.Worker};
   const stats={sam:0,intent:0,generation:0,repair:0},W=800,H=600;
   const frame=color=>{const c=core.makeCanvas(W,H),x=c.getContext('2d');x.fillStyle=color;x.fillRect(0,0,W,H);return c};
@@ -107,8 +108,53 @@ window.runLocalMIGANRepairCheck=async function(){
 window.runObjectLocalSmoke=async function(){
   await window.MosaicAccount.ready();
   if(!window.MosaicObjects||!window.MosaicPremium||!window.MosaicProjects)throw Error('Object editor modules did not initialize');
+  const toggle=document.querySelector('#quickAreaPromptForm [data-smart-select]');if(!toggle||toggle.checked)throw Error('Smart Select opt-in control is missing or enabled by default');
   const files=['object-aware.js','object-mask-utils.mjs','object-repair-worker.js'];
   for(const file of files){const result=await fetch('./'+file);if(!result.ok||!result.headers.get('content-type').includes('javascript'))throw Error('Local module unavailable: '+file)}
   const route=await fetch('/api/ai/object-intent');if(route.status!==405)throw Error('Local intent route is not registered');
   return {passed:true,url:location.origin,modules:files,apiRegistered:true};
+};
+
+window.runSmartSelectChecks=async function(){
+  const core=window.MosaicCore,objects=window.MosaicObjects,{state}=core,$=id=>document.getElementById(id),checks=[];
+  const assert=(v,message)=>{if(!v)throw Error(message)},pause=ms=>new Promise(r=>setTimeout(r,ms));
+  const wait=async(fn,label)=>{for(let i=0;i<400;i++){if(fn())return;await pause(20)}throw Error('Timed out: '+label)};
+  await window.MosaicAccount.ready();$('apiKeyDialog').close();
+  const original={fetch:window.fetch,ready:window.MosaicAuth.isReady,ensure:window.MosaicAuth.ensure,request:window.MosaicAuth.request};
+  let intentCalls=0,samCalls=0,edits=0,releaseIntent=null,releaseSAM=null,holdIntent=false,holdSAM=false,failSAM=false;
+  const toggle=document.querySelector('#quickAreaPromptForm [data-smart-select]'),bar=document.querySelector('#quickAreaPromptForm [data-smart-select-progress]');
+  const enabled=value=>{toggle.checked=value;toggle.dispatchEvent(new Event('change',{bubbles:true}))};
+  const input=text=>{$('quickAreaPromptInput').value=text;$('quickAreaPromptInput').dispatchEvent(new Event('input',{bubbles:true}))};
+  const shape=(x=80)=>{core.selectTool('lasso');core.setMode('new');state.lasso=[{x,y:70},{x:x+180,y:70},{x:x+180,y:300},{x,y:300}];core.updateMaskWithLasso()};
+  const actualMask=(box,w=640,h=400)=>{const c=core.makeCanvas(w,h),x=c.getContext('2d');x.fillStyle='#fff';x.fillRect((box[0]+20)*w/640,(box[1]+20)*h/400,(box[2]-box[0]-40)*w/640,(box[3]-box[1]-40)*h/400);return c};
+  const image=core.makeCanvas(640,400);image.getContext('2d').fillStyle='#bba890';image.getContext('2d').fillRect(0,0,640,400);core.setMaster(image,'Smart Select fixture');
+  window.MosaicAuth.isReady=()=>true;window.MosaicAuth.ensure=async()=>true;
+  window.MosaicAuth.request=async(path)=>{if(path==='/api/ai/edit'){edits++;return {image:image.toDataURL('image/jpeg').split(',')[1]}}return {}};
+  window.fetch=async(path,options)=>{
+    if(path==='/api/ai/object-intent'){intentCalls++;if(holdIntent)await new Promise(r=>{releaseIntent=r});return Response.json({kind:'object',label:'door',confidence:.95,geometry:'appearance',behind:[]})}
+    if(path==='/api/ai/sam3'){samCalls++;if(holdSAM)await new Promise(r=>{releaseSAM=r});if(failSAM){failSAM=false;return Response.json({error:'Temporary segmentation failure'},{status:502})}const b=JSON.parse(options.body);return Response.json({mask:actualMask(b.box,b.width,b.height).toDataURL('image/png')})}
+    return original.fetch(path,options);
+  };
+  try{
+    assert(!toggle.checked&&!objects.isSmartSelectEnabled(),'Smart Select must default off');shape();const manual=objects.maskKey(state.selectionMask);input('door');await pause(850);
+    assert(intentCalls===0&&samCalls===0&&bar.hidden&&objects.maskKey(state.selectionMask)===manual,'Unchecked prompt triggered segmentation');
+    assert(await objects.prepare('door')===null,'Generate preparation bypassed opt-in');
+    await window.MosaicPremium.generateSelection('door');await wait(()=>edits===1&&[...state.patches.values()].every(p=>!p.generating),'manual generation');
+    assert(intentCalls===0&&samCalls===0,'Generate triggered Smart Select while unchecked');checks.push('Default off: typing and Generate preserve the manual mask and make no intent/SAM calls');
+    shape();const first=objects.maskKey(state.selectionMask);input('door');holdSAM=true;enabled(true);await wait(()=>releaseSAM,'first mask request');
+    assert(!bar.hidden&&getComputedStyle(bar).display!=='none','Smart Select progress bar is not visible');
+    assert($('maskProgressTitle').textContent==='Smart Select'&&!$('maskProgressHud').classList.contains('hidden'),'Smart Select HUD is missing');
+    holdSAM=false;releaseSAM();await wait(()=>objects.maskKey(state.selectionMask)!==first,'first result');assert(bar.hidden,'Progress did not clear after result');checks.push('Opt-in analyzes existing text, shows Smart Select progress, and applies the object mask');
+    // Draw directly over the first preview, without resetSelection(). This is
+    // how a user starts their second selection and exposed the stale manual flag.
+    shape(350);const second=objects.maskKey(state.selectionMask),callsBefore=samCalls;input('door');await wait(()=>objects.maskKey(state.selectionMask)!==second,'second selection');assert(samCalls>callsBefore,'Second selection did not call SAM');checks.push('A second selection works without reloading or manually resetting state');
+    enabled(false);assert(objects.maskKey(state.selectionMask)===second&&bar.hidden,'Unchecking did not restore the original selection');
+    enabled(true);await wait(()=>objects.maskKey(state.selectionMask)!==second,'re-enable');checks.push('Off restores the drawn shape; on can refine it again');
+    shape(100);holdIntent=true;input('door');await wait(()=>releaseIntent,'held intent');const beforeCancel=samCalls;enabled(false);holdIntent=false;releaseIntent();await pause(180);assert(samCalls===beforeCancel&&bar.hidden,'Unchecking during intent still started SAM');checks.push('Unchecking during intent prevents a late SAM request');
+    shape(330);const pendingMask=objects.maskKey(state.selectionMask);releaseSAM=null;holdSAM=true;enabled(true);input('door');await wait(()=>!bar.hidden&&releaseSAM,'held SAM');enabled(false);holdSAM=false;releaseSAM();await pause(180);assert(bar.hidden&&objects.maskKey(state.selectionMask)===pendingMask,'A late SAM result replaced the unchecked manual selection');checks.push('Unchecking during SAM rejects its late result and clears progress');
+    shape(130);const retryMask=objects.maskKey(state.selectionMask);failSAM=true;enabled(true);input('door');const retriesBefore=samCalls;await wait(()=>samCalls>retriesBefore&&bar.hidden,'failed SAM');input('door');await wait(()=>objects.maskKey(state.selectionMask)!==retryMask,'retry same prompt');checks.push('A failed SAM response can retry with the same prompt and selection');
+    // Leave the checked prompt visible for visual inspection of the compact control.
+    core.showQuickPrompt(null,true);
+    return {passed:checks.length,checks,intentCalls,samCalls};
+  }finally{window.fetch=original.fetch;window.MosaicAuth.isReady=original.ready;window.MosaicAuth.ensure=original.ensure;window.MosaicAuth.request=original.request}
 };

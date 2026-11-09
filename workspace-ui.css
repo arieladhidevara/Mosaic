@@ -25,6 +25,14 @@
 .prompt-add-reference:hover,.welcome-base-prompt .welcome-prompt-image-button:hover{border-color:#b19ac9!important;color:#f3eafa!important;background:#b19ac911!important}
 .prompt-footer{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-top:10px}.prompt-info{font:9px/1.5 Inter,system-ui,sans-serif;color:#8f849e;max-width:170px;text-align:left}.prompt-footer>.btn{height:32px;padding:0 12px;border:1px solid #c2acd5;border-radius:6px;background:#c8b2de;color:#292032;font:600 10px Inter,system-ui,sans-serif;display:flex;gap:10px}.prompt-footer>.btn:hover{background:#ddc8ef}.prompt-footer>[data-credit-label]::after{display:none}
 .quick-area-prompt>.reference-previews:empty{display:none}.quick-area-prompt>.reference-previews{margin:9px 0 0;padding:0}
+.smart-select-row{display:flex;align-items:center;gap:12px;min-height:20px;margin-top:5px;grid-column:1/-1}
+.smart-select-row .smart-select-toggle{display:inline-flex;align-items:center;gap:6px;margin:0;white-space:nowrap;cursor:pointer;color:#c2b5d4;font:500 11px/1.5 Inter,system-ui,sans-serif}
+.smart-select-row input[type=checkbox]{appearance:auto;flex:none;width:13px;height:13px;min-width:0;margin:0;padding:0;accent-color:#b493f5;cursor:pointer}
+.smart-select-progress{position:relative;flex:1;min-width:28px;height:3px;overflow:hidden;border-radius:3px;background:#b493f525}
+.smart-select-progress[hidden]{display:none}
+.smart-select-progress>span{position:absolute;inset:0 auto 0 0;width:40%;border-radius:inherit;background:#b493f5;animation:smart-select-scan 1.15s ease-in-out infinite}
+@keyframes smart-select-scan{from{transform:translateX(-100%)}to{transform:translateX(350%)}}
+@media(prefers-reduced-motion:reduce){.smart-select-progress>span{width:100%;animation:none;opacity:.65}}
 .welcome-base-prompt{display:flex!important;flex-direction:column;align-items:stretch;gap:9px;padding:0!important;background:none!important;border:0!important;border-radius:0!important;box-shadow:none!important}.welcome-base-prompt.hidden{display:none!important}
 .welcome-prompt-bar{display:flex;align-items:center;flex-wrap:nowrap!important;gap:8px;background:#1d1c24;border:1px solid #ffffff1b;border-radius:9px;padding:7px}
 .welcome-base-prompt .welcome-prompt-input{width:100%;flex:1 1 auto!important;min-width:0;height:34px;margin:0;padding:6px 8px!important;background:transparent!important;border:0!important;font-size:11px;color:#ddd5e7}
