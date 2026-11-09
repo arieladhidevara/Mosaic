@@ -49,6 +49,7 @@ const publicFiles = new Set([
   'app.js',
   'mask-geometry.js',
   'mask-feather.js',
+  'generation-pool.js',
   // Keep the local origin in sync with the production editor module graph.
   // Module workers require explicit allowlisting and JavaScript MIME types.
   'mask-progress.js',

@@ -23,8 +23,9 @@ function drawProgress(){
   const entries=[...jobs.entries()];
   entries.sort(([a],[b])=>priority(b)-priority(a));
   const [,entry]=entries[0];
+  const edits=entries.filter(([owner])=>owner.startsWith('generation:')).length;
   hud.classList.remove('hidden');
-  document.getElementById('maskProgressTitle').textContent=entry.title;
+  document.getElementById('maskProgressTitle').textContent=edits>1&&entries[0][0].startsWith('generation:')?edits+' AI edit requests':entry.title;
   document.getElementById('maskProgressDetail').textContent=entry.detail;
   const track=document.getElementById('maskProgressTrack');
   const fill=document.getElementById('maskProgressFill');
@@ -57,7 +58,15 @@ function highlight(owner,{mask=null,point=null,whole=false}={}){
 function drawHighlight(){
   const next=[...highlights.entries()].sort(([a],[b])=>priority(b)-priority(a))[0];
   if(!next){shimmer.classList.add('hidden');return}
-  const {mask,point,whole}=next[1];
+  let {mask,point,whole}=next[1];
+  if(next[0].startsWith('generation:')){
+    const masks=[...highlights.entries()].filter(([owner,item])=>owner.startsWith('generation:')&&item.mask).map(([,item])=>item.mask);
+    if(masks.length>1){
+      const combined=document.createElement('canvas');combined.width=masks[0].width;combined.height=masks[0].height;
+      const context=combined.getContext('2d');for(const item of masks)context.drawImage(item,0,0,combined.width,combined.height);
+      mask=combined;
+    }
+  }
   shimmer.classList.remove('hidden');
   shimmer.style.webkitMaskImage='';
   shimmer.style.maskImage='';

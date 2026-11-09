@@ -127,6 +127,7 @@ function selectRegion(event,id){
   reset();
   if(append)core.appendGroupSelection(group);
   else core.selectGroupMask(group,{showOutline:true});
+  core.focusGroupInSidebar(group);
   state.lastCanvasPointer={clientX:event.clientX,clientY:event.clientY};
   core.showQuickPrompt(state.lastCanvasPointer);
   core.message('Object selected. Describe the change and Generate. Ctrl+click additional objects to combine them.');

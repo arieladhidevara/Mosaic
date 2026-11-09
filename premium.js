@@ -14,8 +14,10 @@ const premium = {
   settings:{...DEFAULT_SETTINGS},
   projectPrompt: '', root: null, serial: 0, expanded: new Set(),
   previewNode: null, uploadPatch: null, lastRequest: null,
-  originalMaster: null, initialMaster: null, masterVersions: [], regenerateFrom: null, branchFrom: null, regionSerial: 0, showGuides: false, generationQueue: Promise.resolve()
+  originalMaster: null, initialMaster: null, masterVersions: [], regenerateFrom: null, branchFrom: null, regionSerial: 0, showGuides: false
 };
+const regionalPool=window.MozGenerationPool.createPool(3),lastAppliedGenerations=new WeakMap();
+let regionalRequestSerial=0;
 const cloneCanvas = input => {
   const output = makeCanvas(input.width, input.height);
   output.getContext('2d').drawImage(input, 0, 0);
@@ -479,6 +481,7 @@ async function generateRegion(patchId,regenerate=false){
   if(!patch||patch.generating||(!regenerate&&!patch.awaitingResult))return;
   const groupAtStart=state.groups.find(group=>group.patchIds.includes(patchId));
   const activeAtStart=groupAtStart?.active??null;
+  const choiceAtStart=core.groupChoiceVersion(groupAtStart),requestOrder=++regionalRequestSerial,projectAtStart=state.selectionGeneration;
   const progress=beginAIProgress(
     regenerate?'Regenerate · '+patch.name:'AI Edit · Region '+(patch.regionNumber||''),
     'Preparing selected area…',
@@ -496,6 +499,7 @@ async function generateRegion(patchId,regenerate=false){
   progress.update(14,'Queued for generation…');
   const run=async()=>{
     try{
+      if(state.patches.get(patchId)!==patch||state.selectionGeneration!==projectAtStart){patch.generating=false;progress.done('Project changed; queued edit skipped.');return}
       progress.update(20,'Checking OpenAI connection…');
       if(!await window.MosaicAuth.ensure())throw Error('OpenAI API key entry canceled.');
       const {payload,region,visibleMask}=capture;
@@ -506,7 +510,7 @@ async function generateRegion(patchId,regenerate=false){
       progress.update(82,'Image received. Decoding result…');
       const image=await fromGeneratedJPEG(answer.image,{width:region.w,height:region.h});
       const existing=state.patches.get(patchId);
-      if(!existing||!state.sources.has(generationId)||existing.sourceId!==generationId
+      if(existing!==patch||state.selectionGeneration!==projectAtStart||!state.sources.has(generationId)||existing.sourceId!==generationId
         ||canvas.width!==canvasSize.width||canvas.height!==canvasSize.height){
         if(existing)existing.generating=false;renderGroups();
         progress.done('Finished, but the project changed; current work was kept.');return;
@@ -535,9 +539,11 @@ async function generateRegion(patchId,regenerate=false){
       if(!existing.manualName&&!existing.semanticNamed)existing.name=core.optionNameFromPrompt(existing.prompt,'AI edit '+(patch.regionNumber||''));
       existing.generating=false;
       const group=state.groups.find(g=>g.patchIds.includes(patchId));
-      const activateResult=Boolean(group&&group.active===activeAtStart);
+      const previous=group&&lastAppliedGenerations.get(group);
+      const activateResult=Boolean(group&&core.groupChoiceVersion(group)===choiceAtStart&&requestOrder>(previous?.order||0)&&
+        (group.active===activeAtStart||group.active===previous?.patchId));
       if(group){
-        if(activateResult)group.active=patchId;
+        if(activateResult){group.active=patchId;lastAppliedGenerations.set(group,{order:requestOrder,patchId})}
         core.refreshGroupFootprint(group);
         if(activateResult)core.attachGeneratedSelection(existing,group);
       }
@@ -573,9 +579,7 @@ async function generateRegion(patchId,regenerate=false){
       message('The current approved image was preserved. Retry from its option.');
     }
   };
-  const job=premium.generationQueue.catch(()=>{}).then(run);
-  premium.generationQueue=job;
-  return job;
+  return regionalPool.run(run);
 }
 async function regenerateOption(patchId){
   const patch=state.patches.get(patchId);
@@ -1130,7 +1134,6 @@ function restoreProjectState(snapshot){
   premium.regionSerial=Number(data.regionSerial)||0;
   premium.showGuides=Boolean(data.showGuides);
   premium.regenerateFrom=null;premium.uploadPatch=null;
-  premium.generationQueue=Promise.resolve();
   $('regionGuidesBtn').setAttribute('aria-pressed',String(premium.showGuides));
   updateIntent();refreshMasterBrowser();
 }

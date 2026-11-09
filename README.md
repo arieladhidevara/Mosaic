@@ -15,7 +15,7 @@ Supabase membership checks. Signing in from the editor preserves its canvas.
 4. Choose **Line**, **Rect**, **Oval** or **Wand (SlimSAM)**. Wand downloads and caches the quantized model in the browser on first load, then highlights objects on hover and selects on click. The right **Groups → Auto Create** action uses the hosted SAM 3 Space to detect objects and create empty Groups immediately; an Option is added only after the user selects a Group and generates. **New / Add / Subtract** work with selection tools and Ctrl/Cmd-click unions multiple masks.
 5. Click **Apply** to keep only the selected region of the uploaded image. **Enter** closes an unfinished Line; selection remains a draft until Apply. The unselected pixels are hidden non-destructively.
 6. Refine a patch later with **Edit**, **Brush**, or **Eraser**. Overlapping patches from the same region are automatically grouped as alternatives, with the newest active.
-7. Use **Compare master**: hold the button with a mouse to compare temporarily; on touch devices tap once to view master and again to return.
+7. Click **Compare** to open a draggable Base/latest divider. Base is on the left; the latest approved composition is on the right. Drag across the image, use the slider's arrow keys, then click Compare again or press Escape to close. Without a Base, the original Master is used.
 8. Click **Save image** to download the current approved composition as one PNG. A Base-only project can also be saved as an image. The image download contains no ZIP or prompt text.
 
 The prompt can also be copied directly from the interface. Manual image processing is local; AI edits and harmonization use same-origin serverless OpenAI API routes with the user's own OpenAI API key.
@@ -103,7 +103,7 @@ API-generated images are not perfectly geometry-constrained; masking guarantees 
 
 ## Move & Skew layers
 
-Patch edges use an inward alpha feather: image texture stays sharp, the editable mask stays unchanged, and pixels outside the mask are preserved. Selection outlines remain fully opaque black/white. Click **Simplify** beside Clear selection to straighten noisy edges; Undo restores the previous mask. Wand hover previews use a translucent fill without an outline.
+Patch edges use an inward alpha feather: image texture stays sharp, the editable mask stays unchanged, and pixels outside the mask are preserved. Active selection outlines use white/transparent dashes at 80% opacity; sidebar-selected Groups use a quiet 20% outline. Click **Simplify** beside Clear selection to straighten noisy edges; Undo restores the previous mask. Wand hover previews use a translucent fill without an outline.
 
 Click an existing region or variation in **Layers** to select it. mozAI activates **Move / Skew** on the canvas:
 
@@ -116,6 +116,9 @@ Click an existing region or variation in **Layers** to select it. mozAI activate
 The original Base geometry is preserved separately from the working Master.
 
 ## Non-blocking AI generation and masking
+
+- Up to three regional edits generate in parallel. Additional edits start when a slot is free. Each request keeps its own collage/mask snapshot, and loading highlights cover all running regions. Late results remain saved as Options without replacing a newer generated result or a manual option choice. Queued edits are skipped when their project has changed.
+- Clicking an object on the canvas brings its Group to the top of the sidebar without changing canvas layer order. Sidebar selections keep the floating prompt closed. The floating prompt includes a compact vertical rail of existing Group Options; switching Options preserves prompt text, and the rail moves together with the prompt.
 
 Regional generation displays persistent progress and a purple/white shimmer clipped to the submitted mask, even before its new Option appears. Wand analyzes the approved image as soon as it is ready; switching selection tools reuses that analysis. Changed composition pixels trigger fresh analysis. Auto Create also caches its region map for unchanged pixels and shares those detected object masks with Wand.
 

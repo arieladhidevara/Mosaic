@@ -12,7 +12,7 @@ const state = {
   pointerStart: null, dragFreehand: false, hoverPoint: null, shapeStart: null, shapeEnd: null,
   tool: 'select', lastPoint: null, lastCanvasPointer: null, pendingRevealOnly: false, brushTargetId: null, before: false, zoom: 1, fitZoom: 1, busy: false,
   undo: [], redo: [], serial: 1, panAnchor: null, transformDrag: null, draftGroupId: null, queuedGroupId: null, hoveredGroupId: null, selectionGeneration: 0, selectionOverlayHidden: false, forceNewSelectionGroup: false,
-  projectTitle:'Untitled composition',projectTitleManual:false,brushSize:36,brushIntensity:100
+  projectTitle:'Untitled composition',projectTitleManual:false,brushSize:36,brushIntensity:100,focusedGroupId:null,comparePosition:50
 };
 const uid = name => `${name}_${state.serial++}`;
 const makeCanvas = (w,h) => {const c=document.createElement('canvas');c.width=w;c.height=h;return c};
@@ -20,6 +20,8 @@ const clamp = (v,a,b) => Math.min(b, Math.max(a,v));
 const center = b => ({x:b.x+b.w/2,y:b.y+b.h/2});
 let toastTimer;
 let quickPromptPosition=null;
+const optionChoiceVersions=new WeakMap();
+const groupChoiceVersion=group=>optionChoiceVersions.get(group)||0;
 let activeMaskVertex=null,hoverMaskEdge=null,maskEditVersion=0;
 function toast(text){const el=$('toast');el.textContent=text;el.classList.remove('hidden');clearTimeout(toastTimer);toastTimer=setTimeout(()=>el.classList.add('hidden'),3400)}
 function message(s){$('canvasMessage').textContent=s}
@@ -37,7 +39,7 @@ async function loadFileToCanvas(file,maxDimension=2400){if(!file||!file.type.sta
 async function importMaster(file){if(!file)return;if(state.rawMaster&&!state.masterIsBase){toast('Master is already uploaded. Open its preview or generate a new version.');return}
   if(state.masterIsBase&&state.groups.length&&!window.confirm('Upload Master and replace the current Base-only draft and its Groups?'))return;
   try{const c=await loadFileToCanvas(file);setMaster(c,fileName(file));void window.MosaicAccount?.track('master_uploaded');toast('Master ready. Add another image and select a region to keep.')}catch(e){toast(e.message)}}
-function setMaster(c,name){void window.MosaicAccount?.startProject(!state.reference);window.MosaicPremium?.onMasterReset();state.master=c;window.MosaicAutoRegions?.reset?.();window.MosaicSlimWand?.reset?.();state.rawMaster=c;state.masterIsBase=false;state.alignmentTransforms=null;state.sources.clear();state.groups=[];state.patches.clear();state.pendingSourceId=null;state.queue=[];state.editingPatchId=null;state.selectedPatchId=null;state.undo=[];state.redo=[];state.selectionGeneration++;state.hoveredGroupId=null;state.queuedGroupId=null;
+function setMaster(c,name){void window.MosaicAccount?.startProject(!state.reference);window.MosaicPremium?.onMasterReset();state.master=c;state.before=false;state.focusedGroupId=null;window.MosaicAutoRegions?.reset?.();window.MosaicSlimWand?.reset?.();state.rawMaster=c;state.masterIsBase=false;state.alignmentTransforms=null;state.sources.clear();state.groups=[];state.patches.clear();state.pendingSourceId=null;state.queue=[];state.editingPatchId=null;state.selectedPatchId=null;state.undo=[];state.redo=[];state.selectionGeneration++;state.hoveredGroupId=null;state.queuedGroupId=null;
   canvas.width=overlay.width=c.width;canvas.height=overlay.height=c.height;setSourcePreview('masterPreview',c);window.MosaicPremium?.onMasterLoaded?.(c,name);$('selectionDraft').setAttribute('viewBox',`0 0 ${c.width} ${c.height}`);resetSelection();
   $('welcome').classList.add('hidden');$('canvasWrap').classList.remove('hidden');setProjectTitle(name);$('projectSize').textContent=`${c.width} × ${c.height}`;
   $('masterTitle').textContent='Master';$('masterInfo').textContent=`${name} · ${c.width} × ${c.height}`;$('masterStatus').textContent='✓';$('masterZone').classList.add('ready');updateZoomFit();renderGroups();render();updateSourceActions();message('Upload a variation, select the area you want, then click Apply.')}
@@ -79,6 +81,7 @@ function hideQuickPrompt(){document.getElementById('quickAreaPromptForm')?.class
 function showQuickPrompt(point=state.lastCanvasPointer,keepText=false){
   if(!state.master||!state.selectionMask||!maskBoundingBox(state.selectionMask)||state.pendingSourceId||state.editingPatchId)return;
   const form=$('quickAreaPromptForm'),vp=$('viewport'),r=vp.getBoundingClientRect();
+  refreshQuickOptions();
   // The prompt is position:fixed, so work in actual screen coordinates.
   // The previous code clamped to the left/top of the viewport, which could
   // put the prompt hundreds of pixels away from the clicked mask.
@@ -306,6 +309,41 @@ function selectGroupMask(group,{showOutline=false,append=false}={}){
   message('Ready to edit '+group.name+'. '+(state.pendingSourceId?'Click Apply to keep this area from the imported image.':'Ctrl+click another area to combine masks, or use AI Edit.'));
   if(!showOutline)window.MosaicRegions?.clearHover?.();
   toast('Reused '+group.name+' mask.');
+}
+function focusGroupInSidebar(group){
+  if(!group)return;
+  state.focusedGroupId=group.id;
+  const list=$('groupList'),section=[...list.querySelectorAll('.region-group')].find(row=>row.dataset.group===group.id);
+  if(section)list.prepend(section);
+  list.scrollTop=0;
+}
+function chooseGroupOption(group,patchId,{showPrompt=false,showOutline=false}={}){
+  if(!group||state.pendingSourceId||state.busy)return;
+  if(patchId!==null&&(!group.patchIds.includes(patchId)||!state.patches.has(patchId)))return;
+  optionChoiceVersions.set(group,groupChoiceVersion(group)+1);
+  state.editingPatchId=null;group.active=patchId;refreshGroupFootprint(group);
+  selectGroupMask(group,{showOutline});
+  if(showPrompt)showQuickPrompt(state.lastCanvasPointer,true);
+}
+function refreshQuickOptions(){
+  const form=$('quickAreaPromptForm');let rail=$('quickGroupOptions');
+  if(!rail){rail=document.createElement('aside');rail.id='quickGroupOptions';rail.className='quick-group-options';rail.setAttribute('aria-label','Options for selected Group');form.append(rail)}
+  const group=state.groups.find(group=>group.id===state.draftGroupId||group.patchIds.includes(state.selectionTargetPatchId));
+  const ready=group?.patchIds.map(id=>state.patches.get(id)).filter(patch=>patch&&!patch.hideUntilReady)||[];
+  rail.replaceChildren();rail.hidden=!ready.length;form.classList.toggle('has-group-options',Boolean(ready.length));
+  if(!ready.length)return;
+  const heading=document.createElement('small');heading.textContent='Options';rail.append(heading);
+  const choices=[...(!group.hasHarmonizedMaster?[null]:[]),...ready];
+  choices.forEach((patch,index)=>{
+    const button=document.createElement('button');button.type='button';button.className='quick-option';
+    button.dataset.option=patch?.id||'original';button.setAttribute('aria-pressed',String(group.active===(patch?.id||null)));
+    button.title=patch?.name||'Original Master';button.setAttribute('aria-label','Choose '+button.title);
+    const thumb=patch&&patchThumbnail(patch);
+    if(thumb){const image=document.createElement('img');image.src=thumb;image.alt='';button.append(image)}
+    const label=document.createElement('span');label.textContent=patch?String(index+(group.hasHarmonizedMaster?1:0)):'Original';button.append(label);
+    button.onclick=()=>chooseGroupOption(group,patch?.id||null,{showPrompt:true,showOutline:!state.selectionOverlayHidden});
+    rail.append(button);
+  });
 }
 // Ctrl/Cmd-click unions existing selections, without modifying a saved Group.
 // A new draft Group is created for the merged shape so Generate saves one option.
@@ -643,9 +681,9 @@ function composeApprovedCanvas(){
 }
 function render(){
   if(!state.master)return;
+  renderComparison();
   if(state.before){
-    ctx.clearRect(0,0,canvas.width,canvas.height);
-    ctx.drawImage(window.MosaicPremium?.originalImage()||state.reference||state.master,0,0,canvas.width,canvas.height);
+    drawApprovedComposition(ctx);
     drawOverlay();return;
   }
   if(window.MosaicPremium?.drawArchivePreview(ctx)){drawOverlay();return}
@@ -673,7 +711,7 @@ function vectorLayer(id){
 function drawVectorPaths(layer,paths,{color='#fff',fill='none',width=.95,dashed=false}={}){
   const d=paths.filter(path=>path.length>=3).map(path=>path.map((point,index)=>(index?'L':'M')+point.x+' '+point.y).join(' ')+' Z').join(' ');
   const attributes={d,fill,'fill-rule':'evenodd',stroke:color,'stroke-width':width,'vector-effect':'non-scaling-stroke','stroke-linejoin':'round'};
-  if(dashed){layer.append(svgNode('path',{...attributes,stroke:'#000','stroke-width':width+.65,opacity:1}));attributes.stroke='#fff';attributes['stroke-dasharray']='4 6';attributes.opacity=1}
+  if(dashed){attributes.stroke='#fff';attributes['stroke-dasharray']='4 6'}
   layer.append(svgNode('path',attributes));
 }
 function updateSelectionOutline(){state.boundaryCanvas=!state.selectionOverlayHidden&&state.selectionMask&&maskBoundingBox(state.selectionMask)?state.selectionMask:null;drawOverlay()}
@@ -753,9 +791,10 @@ function renderGroups(){
     list.innerHTML='<div class="empty-groups"><span>◌</span><strong>No groups yet</strong><p>Draw a selection, then generate or apply an image to create a group.</p></div>';
     return;
   }
-  list.innerHTML=state.groups.map(g=>{
+  const displayGroups=state.groups.slice().sort((a,b)=>Number(b.id===state.focusedGroupId)-Number(a.id===state.focusedGroupId));
+  list.innerHTML=displayGroups.map(g=>{
     const readyIds=g.patchIds.filter(id=>state.patches.get(id)&&!state.patches.get(id).hideUntilReady);
-    const order=readyIds.slice().reverse().sort((a,b)=>Number(Boolean(state.patches.get(a)?.isOriginalMaster))-Number(Boolean(state.patches.get(b)?.isOriginalMaster)));
+    const order=readyIds.slice().reverse().sort((a,b)=>Number(b===g.active)-Number(a===g.active)||Number(Boolean(state.patches.get(a)?.isOriginalMaster))-Number(Boolean(state.patches.get(b)?.isOriginalMaster)));
     const optionRow=(pid)=>{
       const p=state.patches.get(pid);if(!p)return '';
       const isMaster=p.isMasterVersion||p.isOriginalMaster;
@@ -779,6 +818,7 @@ function renderGroups(){
     }
   }
   window.MosaicRegions?.decorate();window.MosaicPremium?.decorateActive?.();updateSourceActions();
+  refreshQuickOptions();
 }
 function editExisting(pid){if(state.pendingSourceId){toast('Apply or discard your new image before editing saved variants.');return}const patch=state.patches.get(pid);if(!patch)return;state.editingPatchId=pid;state.selectedPatchId=pid;resetSelection();state.selectionPoints=patchControlPoints(patch).map(({x,y})=>({x,y}));state.selectionMask.getContext('2d').drawImage(displayedPatchMask(patch),0,0);setMode('add');selectTool('lasso');updateSelectionOutline();updateApplyButton();message('Editing a saved mask. Refine it, then click Update mask to commit changes.')}
 function groupEvent(e){if(window.MosaicRegions?.handleGroupEvent(e))return;if(window.MosaicPremium?.handleGroupEvent(e))return;const target=e.target.closest('[data-action]');if(!target)return;const action=target.dataset.action,group=state.groups.find(g=>g.id===target.dataset.group),pid=target.dataset.patch;
@@ -790,12 +830,11 @@ function groupEvent(e){if(window.MosaicRegions?.handleGroupEvent(e))return;if(wi
     if(state.pendingSourceId){toast('Apply or discard the new image first.');return}
     hideQuickPrompt();state.editingPatchId=null;
     if((e.ctrlKey||e.metaKey)&&pid!=='master'){
+      optionChoiceVersions.set(group,groupChoiceVersion(group)+1);
       group.active=pid;refreshGroupFootprint(group);
       appendGroupSelection(group);showQuickPrompt();renderGroups();render();return;
     }
-    resetSelection();group.active=pid==='master'?null:pid;refreshGroupFootprint(group);
-    state.selectedPatchId=group.active;
-    selectGroupMask(group,{showOutline:false});renderGroups();render();return;
+    chooseGroupOption(group,pid==='master'?null:pid);return;
   }
   if(action==='delete'&&group){if(state.pendingSourceId){toast('Finish the new image before removing variants.');return}group.patchIds=group.patchIds.filter(x=>x!==pid);state.patches.delete(pid);if(group.active===pid)group.active=group.patchIds.at(-1)||null;if(state.editingPatchId===pid)state.editingPatchId=null;if(state.selectedPatchId===pid)state.selectedPatchId=null;if(!group.patchIds.length)state.groups=state.groups.filter(g=>g.id!==group.id);else refreshGroupFootprint(group);resetSelection();renderGroups();render();toast('Variant removed.')}}
 function selectTool(tool){if(window.MosaicSourceEditor?.isEditing())return;clearHover();clearDraft();hideQuickPrompt();state.tool=tool;if(state.pendingSourceId&&tool==='reveal'){state.pendingRevealOnly=true;render()}$('resetTransformBtn').classList.toggle('hidden',tool!=='transform'||!activeTransformPatch());
@@ -1260,14 +1299,15 @@ function pointerDown(e){if(e.target.closest('form,button,input,textarea,select')
   state.lastCanvasPointer={clientX:e.clientX,clientY:e.clientY};
   if(state.tool==='select'){
     const point=canvasPoint(e,false);
-    if((e.ctrlKey||e.metaKey)&&pointInImage(point)){const region=findRegionAt(point);if(region){e.preventDefault();appendGroupSelection(region);showQuickPrompt(state.lastCanvasPointer);return}}
+    if((e.ctrlKey||e.metaKey)&&pointInImage(point)){const region=findRegionAt(point);if(region){e.preventDefault();appendGroupSelection(region);focusGroupInSidebar(region);showQuickPrompt(state.lastCanvasPointer);return}}
     if(beginMaskVertexDrag(e,point))return;
     if(state.boundaryCanvas&&pointInImage(point)&&state.selectionMask.getContext('2d').getImageData(Math.floor(point.x),Math.floor(point.y),1,1).data[3]>0){
+      focusGroupInSidebar(state.groups.find(group=>group.id===state.draftGroupId));
       if(selectedImagePatch())beginTransform(e,point);else beginSelectionMove(e,point);return;
     }
     const region=findRegionAt(point);
     if(region){
-      selectGroupMask(region,{showOutline:true});showQuickPrompt(state.lastCanvasPointer);
+      selectGroupMask(region,{showOutline:true});focusGroupInSidebar(region);showQuickPrompt(state.lastCanvasPointer);
       if(selectedImagePatch())beginTransform(e,point);else beginSelectionMove(e,point);
     }else{if(!state.pendingSourceId&&!state.editingPatchId)deselectCanvasRegion();else hideQuickPrompt();message('Click a saved Group, or draw a selection.')}
     return;
@@ -1344,7 +1384,7 @@ function pointerCancel(){if(state.maskVertexDrag){endMaskVertexDrag(true);return
       state.brushTargetId=null;
     }
     state.drawing=false;state.lastPoint=null;state.pointerStart=null;state.shapeStart=null;state.shapeEnd=null;if(state.dragFreehand)state.lasso=[];state.dragFreehand=false;drawOverlay()}}
-function onKeys(e){if(e.target.matches('input,textarea,select,[contenteditable="true"]')||e.repeat&&e.key==='Enter')return;
+function onKeys(e){if(e.key==='Escape'&&state.before){e.preventDefault();toggleComparison(false);return}if(e.target.matches('input,textarea,select,[contenteditable="true"]')||e.repeat&&e.key==='Enter')return;
   if(e.key==='Enter'){
     if(state.lasso.length>=3){e.preventDefault();updateMaskWithLasso();return}
     // Enter closes a draft shape; only clicking Apply commits an imported image.
@@ -1504,11 +1544,34 @@ $('inspectorToggle').addEventListener('click',()=>{
   if(wasFit)requestAnimationFrame(updateZoomFit);
 });
 $('zoomIn').addEventListener('click',()=>setZoom(state.zoom*1.25));$('zoomOut').addEventListener('click',()=>setZoom(state.zoom/1.25));$('zoomFit').addEventListener('click',updateZoomFit);$('zoomValue').addEventListener('click',updateZoomFit);
-const compare=$('beforeBtn');let compareTap=false;
-compare.addEventListener('pointerdown',e=>{if(e.pointerType==='touch'||window.matchMedia('(hover: none)').matches){compareTap=true;return}compareTap=false;state.before=true;compare.classList.add('comparing');render()});
-compare.addEventListener('click',()=>{if(compareTap){state.before=!state.before;compare.classList.toggle('comparing',state.before);render();compareTap=false}});
-for(const type of ['pointerup','pointercancel','pointerleave'])compare.addEventListener(type,()=>{if(!compareTap){state.before=false;compare.classList.remove('comparing');render()}});
-window.addEventListener('pointerup',e=>{if(e.pointerType==='mouse'&&!compareTap&&state.before){state.before=false;compare.classList.remove('comparing');render()}});
+const compare=$('beforeBtn'),compareView=document.createElement('div'),compareBase=makeCanvas(1,1);
+compareView.id='compareView';compareView.className='compare-view';compareView.hidden=true;
+compareView.innerHTML='<div class="compare-base-clip"></div><span class="compare-label compare-base-label">Base</span><span class="compare-label compare-latest-label">Latest</span><div class="compare-divider"><span aria-hidden="true">↔</span></div><input id="compareSlider" type="range" min="0" max="100" value="50" aria-label="Compare Base and latest image" />';
+compareView.querySelector('.compare-base-clip').append(compareBase);$('canvasWrap').append(compareView);
+const compareSlider=$('compareSlider');let compareDrag=null;
+compare.title='Toggle Base / latest comparison, then drag the divider';compare.setAttribute('aria-pressed','false');
+function positionComparison(){
+  const value=state.comparePosition??50;
+  compareSlider.value=value;compareView.style.setProperty('--compare-position',value+'%');
+  compareView.querySelector('.compare-base-clip').style.clipPath='inset(0 '+(100-value)+'% 0 0)';
+  compareSlider.setAttribute('aria-valuetext',value+'% Base, '+(100-value)+'% latest image');
+}
+function renderComparison(){
+  compareView.hidden=!state.before;compare.classList.toggle('comparing',state.before);compare.setAttribute('aria-pressed',String(state.before));
+  if(!state.before)return;
+  if(compareBase.width!==canvas.width||compareBase.height!==canvas.height){compareBase.width=canvas.width;compareBase.height=canvas.height}
+  const base=state.reference||state.rawBase||state.rawMaster||state.master,context=compareBase.getContext('2d');
+  context.clearRect(0,0,compareBase.width,compareBase.height);context.drawImage(base,0,0,compareBase.width,compareBase.height);
+  compareView.querySelector('.compare-base-label').textContent=state.reference||state.rawBase?'Base':'Original';
+  positionComparison();
+}
+function toggleComparison(enabled=!state.before){if(!state.master)return;state.before=enabled;if(enabled){hideQuickPrompt();window.MosaicRegions?.clearHover?.()}render()}
+compare.addEventListener('click',()=>toggleComparison());
+compareSlider.addEventListener('input',()=>{state.comparePosition=Number(compareSlider.value);positionComparison()});
+const moveCompare=event=>{const box=compareView.getBoundingClientRect();state.comparePosition=Math.round(clamp((event.clientX-box.left)/box.width*100,0,100));positionComparison()};
+compareSlider.addEventListener('pointerdown',event=>{if(event.button!==0)return;event.preventDefault();compareDrag=event.pointerId;compareSlider.focus({preventScroll:true});compareSlider.setPointerCapture(event.pointerId);moveCompare(event)});
+compareSlider.addEventListener('pointermove',event=>{if(compareDrag===event.pointerId){event.preventDefault();moveCompare(event)}});
+for(const type of ['pointerup','pointercancel'])compareSlider.addEventListener(type,event=>{if(compareDrag!==event.pointerId)return;compareDrag=null;if(compareSlider.hasPointerCapture(event.pointerId))compareSlider.releasePointerCapture(event.pointerId)});
 // Touch and mouse drawing both use Pointer Events.
 for(const type of ['pointerdown','pointermove','pointerup','pointercancel'])$('viewport').addEventListener(type,{pointerdown:pointerDown,pointermove:pointerMove,pointerup:pointerUp,pointercancel:pointerCancel}[type]);
 $('viewport').addEventListener('dblclick',e=>{if(state.tool==='lasso'&&state.lasso.length>=3){e.preventDefault();updateMaskWithLasso()}});
@@ -1526,4 +1589,5 @@ viewport.addEventListener('wheel',event=>{
 },{passive:false});
 window.addEventListener('mosaic:keyconnected',()=>state.groups.forEach(autoClassifyGroup));
 window.MosaicCore = {appendGroupSelection,newGroup,matchingGroup,applyWandMask,svgNode,vectorLayer,drawVectorPaths,maskPathsFromRaster,state,canvas,overlay,ctx,makeCanvas,uid,setProjectTitle,toast,message,promptText,loadFileToCanvas,setMaster,continueWithBase,upgradeBaseDraft,setSourcePreview,updateSourceActions,render,composeApprovedCanvas,renderGroups,drawPatch,selectTool,setMode,updateApplyButton,maskBoundingBox,assignGroup,resetSelection,updateSelectionOutline,updateMaskWithLasso,updateZoomFit,escapeHTML,categoryFromText,updateGroupCategory,optionNameFromPrompt,prepareSelectionGroup,groupMask,selectGroupMask,CATEGORIES,showQuickPrompt,hideQuickPrompt,createBlankRegion,moveOptionToGroup,displayedPatchMask,renderedPatchLayer,refreshGroupFootprint,invalidateDisplayedMask,attachGeneratedSelection,patchSelectionPaths,exactMaskBoundingBox,unwarpPatchSelection,patchControlPoints,displayedMaskPoint};
+Object.assign(window.MosaicCore,{focusGroupInSidebar,chooseGroupOption,groupChoiceVersion,toggleComparison});
 promptText();

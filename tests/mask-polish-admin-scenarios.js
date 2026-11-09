@@ -20,9 +20,9 @@ window.runMaskPolishChecks=async function(){
     polishAssert(core.displayedPatchMask(patch).getContext('2d').getImageData(100,200,1,1).data[3]===255,'Feather changed editable mask geometry');
     core.selectGroupMask(group,{showOutline:true});
     const paths=$('selectionOutlineVectors').querySelectorAll('path');
-    polishAssert(paths.length>=2&&[...paths].every(p=>getComputedStyle(p).opacity==='1'),'Selection outline is translucent');
-    polishAssert(paths[0].getAttribute('stroke')==='#000'&&paths[1].getAttribute('stroke')==='#fff','Outline must alternate black and white');
-    checks.push('Feather fades patch alpha inward, preserves sharp texture and editable mask; outline is fully opaque black/white');
+    polishAssert(paths.length>=1&&[...paths].every(p=>getComputedStyle(p).opacity==='0.8'),'Active selection outline must be 80% opacity');
+    polishAssert([...paths].every(p=>p.getAttribute('stroke')==='#fff'),'Outline must be white/transparent');
+    checks.push('Feather fades patch alpha inward, preserves sharp texture and editable mask; outline is white/transparent at 80%');
     core.resetSelection();core.selectTool('lasso');
     state.lasso=[{x:100,y:100},...Array.from({length:29},(_,i)=>({x:110+i*10,y:100+(i%2?1:-1)})),{x:400,y:100},{x:400,y:400},{x:100,y:400}];
     core.updateMaskWithLasso();core.hideQuickPrompt();
