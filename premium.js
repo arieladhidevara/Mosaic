@@ -1,4 +1,5 @@
 /* Mosaic BYOK — masked AI editing and harmonization with an OpenAI API key. */
+import './generation-pool.js';
 const core = window.MosaicCore;
 if (!core) throw new Error('Mosaic core must load before Premium');
 const {state, canvas, makeCanvas, uid, render, renderGroups, resetSelection, assignGroup, maskBoundingBox, toast, message} = core;
@@ -200,7 +201,7 @@ function onMasterReset() {
   premium.regionSerial = 0;
 }
 function canSelectArea() {
-  return Boolean(state.master && !state.pendingSourceId && !state.editingPatchId && !premium.previewNode);
+  return core.canCreateSelection();
 }
 function isPreviewing() { return Boolean(premium.previewNode); }
 function drawArchivePreview(context) {
