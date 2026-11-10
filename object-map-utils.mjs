@@ -18,20 +18,37 @@ export function objectMapSize(width,height){
 export function decodeColors(rgba,width,height){
   if(!Number.isInteger(width)||!Number.isInteger(height)||width<1||height<1||width*height>2500000||rgba.length!==width*height*4)throw Error('Invalid object-map dimensions.');
   const labels=new Uint8Array(width*height),counts=new Uint32Array(65);
-  let colored=0,flat=0;
+  let colored=0;
+  // Match every opaque, non-empty pixel to the nearest internal ID. The
+  // generated image does NOT have to use the 64 palette RGB values exactly.
+  // Rejecting on palette distance discards otherwise useful object maps.
   for(let i=0;i<labels.length;i++){
     const p=i*4,r=rgba[p],g=rgba[p+1],b=rgba[p+2];
     if(rgba[p+3]<128||Math.max(r,g,b)<24)continue;
     let best=0,distance=Infinity;
-    for(const color of PALETTE){const d=(r-color.rgb[0])**2+(g-color.rgb[1])**2+(b-color.rgb[2])**2;if(d<distance){distance=d;best=color.id}}
-    colored++;if(distance<=24**2)flat++;labels[i]=best;counts[best]++;
+    for(const color of PALETTE){
+      const d=(r-color.rgb[0])**2+(g-color.rgb[1])**2+(b-color.rgb[2])**2;
+      if(d<distance){distance=d;best=color.id}
+    }
+    colored++;labels[i]=best;counts[best]++;
   }
-  if(!colored||flat/colored<.8)throw Error('The object map is not a flat-color map. Retry object preparation.');
-  const minimum=1;
-  for(let i=0;i<labels.length;i++)if(counts[labels[i]]<minimum)labels[i]=0;
-  const ids=Array.from(counts.keys()).filter(id=>id&&counts[id]>=minimum);
-  if(ids.length<2)throw Error('The object map did not separate enough objects. Retry object preparation.');
-  return {labels,ids};
+  // Only empty/transparent frames are unusable. A single detected color or
+  // textured image still yields a map; quality concerns are advisory.
+  if(!colored)throw Error('The object map is empty or transparent. Retry object preparation.');
+  const ids=Array.from(counts.keys()).filter(id=>id&&counts[id]>0);
+  const warnings=[];
+  if(ids.length<2)warnings.push('Only one object color detected');
+  // Check local color consistency independently of the fixed palette. This
+  // flags likely gradients/texture without rejecting the generated image.
+  const gap=8;let compared=0,stable=0;
+  for(let y=gap;y<height;y+=gap)for(let x=gap;x<width;x+=gap){
+    const p=(y*width+x)*4,q=(y*width+x-gap)*4;
+    if(rgba[p+3]<128||rgba[q+3]<128)continue;
+    compared++;
+    if(Math.max(Math.abs(rgba[p]-rgba[q]),Math.abs(rgba[p+1]-rgba[q+1]),Math.abs(rgba[p+2]-rgba[q+2]))<=12)stable++;
+  }
+  if(compared>=32&&stable/compared<.6)warnings.push('Map has color gradients or texture; review object boundaries');
+  return {labels,ids,warnings};
 }
 export function idsInShape(labels,width,height,alpha,targetWidth,targetHeight){
   const intersections=new Uint32Array(MAX_OBJECTS+1),totals=new Uint32Array(MAX_OBJECTS+1);
