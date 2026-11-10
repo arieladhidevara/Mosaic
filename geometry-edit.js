@@ -216,7 +216,7 @@ async function generate(prompt,files=[],operation='shape'){
       prompt;
     const fullPrompt='OBJECT GEOMETRY EDIT: '+task+' Keep the camera, focal length, perspective, room structure, framing and ALL unselected objects unchanged. Render the ENTIRE image at the same viewpoint and resolve any background exposed by the edit. Do not create colored masks or labels.';
     toast(operation==='remove'?'Removing object in full image…':'Generating full-image shape edit…');
-    const generated=await window.MosaicPremium.generateComposition(fullPrompt,files,before);
+    const generated=await window.MosaicPremium.generateComposition(fullPrompt,files,before,null,{editIntent:operation});
     if(generation!==state.selectionGeneration||state.master!==master){toast('The project changed during generation; result discarded.');return;}
     const alignedResult=alignTranslation(before,generated,oldMask);
     let newMask=null;
