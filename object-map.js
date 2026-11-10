@@ -125,7 +125,10 @@ function partsOverlappingMask(mask){
   if(!selectedPixels)return parts;
   for(const group of state.groups){
     if(group.objectMapBatch||group.mergedInto||group.objectRemoved)continue;
-    if(!group.objectMapObjectKey&&!group.mapPrepared&&!group.objectId)continue;
+    // Older saved Groups may have no Object Map ID. Their existing mask must
+    // still be selectable; never create a duplicate foreground object just
+    // because a legacy Group is not labelled with an instance key.
+    if(!group.objectMapObjectKey&&!group.mapPrepared&&!group.objectId&&!group.patchIds?.length)continue;
     const own=core.groupMask(group);
     if(!own)continue;
     const overlay=makeCanvas(w,h),ctx=overlay.getContext('2d',{willReadFrequently:true});
@@ -135,8 +138,9 @@ function partsOverlappingMask(mask){
     for(let i=3;i<pixels.length;i+=4)if(pixels[i]>=128){all++;if(target[i]>=128)both++;}
     // A small drawn rectangle inside a huge wall still selects that wall.
     // Reject mere 1-2 pixel grazing without requiring 12% of the whole object.
-    if(both>=Math.max(3,Math.min(10,Math.round(selectedPixels*.006)))&&
-      (both/Math.max(1,all)>=.012||both/selectedPixels>=.02)){
+    // Any meaningful contact counts. A small door/fixture overlapping
+    // a large rectangle must retain its existing Object ID as well.
+    if(both>=Math.max(3,Math.min(6,Math.round(selectedPixels*.002)))){
       parts.push(window.MosaicObjectManager.partForObject(group));
     }
   }
