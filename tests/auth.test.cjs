@@ -12,7 +12,7 @@ const {guard}=require('../lib/auth');
 const store=require('../lib/data-store');
 const session=require('../api/session');
 const admin=require('../api/admin');
-const edit=require('../api/ai/edit');
+const edit=require('../api/ai/generate');
 const {usageFrom}=require('../lib/generation-tracking');
 const keys=['NODE_ENV','MOSAIC_DEV_AUTH','VERCEL','VERCEL_ENV','VERCEL_URL','VERCEL_REGION','VERCEL_DEPLOYMENT_ID','SUPABASE_URL','SUPABASE_PUBLISHABLE_KEY','SUPABASE_ANON_KEY','SUPABASE_SECRET_KEY','SUPABASE_SERVICE_ROLE_KEY','MOSAIC_APP_ORIGIN'];
 async function env(values,fn){
@@ -81,14 +81,14 @@ test('changed-account header only rejects mismatches and cannot authenticate a c
   }finally{identity.restore()}
 }));
 test('unsafe origin and unsupported method are rejected before authentication',async()=>env(local,async()=>{
-  const response=res();await edit(req({method:'POST',headers:{host:'localhost:8000',origin:'https://evil.example'}}),response);assert.equal(response.statusCode,403);
-  const method=res();await edit(req({method:'GET'}),method);assert.equal(method.statusCode,405);
+  const response=res();await edit(req({url:'/api/ai/edit',method:'POST',headers:{host:'localhost:8000',origin:'https://evil.example'}}),response);assert.equal(response.statusCode,403);
+  const method=res();await edit(req({url:'/api/ai/edit',method:'GET'}),method);assert.equal(method.statusCode,405);
 }));
 test('generation requires a saved profile key and rejects API keys sent in body',async()=>env(local,async()=>{
   const before=global.fetch;let calls=0;global.fetch=async()=>{calls++;throw Error('Unexpected OpenAI call')};
   try{
     for(const body of [{apiKey:'sk-client-key-must-be-rejected'},{}]){
-      const response=res();await edit(req({method:'POST',body}),response);
+      const response=res();await edit(req({url:'/api/ai/edit',method:'POST',body}),response);
       assert.equal(response.statusCode,400);assert.match(response.body.error,/key/i);
     }
     assert.equal(calls,0);
@@ -109,7 +109,7 @@ test('generation uses the saved account key and verified server identity',async(
   const png=Buffer.alloc(80);Buffer.from('89504e470d0a1a0a','hex').copy(png);png.writeUInt32BE(256,16);png.writeUInt32BE(256,20);
   const image='data:image/png;base64,'+png.toString('base64');
   try{
-    const response=res();await edit(req({method:'POST',body:{collage:image,base:image,mask:image,prompt:'Sensitive prompt',quality:'medium'}}),response);
+    const response=res();await edit(req({url:'/api/ai/edit',method:'POST',body:{collage:image,base:image,mask:image,prompt:'Sensitive prompt',quality:'medium'}}),response);
     assert.equal(response.statusCode,200);assert.equal(authorization,'Bearer sk-developer-owned-placeholder');
     assert.equal(start.actor.environment,'development');assert.equal(start.actor.id,policy.DEV_USER.id);
     assert.equal(finish.values.total_tokens,30);assert.equal(finish.values.status,'success');
@@ -195,9 +195,9 @@ test('refresh rotates auth cookies only after checking active membership again',
 }));
 
 test('guest access never grants AI, demo usage, activity, or admin API access',async()=>env(production,async()=>{
-  const routes=[require('../api/credits'),require('../api/admin'),require('../api/activity'),...['master','edit','harmonize','classify','option-name','connection'].map(name=>require('../api/ai/'+name))];
-  for(const [index,handler] of routes.entries()){
-    const request=productionRequest({apiKey:'sk-test-only-key-placeholder',role:'admin',userId:userId});delete request.headers.cookie;
+  const routes=[['/api/credits',require('../api/credits')],['/api/admin',require('../api/admin')],['/api/activity',require('../api/activity')],...['master','edit','harmonize','classify','option-name','connection'].map(name=>['/api/ai/'+name,['master','edit','harmonize'].includes(name)?require('../api/ai/generate'):require('../api/ai/'+name)])];
+  for(const [index,[url,handler]] of routes.entries()){
+    const request=productionRequest({apiKey:'sk-test-only-key-placeholder',role:'admin',userId:userId});delete request.headers.cookie;request.url=url;
     if(index<2)request.method='GET';
     const response=res();await handler(request,response);assert.equal(response.statusCode,401);
   }
