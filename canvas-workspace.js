@@ -368,13 +368,12 @@ async function submitChat(event){
   const wasBusy=state.busy;state.busy=true;
   try{
     if(!await window.MosaicAuth.ensure())throw Error('Connect AI before generating an edit.');
-    // Full Image must be callable with no Object Map or SAM service at all.
-    // Semantic intent is guided by the prompt, not a blocking preflight.
-    // After the image arrives SceneVersions attempts fresh SAM segmentation,
-    // falling back to the saved masks without losing the generated image.
-    const editedPrompt=prompt+'\n\nFULL IMAGE EDIT: Return one complete, coherent image at the same camera view. '+ 
-      'Apply the requested changes and preserve all objects, geometry and materials not explicitly changed. '+ 
-      'The existing object identities will be resegmented after generation.';
+    // Full Image appearance editing keeps immutable original object IDs.
+    // Its newly generated RGB is locally segmented and contour-aligned to
+    // the saved masks without SAM or a replacement geometry map.
+    const editedPrompt=prompt+'\n\nFULL IMAGE EDIT: Return one complete, coherent image at the same camera view. '+
+      'Apply the requested changes and preserve all objects, geometry and materials not explicitly changed. '+
+      'Existing object silhouettes and mask IDs must remain unchanged; new material pixels will be warped back to their original boundaries.';
     $('chatStatus').textContent='Generating the complete image…';
     const image=await premium.generateComposition(editedPrompt,files,imageBefore);
     if(requestEpoch!==epoch)return;
