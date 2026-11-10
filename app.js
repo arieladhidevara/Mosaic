@@ -1246,11 +1246,21 @@ function finishMaskSelection(){
   if(state.maskEditOnly||state.selectionMode!=='new')void window.MosaicAccount?.track('mask_edited');
   const editingSavedOption=state.maskEditOnly&&Boolean(state.selectionTargetPatchId);
   state.selectionOverlayHidden=false;updateSelectionOutline();ensureSelectionPaths();
+  const selected=state.objectSelectionParts||[];
   if(editingSavedOption){
     saveSelectionGeometry();
-    const selected=state.objectSelectionParts||[];
     if(selected.length===1)window.MosaicObjectMap?.adoptSelection([{...selected[0],mask:cloneMask(state.selectionMask),paths:MaskGeometry.copyPaths(state.selectionPaths)}]);
     state.maskEditOnly=false;
+  }else if(state.selectionMode!=='new'&&!state.pendingSourceId&&!state.editingPatchId&&selected.length===1){
+    // A prepared object with no AI Option still owns its edited selection.
+    // Add/Subtract must not lose pixels outside its initial instance mask.
+    const group=state.groups.find(item=>item.id===state.draftGroupId&&!item.active);
+    if(group){
+      group.footprint=cloneMask(state.selectionMask);group.maskCrop=null;
+      group.area=maskBoundingBox(group.footprint);
+      group.maskPaths=MaskGeometry.copyPaths(state.selectionPaths);
+      window.MosaicObjectMap?.adoptSelection([{...selected[0],mask:cloneMask(state.selectionMask),paths:MaskGeometry.copyPaths(state.selectionPaths)}]);
+    }
   }
   prepareSelectionGroup();updateApplyButton();
   if(state.tool!=='wand')selectTool('select');render();
