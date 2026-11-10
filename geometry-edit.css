@@ -1,0 +1,14 @@
+/* Object-aware prompt modes and non-destructive full-frame geometry review. */
+.geometry-mode-switcher{display:flex;align-items:center;gap:5px;margin:0 0 7px}
+.geometry-mode-switcher button{font:600 11px Inter,system-ui,sans-serif;color:#b8b0c3;background:#17161c;border:1px solid #ffffff20;border-radius:7px;padding:6px 11px;cursor:pointer}
+.geometry-mode-switcher button.active{background:#544268;color:#f6eeff;border-color:#aa8bcc}
+.geometry-mode-switcher #geometryRemoveBtn{margin-left:auto;border-color:#c58d7d44;color:#d5a599}
+.geometry-mode-switcher button:focus-visible,.geometry-review-bar button:focus-visible{outline:2px solid #c6a3ef;outline-offset:2px}
+.geometry-mode-hint{font-size:10px;line-height:1.45;color:#a99db3;margin:0 0 8px}
+.geometry-preview-layer{position:absolute;inset:0;display:block;width:100%;height:100%;z-index:12;pointer-events:none}
+.geometry-preview-layer[hidden],.geometry-review-bar[hidden]{display:none!important}
+.geometry-review-bar{position:absolute;left:50%;bottom:18px;transform:translateX(-50%);z-index:30;max-width:calc(100% - 20px);width:max-content;display:flex;align-items:center;gap:9px;background:#232028;color:#ddd3e3;padding:9px;border-radius:11px;border:1px solid #b39aca66;box-shadow:0 16px 50px #0009}
+.geometry-review-bar span{min-width:0;max-width:220px;font-size:10px;line-height:1.4}
+.geometry-review-bar button{white-space:nowrap;background:#343039;color:#eee6f4;border:1px solid #ffffff28;border-radius:7px;padding:8px 10px;cursor:pointer;font-size:11px;font-weight:700}
+.geometry-review-bar #geometryApply{background:#cbb6ec;color:#211a2b;border-color:#cbb6ec}
+@media(max-width:700px){.geometry-review-bar{bottom:8px;flex-wrap:wrap;justify-content:center;width:calc(100% - 20px)}.geometry-review-bar span{max-width:none;flex-basis:100%;text-align:center}}
