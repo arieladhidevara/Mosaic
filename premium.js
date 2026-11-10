@@ -814,15 +814,42 @@ async function generateSelection(prompt,groupId=null,referenceFiles=[]){
   const initialGroup=groupId||state.draftGroupId||null;
   try{
     const parts=!groupId?window.MosaicObjectMap?.partsForSelection(initialMask):null;
-    // Material selection uses existing masks only. Smart/SAM preflight is
-    // reserved for explicit Shape, handled separately by GeometryEdit.
+    // Resolve the ORIGINAL persistent Group for each selected Object ID.
+    // A single existing object must never pass through a temporary batch
+    // or derive a replacement mask from an approximate Object Map raster.
+    const persistent=part=>{
+      const group=state.groups.find(g=>!g.objectMapBatch&&!g.mergedInto&&!g.objectRemoved&&
+        g.objectMapKey===part.mapKey&&g.objectMapObjectKey===part.objectKey);
+      return group?{...window.MosaicObjectManager.partForObject(group),groupId:group.id}:part;
+    };
+    const originalParts=(parts||[]).map(persistent);
+    const activeGroup=state.groups.find(g=>g.id===initialGroup&&!g.objectMapBatch&&!g.mergedInto&&
+      (g.patchIds.length||g.mapPrepared));
+    const targetFromPart=originalParts.length===1&&state.groups.find(g=>
+      g.id===originalParts[0].groupId||g.objectMapKey===originalParts[0].mapKey&&
+      g.objectMapObjectKey===originalParts[0].objectKey);
+    const selectedGroup=activeGroup||targetFromPart||null;
+    let savedMask=initialMask,objectSelection=null,requestedGroupId=initialGroup;
+    if(originalParts.length>1){
+      // One OpenAI generation for a compound selection. Reuse whole EXISTING
+      // object masks as the temporary union; split into the same Group IDs.
+      const combined=makeCanvas(canvas.width,canvas.height),ctx=combined.getContext('2d');
+      for(const part of originalParts)ctx.drawImage(part.mask,0,0);
+      savedMask=combined;
+      objectSelection={mask:savedMask,paths:[],groupId:null,parts:originalParts};
+      requestedGroupId=null;
+    }else if(selectedGroup){
+      // Ordinary Material Edit: original selection and original Group, no
+      // Object Map resegmentation or extra Group/Option identity.
+      savedMask=cloneCanvas(core.groupMask(selectedGroup));
+      requestedGroupId=selectedGroup.id;
+    }
     const referenceImages=await prepareReferenceImages(referenceFiles);
-    const objectSelection=parts?.length?{mask:initialMask,paths:initialPaths,groupId:null,parts}:null;
-    const savedMask=objectSelection?.mask||initialMask;
-    const savedPaths=objectSelection?.paths||initialPaths,savedPoints=objectSelection?.intent?savedPaths.flat():initialPoints;
-    const requestedGroupId=groupId||(objectSelection?objectSelection.groupId:initialGroup);
     if(generation!==state.selectionGeneration){toast('The project changed. Please select the region again.');return}
     const targetGroup=requestedGroupId&&state.groups.some(g=>g.id===requestedGroupId)?requestedGroupId:null;
+    const savedPaths=selectedGroup&&!objectSelection?
+      core.maskPathsFromRaster(savedMask):objectSelection?[]:initialPaths;
+    const savedPoints=savedPaths.flat();
     const patchId=createRegionRequest(prompt,referenceImages,savedMask,targetGroup,savedPoints,savedPaths,objectSelection);
     if(patchId)void generateRegion(patchId);
   }catch(error){toast('Reference upload: '+error.message)}
