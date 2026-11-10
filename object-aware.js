@@ -184,7 +184,7 @@ function setIdentity(group,mask,label){
   if(label)group.objectLabel=label;
   group.objectId=group.objectId||group.id;
 }
-function foreground(group){const order=orderedGroups(),index=order.indexOf(group);return order.slice(index+1).map(g=>({group:g,patch:state.patches.get(g.active),mask:g.active?core.groupMask(g):g.objectOriginal?.mask||g.footprint})).filter(item=>item.mask&&item.group.objectLabel)}
+function foreground(group){const order=orderedGroups(),index=order.indexOf(group);return order.slice(index+1).map(g=>({group:g,patch:state.patches.get(g.active),mask:g.active?core.groupMask(g):g.objectOriginal?.mask||core.groupMask(g)})).filter(item=>item.mask&&item.group.objectLabel)}
 function capture(patch,group,objectSelection){
   if(!objectSelection?.intent)return;
   const intent=objectSelection.intent;setIdentity(group,patch.mask,intent.label);
