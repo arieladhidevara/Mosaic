@@ -48,6 +48,7 @@ function registerForeground(mask,name='Created object'){
     editMode:'create',objectId:group.id,objectMapObjectKey:group.objectMapObjectKey});
   group.patchIds.push(patchId);group.active=patchId;
   core.refreshGroupFootprint(group);
+  window.MosaicObjectManager?.autoGroup?.();
   core.resetSelection();core.renderGroups();core.render();
   core.selectGroupMask(group,{showOutline:true});
   core.showQuickPrompt();
@@ -144,7 +145,7 @@ function cut(){
   }
   (state.cutHistory??=[]).push({parentId:group.id,children:group.splitChildren,
     originalName:group.name,createdAt:new Date().toISOString(),cutPoints:job.points});
-  core.resetSelection();core.renderGroups();core.render();
+  core.resetSelection();window.MosaicObjectManager?.autoGroup?.();core.renderGroups();core.render();
   core.selectTool('select');core.selectGroupMask(newGroups[0],{showOutline:true});
   core.showQuickPrompt();
   core.toast('Object split into 2 independent masks. Original options preserved.');
