@@ -572,12 +572,6 @@ async function generateRegion(patchId,regenerate=false){
         // After the image arrives, split it across every touched original ID.
         // Only compound selections ask SAM for candidate masks, and all final
         // masks remain the original user-approved geometry.
-        const ownerPart=existing.objectMapParts.find(part=>state.groups.some(g=>
-          g.createdLocally&&g.objectMapKey===part.mapKey&&g.objectMapObjectKey===part.objectKey));
-        if(ownerPart){
-          existing.splitManualGroupId=state.groups.find(g=>g.objectMapKey===ownerPart.mapKey&&
-            g.objectMapObjectKey===ownerPart.objectKey)?.id||null;
-        }
         try{
           const separated=await window.MosaicSceneVersions?.splitCreatedOverlap?.(
             placed,existing.objectMapParts,{
@@ -697,28 +691,9 @@ function commitObjectMapParts(batch,result,underlay,requestOrder){
     else group.active=activeBefore;
     core.refreshGroupFootprint(group);
   }
-  // A foreground Create was a combined temporary selection. Remove only
-  // its overlaps from the original Created layer after splitting, so the
-  // saved Original option cannot hide newly generated objects underneath.
-  if(batch.splitManualGroupId){
-    const manual=state.groups.find(g=>g.id===batch.splitManualGroupId);
-    const remainder=batch.objectMapParts.find(part=>manual&&part.mapKey===manual.objectMapKey&&
-      part.objectKey===manual.objectMapObjectKey)?.mask;
-    if(manual&&remainder){
-      for(const id of manual.patchIds){
-        const old=state.patches.get(id);
-        if(!old||old.generating||old.awaitingResult)continue;
-        const restricted=cloneCanvas(old.mask),mc=restricted.getContext('2d');
-        mc.globalCompositeOperation='destination-in';mc.drawImage(remainder,0,0);
-        old.mask=restricted;old.bbox=core.exactMaskBoundingBox(restricted)||old.bbox;
-        old.maskPaths=core.maskPathsFromRaster(restricted);old.maskPoints=old.maskPaths.flat();
-        core.invalidateDisplayedMask(old);
-      }
-      core.refreshGroupFootprint(manual);
-    }else if(manual){
-      manual.cutArchived=true;manual.objectRemoved=true;
-    }
-  }
+  // Never shrink, replace, or archive an older manual Create mask to
+  // accommodate newly generated compound Options. Source options are history.
+  // The temporary batch is the only Group removed after splitting.
   const temporary=state.groups.find(g=>g.id===batch.groupId);
   state.groups=state.groups.filter(g=>g!==temporary);state.patches.delete(batch.id);state.sources.delete(batch.sourceId);
   state.selectedPatchId=selectedBefore===batch.id?null:selectedBefore;
