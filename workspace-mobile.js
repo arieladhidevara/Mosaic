@@ -217,7 +217,7 @@ viewportCanvas.addEventListener('pointerup',()=>{
   });
 });
 const dockedDialogIds=['areaPromptDialog','harmonizeDialog','masterGenerateDialog',
-  'projectPromptDialog','helpDialog','sourcePreviewDialog'];
+  'projectPromptDialog','helpDialog','sourcePreviewDialog','apiKeyDialog','creditsDialog'];
 const dialogOriginals=[];
 for(const id of dockedDialogIds){
   const dialog=$(id);if(!dialog)continue;
@@ -225,7 +225,8 @@ for(const id of dockedDialogIds){
   dialogOriginals.push({dialog,parent,next});
   dialog.showModal=function(){
     if(!mobile.matches)return originalShow();
-    const target=id==='helpDialog'||id==='sourcePreviewDialog'?mobileSettingsPane:editPane;
+    const target=['helpDialog','sourcePreviewDialog','apiKeyDialog','creditsDialog'].includes(id)?
+      mobileSettingsPane:editPane;
     target.append(dialog);
     dialog.classList.add('mobile-docked-dialog');
     dialog.setAttribute('open','');
