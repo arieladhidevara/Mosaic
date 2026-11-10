@@ -51,6 +51,7 @@ function registerForeground(mask,name='Created object'){
   window.MosaicObjectManager?.autoGroup?.();
   core.resetSelection();core.renderGroups();core.render();
   core.selectGroupMask(group,{showOutline:true});
+  core.focusGroupInSidebar(group);
   core.showQuickPrompt();
   core.toast('New foreground object created. It can be edited independently.');
   return group;
@@ -147,6 +148,7 @@ function cut(){
     originalName:group.name,createdAt:new Date().toISOString(),cutPoints:job.points});
   core.resetSelection();window.MosaicObjectManager?.autoGroup?.();core.renderGroups();core.render();
   core.selectTool('select');core.selectGroupMask(newGroups[0],{showOutline:true});
+  core.focusGroupInSidebar(newGroups[0]);
   core.showQuickPrompt();
   core.toast('Object split into 2 independent masks. Original options preserved.');
 }
