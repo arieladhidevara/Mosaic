@@ -3,7 +3,7 @@ import {PALETTE,CATEGORIES} from './object-map-utils.mjs';
 export function readInstanceLabels(map){
   const rgba=map.raster.getContext('2d',{willReadFrequently:true}).getImageData(0,0,map.raster.width,map.raster.height).data;
   const labels=new Uint32Array(rgba.length/4);
-  for(let i=0;i<labels.length;i++)labels[i]=map.version>=CLEANUP_VERSION?rgba[i*4]|rgba[i*4+1]<<8|rgba[i*4+2]<<16:rgba[i*4];
+  for(let i=0;i<labels.length;i++)labels[i]=map.version>=3?rgba[i*4]|rgba[i*4+1]<<8|rgba[i*4+2]<<16:rgba[i*4];
   return labels;
 }
 export function prepareInstanceMap(map,makeCanvas,geometry){
