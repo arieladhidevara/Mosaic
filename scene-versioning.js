@@ -111,4 +111,81 @@ async function apply(image,{type='ai-edit',prompt='',onStatus=()=>{},preserveEdi
   return {category,objectCount:records.length,matched:records.filter(v=>v.matched).length,
     segmentationStatus:segmentation.status};
 }
-window.MosaicSceneVersions={apply,segmentFullFrame};
+// A manually Created selection may cover parts of several independently selected
+// objects. On the generated RGB result, re-segment those intersections and store
+// independent options rather than flattening all pixels into the manual object.
+// SAM is optional: when it fails or cannot match an object, never reassign pixels.
+function overlapSample(a,b){
+  const scale=Math.min(1,224/Math.max(canvas.width,canvas.height));
+  const w=Math.max(1,Math.round(canvas.width*scale)),h=Math.max(1,Math.round(canvas.height*scale));
+  const sample=mask=>{
+    const c=makeCanvas(w,h),x=c.getContext('2d',{willReadFrequently:true});
+    x.imageSmoothingEnabled=false;x.drawImage(mask,0,0,w,h);
+    return x.getImageData(0,0,w,h).data;
+  };
+  const x=sample(a),y=sample(b);let both=0;
+  for(let i=3;i<x.length;i+=4)if(x[i]>=128&&y[i]>=128)both++;
+  return both;
+}
+function intersectMask(...masks){
+  if(!masks.length)return null;
+  const out=clone(masks[0]),x=out.getContext('2d');
+  for(const mask of masks.slice(1)){
+    x.globalCompositeOperation='destination-in';x.drawImage(mask,0,0);
+  }
+  x.globalCompositeOperation='source-over';
+  return out;
+}
+function subtractMask(mask,others){
+  const out=clone(mask),x=out.getContext('2d');
+  x.globalCompositeOperation='destination-out';
+  for(const other of others)x.drawImage(other,0,0);
+  x.globalCompositeOperation='source-over';
+  return out;
+}
+async function splitCreatedOverlap(image,parts,{onStatus=()=>{},choiceVersions=new Map()}={}){
+  if(!Array.isArray(parts)||!parts.length)return parts;
+  const manual=parts.find(part=>state.groups.some(g=>
+    g.createdLocally&&g.objectMapKey===part.mapKey&&g.objectMapObjectKey===part.objectKey&&
+    !g.mergedInto&&!g.objectRemoved));
+  if(!manual)return parts;
+  const own=state.groups.find(g=>g.objectMapKey===manual.mapKey&&g.objectMapObjectKey===manual.objectKey);
+  const otherKeys=new Set(parts.filter(p=>p!==manual).map(p=>p.mapKey+':'+p.objectKey));
+  const candidates=state.groups.filter(g=>g!==own&&!g.objectMapBatch&&!g.mergedInto&&!g.objectRemoved&&
+    !otherKeys.has((g.objectMapKey||'manual')+':'+(g.objectMapObjectKey||g.id)))
+    .map(group=>({group,mask:core.groupMask(group)}))
+    .map(item=>({...item,overlap:overlapSample(manual.mask,item.mask)}))
+    .filter(item=>item.overlap>=5).sort((a,b)=>b.overlap-a.overlap).slice(0,8);
+  if(!candidates.length)return parts;
+  onStatus('SAM 3: resegmenting Created area across '+candidates.length+' overlapping objects…');
+  let segmented;
+  try{segmented=await segmentFullFrame(image,
+    [{group:own,mask:core.groupMask(own)},...candidates],onStatus);}
+  catch(error){
+    onStatus('Created area kept intact; segmentation unavailable.');
+    return parts;
+  }
+  const assigned=[],extra=[];
+  for(const {group,mask} of candidates){
+    const proposal=segmented.masks.get(group.id);
+    if(!proposal)continue;
+    // Both existing object ownership AND the newly observed SAM silhouette
+    // must agree; merely touching an adjacent floor/wall is insufficient.
+    const portion=intersectMask(manual.mask,proposal.mask,mask);
+    if(overlapSample(portion,portion)<4)continue;
+    const part=window.MosaicObjectManager?.partForObject?.(group);
+    if(!part)continue;
+    assigned.push(portion);
+    extra.push({...part,mask:portion,paths:core.maskPathsFromRaster(portion),
+      previousMask:clone(mask),choiceAtStart:choiceVersions.get(group.id)??core.groupChoiceVersion(group)});
+  }
+  if(!extra.length)return parts;
+  const remaining=subtractMask(manual.mask,assigned);
+  const preserved=parts.filter(part=>part!==manual);
+  if(core.exactMaskBoundingBox(remaining))
+    preserved.unshift({...manual,mask:remaining,paths:core.maskPathsFromRaster(remaining),
+      previousMask:null});
+  onStatus('Resegmented '+extra.length+' overlapping object'+(extra.length===1?'':'s')+'.');
+  return preserved.concat(extra);
+}
+window.MosaicSceneVersions={apply,segmentFullFrame,splitCreatedOverlap};
