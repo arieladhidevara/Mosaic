@@ -533,7 +533,7 @@ async function generateRegion(patchId,regenerate=false){
         if(existing)existing.generating=false;renderGroups();
         progress.done('Finished, but the project changed; current work was kept.');return;
       }
-      progress.update(92,'Applying result to the selected mask…');
+      progress.update(92,'Segmenting new Mask B and fitting it to the locked original…');
       const placed=makeCanvas(canvasSize.width,canvasSize.height),placedContext=placed.getContext('2d');
       placedContext.drawImage(capture.collage,0,0);
       placedContext.drawImage(image,region.x,region.y,region.w,region.h);
@@ -558,6 +558,8 @@ async function generateRegion(patchId,regenerate=false){
       // NOT alter the saved selection or its immutable Object ID.
       const result=core.unwarpPatchSelection(aligned.image,submittedPatch);
       existing.maskAlignmentStatus=aligned.status;
+      existing.maskAlignmentSegmentation=aligned.segmentation||null;
+      existing.maskAlignmentIoU=Number.isFinite(aligned.iou)?aligned.iou:null;
       // Always fork on regeneration to preserve shared source images and older options.
       if(regenerate){
         const id=uid('ai_source');
@@ -608,9 +610,14 @@ async function generateRegion(patchId,regenerate=false){
       // Async output updates the layer underneath whichever tool, mask or editor
       // the user is working with. Never steal focus or select another option.
       renderGroups();render();
-      message(activateResult
-        ?'AI edit applied to the selected mask. Your current tool and mask remain active.'
-        :'AI edit is ready as a saved option. Your newer option choice was preserved.');
+      const alignmentMessage=aligned.aligned
+        ?' Fresh Mask B was contour-warped onto the locked original mask.'
+        :aligned.segmentation==='generated-rgb-segmentation'
+          ?' New Mask B was checked; the original mask remains locked.'
+          :' Original mask preserved; no confident new silhouette to warp.';
+      message((activateResult
+        ?'Material edit applied to the existing Group and mask.'
+        :'Material edit saved as an Option in the existing Group.')+alignmentMessage);
       toast(activateResult
         ?'Generated result is now visible inside the selected mask.'
         :'Generated result is ready in its Group options.');
