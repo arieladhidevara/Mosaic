@@ -3,6 +3,7 @@
    Materials keep using the existing cropped editing workflow. */
 import './premium.js';
 import './object-map.js';
+import {calculateMaskDelta} from './geometry-mask.mjs';
 
 const core=window.MosaicCore;
 const {state,canvas,makeCanvas,toast,render,renderGroups}=core;
@@ -50,12 +51,7 @@ function binary(mask){
 }
 function operationMasks(oldMask,newMask,operation){
   const old=binary(oldMask),fresh=newMask?binary(newMask):new Uint8Array(old.length);
-  const union=new Uint8Array(old.length),revealed=new Uint8Array(old.length);
-  let count=0,oldCount=0,newCount=0;
-  for(let i=0;i<old.length;i++){
-    union[i]=old[i]|fresh[i];revealed[i]=old[i]&&!fresh[i]?1:0;
-    count+=union[i];oldCount+=old[i];newCount+=fresh[i];
-  }
+  const {union,revealed,unionCount:count,oldCount,newCount,revealedCount}=calculateMaskDelta(old,fresh);
   if(!count)throw Error('The selected object mask is empty.');
   if(operation!=='remove'&&(!newCount||newCount>old.length*.78||newCount<Math.max(20,oldCount*.015)))
     throw Error('SAM did not return a reliable new object outline. No changes were applied.');
@@ -64,7 +60,7 @@ function operationMasks(oldMask,newMask,operation){
   const padded=makeCanvas(canvas.width,canvas.height),ctx=padded.getContext('2d');
   ctx.filter='blur(4px)';ctx.drawImage(region,0,0);ctx.filter='none';
   ctx.globalCompositeOperation='source-over';ctx.drawImage(region,0,0);
-  return {region,padded,reveal,oldCount,newCount,revealedCount:revealed.reduce((a,b)=>a+b,0)};
+  return {region,padded,reveal,oldCount,newCount,revealedCount};
 }
 function promptLabel(group){
   let label=(group?.objectLabel||group?.objectName||group?.name||group?.category||'').trim();
