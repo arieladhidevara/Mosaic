@@ -39,7 +39,7 @@ async function loadFileToCanvas(file,maxDimension=2400){if(!file||!file.type.sta
 async function importMaster(file){if(!file)return;if(state.rawMaster&&!state.masterIsBase){toast('Master is already uploaded. Open its preview or generate a new version.');return}
   if(state.masterIsBase&&state.groups.length&&!window.confirm('Upload Master and replace the current Base-only draft and its Groups?'))return;
   try{const c=await loadFileToCanvas(file);setMaster(c,fileName(file));void window.MosaicAccount?.track('master_uploaded');toast('Master ready. Add another image and select a region to keep.')}catch(e){toast(e.message)}}
-function setMaster(c,name,prepareObjects=true){if(!prepareObjects)window.MosaicObjectMap?.holdImage(c);window.MosaicWorkspace?.reset();window.MosaicObjects?.reset();void window.MosaicAccount?.startProject(!state.reference);window.MosaicPremium?.onMasterReset();state.master=c;state.before=false;state.focusedGroupId=null;window.MosaicAutoRegions?.reset?.();window.MosaicSlimWand?.reset?.();state.rawMaster=c;state.masterIsBase=false;state.alignmentTransforms=null;state.sources.clear();state.groups=[];state.objectCollections=[];state.patches.clear();state.pendingSourceId=null;state.queue=[];state.editingPatchId=null;state.selectedPatchId=null;state.undo=[];state.redo=[];state.selectionGeneration++;state.hoveredGroupId=null;state.queuedGroupId=null;
+function setMaster(c,name,prepareObjects=true){if(!prepareObjects)window.MosaicObjectMap?.holdImage(c);window.MosaicWorkspace?.reset();window.MosaicObjects?.reset();void window.MosaicAccount?.startProject(!state.reference);window.MosaicPremium?.onMasterReset();state.master=c;state.sceneVersionCounters={harmonize:0,'ai-edit':0};state.sceneVersionHistory=[];state.sceneTargetSelections=[];state.objectMapLocked=false;state.before=false;state.focusedGroupId=null;window.MosaicAutoRegions?.reset?.();window.MosaicSlimWand?.reset?.();state.rawMaster=c;state.masterIsBase=false;state.alignmentTransforms=null;state.sources.clear();state.groups=[];state.objectCollections=[];state.patches.clear();state.pendingSourceId=null;state.queue=[];state.editingPatchId=null;state.selectedPatchId=null;state.undo=[];state.redo=[];state.selectionGeneration++;state.hoveredGroupId=null;state.queuedGroupId=null;
   canvas.width=overlay.width=c.width;canvas.height=overlay.height=c.height;setSourcePreview('masterPreview',c);window.MosaicPremium?.onMasterLoaded?.(c,name);$('selectionDraft').setAttribute('viewBox',`0 0 ${c.width} ${c.height}`);resetSelection();
   $('welcome').classList.add('hidden');$('canvasWrap').classList.remove('hidden');setProjectTitle(name);$('projectSize').textContent=`${c.width} × ${c.height}`;
   $('masterTitle').textContent='Master';$('masterInfo').textContent=`${name} · ${c.width} × ${c.height}`;$('masterStatus').textContent='✓';$('masterZone').classList.add('ready');updateZoomFit();renderGroups();render();updateSourceActions();message('Upload a variation, select the area you want, then click Apply.');
@@ -128,8 +128,8 @@ function updateSourceActions(){
   $('welcomeContinueBtn').classList.toggle('hidden',!firstImageOnly);
   $('welcomeTitle').textContent=firstImageOnly?'Base uploaded. What next?':'Start with an image.';
   $('welcomeDescription').textContent=firstImageOnly
-    ?'Upload Master on the right, generate one with a prompt, or Continue using Base only.'
-    :'Upload or drag an image into Base or Master.';
+    ?'Generate a Master from this Base, or choose Use Base to edit directly.'
+     :'Upload one Base image to start.';
   $('editBaseBtn').classList.toggle('hidden',!state.reference);
   $('editMasterBtn').classList.toggle('hidden',!state.master);
   $('editPendingBtn').disabled=!state.pendingSourceId;
