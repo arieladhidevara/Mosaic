@@ -4,6 +4,9 @@ on:
     branches: [main]
     paths:
       - 'object-map.js'
+      - 'object-management.js'
+      - 'object-clustering.mjs'
+      - 'tests/object-clustering.test.mjs'
       - 'object-map-utils.mjs'
       - 'object-map-cleanup.mjs'
       - 'object-map-geometry.mjs'
@@ -33,5 +36,7 @@ jobs:
           node-version: '22'
       - run: npm ci
       - run: node --check object-map.js
+      - run: node --check object-management.js
+      - run: node --check object-clustering.mjs
       - run: node --check object-map-utils.mjs
-      - run: node --test tests/object-map-cleanup.test.mjs tests/object-map.test.mjs tests/object-map-provider.test.cjs
+      - run: node --test tests/object-map-cleanup.test.mjs tests/object-map.test.mjs tests/object-map-provider.test.cjs tests/object-clustering.test.mjs
