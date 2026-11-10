@@ -1309,6 +1309,29 @@ function nearestBrushPatch(point,erase=false){
     return {p,d:Math.hypot(dx,dy)};
   }).sort((a,b)=>a.d-b.d)[0]?.p||null;
 }
+// Older AI edits stored only the cropped pixels after applying the mask.
+// Restore their pre-mask image under the crop the first time Reveal is used.
+// New AI generations already keep the entire unmasked RGB source.
+function prepareRevealSource(patch){
+  if(!patch||!patch.request?.baseImage)return;
+  const source=state.sources.get(patch.sourceId);
+  if(!source?.canvas||source.revealComplete)return;
+  const before=patch.request.baseImage;
+  if(!before.width||!before.height)return;
+  const restored=makeCanvas(canvas.width,canvas.height),c=restored.getContext('2d');
+  c.drawImage(before,0,0,canvas.width,canvas.height);
+  c.drawImage(source.canvas,0,0,canvas.width,canvas.height);
+  // Different object options must not mutate each other's pixel sources.
+  if([...state.patches.values()].some(other=>other!==patch&&other.sourceId===patch.sourceId)){
+    const id=uid('reveal_source');
+    state.sources.set(id,{...source,id,canvas:restored,revealComplete:true});
+    patch.sourceId=id;
+  }else{
+    source.canvas=restored;
+    source.revealComplete=true;
+  }
+  invalidateDisplayedMask(patch);
+}
 function paint(e,first){
   const visiblePoint=canvasPoint(e),r=+$('brushSize').value;
   const patch=state.pendingSourceId||state.editingPatchId?null:state.patches.get(state.brushTargetId||state.selectedPatchId);
@@ -1404,8 +1427,18 @@ function pointerDown(e){if(e.target.closest('form,button,input,textarea,select')
   if(state.tool==='reveal'||state.tool==='erase'){
     if(state.pendingSourceId&&state.tool==='erase'&&!maskBoundingBox(state.selectionMask)){const mc=state.selectionMask.getContext('2d');mc.fillStyle='#fff';mc.fillRect(0,0,canvas.width,canvas.height)}
     if(!state.pendingSourceId&&!state.editingPatchId){
-      const picked=nearestBrushPatch(canvasPoint(e),state.tool==='erase');
-      if(picked){state.brushTargetId=picked.id;state.selectedPatchId=picked.id;snapshotPatch(picked)}
+      // When an explicit Group/Option is selected, Reveal edits that object,
+      // not the closest unrelated patch beneath the finger.
+      const group=state.groups.find(g=>g.id===state.draftGroupId);
+      const preferredId=state.selectionTargetPatchId||state.selectedPatchId||group?.active;
+      const preferred=state.patches.get(preferredId);
+      const selected=preferred&&state.groups.some(g=>g.active===preferred.id)?preferred:null;
+      const picked=selected||nearestBrushPatch(canvasPoint(e),state.tool==='erase');
+      if(picked){
+        state.brushTargetId=picked.id;state.selectedPatchId=picked.id;
+        snapshotPatch(picked);
+        if(state.tool==='reveal')prepareRevealSource(picked);
+      }
       else if(canCreateSelection()){
         state.brushTargetId=null;state.selectedPatchId=null;state.selectionTargetPatchId=null;
         state.selectionOverlayHidden=false;snapshotSelection();
