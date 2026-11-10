@@ -6,8 +6,12 @@ const title=text=>String(text||'Object').replace(/^./,c=>c.toUpperCase());
 const objects=()=>state.groups.filter(g=>!g.objectMapBatch&&!g.mergedInto&&!g.cutArchived&&!g.objectRemoved);
 state.objectCollections??=[];
 function createCollection(name){
+  if(state.objectCollections.length>=MAX_SCENE_GROUPS){
+    const auto=state.objectCollections.find(c=>c.auto);
+    if(!auto){core.toast('Maximum '+MAX_SCENE_GROUPS+' top-level groups. Move or merge existing objects first.');return null;}
+  }
   const collection={id:core.uid('collection'),name:String(name||'Group '+(state.objectCollections.length+1)).trim().slice(0,64)||'New group',auto:false};
-  state.objectCollections.push(collection);core.renderGroups();return collection;
+  state.objectCollections.push(collection);autoGroup();return collection;
 }
 function moveObjects(ids,collectionId){
   if(collectionId&&!state.objectCollections.some(c=>c.id===collectionId))return;
@@ -123,6 +127,7 @@ function autoGroup(){
     id:group.id,box:objectBox(group),category:group.category,
     label:group.objectName||group.name,suggestedGroup:group.suggestedCollection
   })),{width:canvas.width,height:canvas.height,maxGroups:limit}):[];
+  const plannedIds=new Map(plans.flatMap((plan,index)=>plan.ids.map(id=>[id,index])));
   const oldAuto=state.objectCollections.filter(c=>c.auto);
   const oldMembers=new Map(oldAuto.map(c=>[c.id,new Set(eligible.filter(g=>g.collectionId===c.id).map(g=>g.id))]));
   const used=new Set(),latest=[],collapsed=new Set(state.collapsedCategories||[]);
@@ -137,10 +142,10 @@ function autoGroup(){
     if(!collection.manualName)collection.name=plan.name;
     collection.auto=true;used.add(collection.id);latest.push(collection);
     if(!old)collapsed.add(collection.id);
-    for(const object of eligible)if(plan.ids.includes(object.id))object.collectionId=collection.id;
+    for(const object of eligible)if(plannedIds.get(object.id)===plans.indexOf(plan))object.collectionId=collection.id;
   }
   for(const old of oldAuto)if(!used.has(old.id))collapsed.delete(old.id);
-  for(const object of eligible)if(!plans.some(plan=>plan.ids.includes(object.id)))object.collectionId=null;
+  for(const object of eligible)if(!plannedIds.has(object.id))object.collectionId=null;
   state.collapsedCategories=[...collapsed];
   state.objectCollections=[...manual,...latest];
   core.renderGroups();refreshActions();
@@ -151,7 +156,7 @@ form.querySelector('.prompt-footer')?.before(actions);if(!actions.parentNode)for
 document.getElementById('mergeObjectsBtn').addEventListener('click',mergeSelection);
 const groupPicker=document.getElementById('addObjectsToGroup');
 groupPicker.addEventListener('change',()=>{
-  let id=groupPicker.value;if(id==='new')id=createCollection().id;if(!id)return;
+  let id=groupPicker.value;if(id==='new')id=createCollection()?.id;if(!id)return;
   const keys=selectedParts().map(p=>p.objectKey);moveObjects(objects().filter(g=>keys.includes(g.objectMapObjectKey||g.id)).map(g=>g.id),id);core.toast('Objects moved into a Group; masks remain independent.');
 });
 function refreshActions(){
