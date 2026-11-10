@@ -4,6 +4,11 @@ on:
     branches: [feature/object-aware-shape-editing]
   pull_request:
     paths:
+      - 'workspace-mobile.js'
+      - 'workspace-mobile.css'
+      - 'object-create-cut.js'
+      - 'mask-cut.mjs'
+      - 'tests/mask-cut.test.mjs'
       - 'scene-targeting.js'
       - 'scene-versioning.js'
       - 'api/ai/scene-intent.js'
@@ -31,6 +36,9 @@ jobs:
           node-version: '22'
       - run: npm ci
       - run: npm test
+      - run: node --check object-create-cut.js
+      - run: node --check mask-cut.mjs
+      - run: node --check workspace-mobile.js
       - run: node --check scene-targeting.js
       - run: node --check scene-versioning.js
       - run: node --check canvas-workspace.js
