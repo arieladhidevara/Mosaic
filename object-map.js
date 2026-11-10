@@ -101,8 +101,7 @@ function liveObjectAt(point){
   for(const group of state.groups.slice().reverse()){
     if(group.objectMapBatch||group.mergedInto||group.objectRemoved)continue;
     if(!group.objectMapObjectKey&&!group.mapPrepared&&!group.objectId)continue;
-    const image=core.groupMask(group);
-    if(image?.getContext('2d',{willReadFrequently:true}).getImageData(Math.floor(point.x),Math.floor(point.y),1,1).data[3]>=128)
+    if(core.groupContainsPoint(group,point))
       return group;
   }
   return null;
@@ -153,13 +152,14 @@ function selectionCompleted(){
     adoptSelection(reconcileParts(state.selectionMask,[...byKey.values()]));picking=false;
   }else if(operation?.parts?.length)adoptSelection(reconcileParts(state.selectionMask,operation.parts));
   operation=null;
-  if(state.objectSelectionParts?.length){state.selectionPaths=state.objectSelectionParts.flatMap(part=>core.maskPathsFromRaster(part.mask));state.selectionPoints=state.selectionPaths.flat()}
+  if(state.objectSelectionParts?.length){state.selectionPaths=state.objectSelectionParts.flatMap(part=>part.paths||core.maskPathsFromRaster(part.mask));state.selectionPoints=state.selectionPaths.flat()}
 }
 const cloneMask=mask=>{const out=makeCanvas(mask.width,mask.height);out.getContext('2d').drawImage(mask,0,0);return out};
-function snapshotSelection(){return (state.objectSelectionParts||[]).map(part=>({...part,mask:cloneMask(part.mask)}))}
+// Adopt always copies masks before writing, so history can share these immutable masks.
+function snapshotSelection(){return (state.objectSelectionParts||[]).map(part=>({...part}))}
 function adoptSelection(parts){
   const canonical=new Map();
-  for(const part of parts){const resolved=window.MosaicObjectManager.resolvePart(part,true),key=resolved.objectKey,previous=canonical.get(key);if(previous)previous.mask.getContext('2d').drawImage(part.mask,0,0);else canonical.set(key,{...part,objectKey:key,mapKey:resolved.mapKey,label:resolved.label,instanceId:resolved.instanceId,mask:cloneMask(part.mask)})}
+  for(const part of parts){const resolved=window.MosaicObjectManager.resolvePart(part,true),key=resolved.objectKey,previous=canonical.get(key);if(previous){previous.mask.getContext('2d').drawImage(part.mask,0,0);previous.paths=null;}else canonical.set(key,{...part,objectKey:key,mapKey:resolved.mapKey,label:resolved.label,instanceId:resolved.instanceId,mask:cloneMask(part.mask)})}
   state.objectSelectionParts=[...canonical.values()];state.objectMapSelection=canonical.size?(state.objectMap?.sourceKey||parts[0].mapKey):null;state.objectMapSelectedIds=state.objectSelectionParts.map(p=>p.instanceId).filter(Boolean);window.MosaicObjectManager.refreshActions();
 }
 function partForId(id){const entry=state.objectMap.entries.find(entry=>entry.id===id);return window.MosaicObjectManager.resolvePart({objectKey:entry.key,instanceId:id,category:entry.category,label:entry.label,mapKey:state.objectMap.sourceKey,mask:maskForIds([id])})}

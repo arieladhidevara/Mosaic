@@ -17,13 +17,22 @@ function ensureObjects(map,maskForIds){
   for(const entry of map.entries){
     let object=state.groups.find(g=>g.objectMapKey===map.sourceKey&&g.objectMapObjectKey===entry.key);
     if(!object){const mask=maskForIds([entry.id]);object=core.newGroup(mask,entry.category);object.objectMapKey=map.sourceKey;object.objectMapObjectKey=entry.key;object.objectMapInstanceId=entry.id;object.objectMapCategory=entry.category;object.mapPrepared=true;object.maskPaths=entry.paths.map(path=>path.map(p=>({x:p.x*canvas.width/map.raster.width,y:p.y*canvas.height/map.raster.height})))}
+    if(object.footprint&&!object.active&&!object.objectOriginal){
+      const bounds=core.exactMaskBoundingBox(object.footprint);
+      if(bounds){
+        const mask=makeCanvas(bounds.w,bounds.h);
+        mask.getContext('2d').drawImage(object.footprint,-bounds.x,-bounds.y);
+        object.maskCrop={mask,x:bounds.x,y:bounds.y};
+        object.footprint=null;
+      }
+    }
     object.objectName=title(entry.label);object.suggestedCollection=entry.suggestedGroup||entry.category;
     if(!object.manualName)object.name=object.objectName;
   }
 }
 function partForObject(object){
   object.objectMapObjectKey||=object.id;object.objectMapKey||='manual';object.objectName||=object.name;
-  return {objectKey:object.objectMapObjectKey||object.id,instanceId:object.objectMapInstanceId,category:object.category,label:object.name,mapKey:object.objectMapKey||'manual',mask:clone(core.groupMask(object)),paths:core.maskPathsFromRaster(core.groupMask(object))};
+  return {objectKey:object.objectMapObjectKey||object.id,instanceId:object.objectMapInstanceId,category:object.category,label:object.name,mapKey:object.objectMapKey||'manual',mask:core.groupMask(object),paths:object.active?core.patchSelectionPaths(state.patches.get(object.active)):object.maskPaths?.length?object.maskPaths:core.maskPathsFromRaster(core.groupMask(object))};
 }
 function resolvePart(part,identityOnly=false){
   let object=state.groups.find(g=>g.objectMapObjectKey===part.objectKey&&g.objectMapKey===part.mapKey);
