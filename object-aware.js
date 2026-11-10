@@ -178,7 +178,7 @@ async function prepare(prompt){
   if(!smartSelectEnabled||context.mode!==smartModeRevision)return {mask:context.mask,paths:context.paths,intent:null,groupId:context.groupId,project:context.project};
   return {...result,project:context.project};
 }
-function orderedGroups(){return sceneOrder(state.groups)}
+function orderedGroups(){return sceneOrder(state.groups.filter(group=>!group.cutArchived))}
 function setIdentity(group,mask,label){
   if(!group.objectOriginal){group.objectOriginal={mask:copy(mask),appearance:core.composeApprovedCanvas(),geometryId:signature(data(mask)),repairs:[]}}
   if(label)group.objectLabel=label;

@@ -1,0 +1,22 @@
+/* Simplified mozAI workspace: one Base, one canvas, object Groups + AI Edit. */
+.right-sidebar .sources-panel{display:none!important}
+#markupModeButton,#markupToolbar,#markupCanvas,#markupTextEditor{display:none!important}
+.welcome-drop-grid{grid-template-columns:minmax(220px,420px)!important;justify-content:center!important}
+.welcome-drop-grid>.welcome-source-column.hidden{display:none!important}
+.welcome-choice{max-width:540px}
+.welcome-continue{display:inline-flex}
+.navigation-toolset [data-tool="select"]{min-width:35px;justify-content:center;padding:8px}
+.navigation-toolset [data-tool="select"] svg{width:18px;height:18px}
+.navigation-toolset [data-tool="pan"]{min-width:35px;justify-content:center}
+.workspace{display:grid!important;grid-template-columns:minmax(0,1fr) var(--inspector-width,315px)!important}
+.main-panel{grid-column:1;min-width:0}
+.right-sidebar{grid-column:2;display:flex!important;min-width:0;overflow:auto}
+@media(max-width:850px){
+  .workspace{grid-template-columns:minmax(0,1fr)!important;grid-template-rows:minmax(420px,1fr) 235px!important;height:calc(100dvh - 64px)!important}
+  .main-panel{grid-column:1;grid-row:1}
+  .right-sidebar{grid-column:1;grid-row:2;border-left:0;border-top:1px solid #33303d;display:flex!important;min-height:0}
+  .right-sidebar .inspector-bar{flex-shrink:0}
+}
+.option-version-category{margin:7px 4px;border-radius:8px;border:1px solid #ffffff13;overflow:hidden}
+.option-version-heading{display:flex;align-items:center;justify-content:space-between;padding:7px 9px;background:#ffffff09;color:#cdbce2;font:700 10px Inter,system-ui,sans-serif}
+.option-version-category .variant-row{margin:3px}

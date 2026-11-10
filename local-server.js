@@ -23,6 +23,7 @@ const apiRoutes = new Map([
   ['/api/ai/object-intent', require('./api/ai/object-intent')],
   ['/api/ai/object-map', require('./api/ai/object-map')],
   ['/api/ai/option-name', require('./api/ai/option-name')],
+  ['/api/ai/scene-intent', require('./api/ai/scene-intent')],
 ]);
 
 const publicFiles = new Set([
@@ -37,6 +38,9 @@ const publicFiles = new Set([
   'canvas-workspace.js',
   'canvas-workspace.css',
   'workspace-ui.css',
+  'geometry-edit.css',
+  'workspace-simplified.css',
+  'workspace-mobile.css',
   'account.js',
   'account.css',
   'landing.css',
@@ -63,6 +67,13 @@ const publicFiles = new Set([
   'slimsam-mask-utils.mjs',
   'auto-regions.js',
   'object-aware.js',
+  'geometry-edit.js',
+  'scene-targeting.js',
+  'scene-versioning.js',
+  'object-create-cut.js',
+  'mask-cut.mjs',
+  'workspace-mobile.js',
+  'geometry-mask.mjs',
   'object-map.js',
   'object-management.js',
   'generated-image.mjs',

@@ -59,7 +59,7 @@ jobs:
           const fs = require('node:fs');
           const html = fs.readFileSync('index.html', 'utf8');
           const app = fs.readFileSync('app.js','utf8');
-          if(!html.includes('./slimsam-wand.js')) throw Error('Wand controller not loaded');
+          if(!html.includes('./object-map.js')) throw Error('Active object selection controller not loaded');
           if(!html.includes('id="slimsamWandStatus"')) throw Error('SlimSAM UI state missing');
           if(html.includes('id="wandTolerance"') || html.includes('id="wandEngine"')) throw Error('Obsolete Color Wand UI');
           if(app.includes('applyMagicWand(')) throw Error('Obsolete Color Wand processor');
@@ -73,7 +73,7 @@ jobs:
           if(!app.includes('appendGroupSelection(group)')) throw Error('Ctrl multi-select missing');
           if(!app.includes('group-cutout') || !app.includes('option-cutout')) throw Error('Transparent thumbnails missing');
           if(!css.includes('.mask-progress-hud') || !html.includes('./mask-progress.js')) throw Error('Progress HUD not loaded');
-          if(!app.includes("tc.filter='blur(1.8px)'")) throw Error('Cutout-only feather missing');
+          if(!app.includes("tc.filter=state.featherEnabled?'blur(1.8px)'")) throw Error('Selection feather is not wired to the feather setting');
           const worker=fs.readFileSync('slimsam-worker.mjs','utf8');
           const wand=fs.readFileSync('slimsam-wand.js','utf8');
           const hud=fs.readFileSync('mask-progress.js','utf8');

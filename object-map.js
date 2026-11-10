@@ -1,23 +1,16 @@
 import './app.js';
 import './object-management.js';
-import {PALETTE,decodeColors,idsInShape,labelAt,CATEGORIES,objectMapSize} from './object-map-utils.mjs';
+import {PALETTE,decodeColors,idsOverlappingShape,labelAt,CATEGORIES,objectMapSize} from './object-map-utils.mjs';
 import {CLEANUP_VERSION} from './object-map-cleanup.mjs';
 import {prepareInstanceMap,readInstanceLabels} from './object-map-geometry.mjs';
 const core=window.MosaicCore,{state,canvas,makeCanvas}=core;
 let labels=null,mapWidth=0,mapHeight=0,serial=0,busy=false,pendingBase=null,attemptedBase=null,picking=false,pickingIds=[],pickingMode='new',pendingClick=null,active=false,hoverId=0,heldImage=null,operation=null;
 const controls=document.createElement('div');controls.className='object-selection-controls';
-controls.innerHTML='<label><input id="autoObjectSelect" type="checkbox"> Auto Select</label><span id="objectMapStatus" role="status">Continue with Base or generate Master</span><button id="objectMapRetry" type="button" hidden>Retry objects</button>';
+controls.innerHTML='<span id="objectMapStatus" role="status">Preparing objects…</span><button id="objectMapRetry" type="button" hidden>Retry objects</button>';
 document.querySelector('[aria-label="Selection tools"]').append(controls);
 document.getElementById('autoCreateGroupsBtn')?.remove();
-const auto=document.getElementById('autoObjectSelect'),status=document.getElementById('objectMapStatus'),retry=document.getElementById('objectMapRetry');
-auto.checked=Boolean(state.autoObjectSelect);state.featherEnabled=false;
-auto.addEventListener('change',()=>{
-  state.autoObjectSelect=auto.checked;
-  if(!auto.checked||!labels||!state.selectionMask||!core.maskBoundingBox(state.selectionMask)||state.pendingSourceId||state.maskEditOnly)return;
-  const mask=refineMask(state.selectionMask,'lasso');pickingMode='new';state.selectionMask=mask;state.selectionPaths=core.maskPathsFromRaster(mask);state.selectionPoints=state.selectionPaths.flat();selectionCompleted();
-  state.groups=state.groups.filter(group=>group.id!==state.draftGroupId||group.patchIds.length||group.manualName);state.draftGroupId=null;state.selectionTargetPatchId=null;
-  core.updateSelectionOutline();core.updateApplyButton();core.renderGroups();core.render();
-});
+const status=document.getElementById('objectMapStatus'),retry=document.getElementById('objectMapRetry');
+state.autoObjectSelect=true;state.featherEnabled=false;
 retry.addEventListener('click',()=>void prepareBase(true));
 const preview=makeCanvas(1,1);preview.className='slimsam-wand-preview';preview.setAttribute('aria-hidden','true');document.getElementById('canvasWrap').append(preview);
 const selectedOverlay=makeCanvas(1,1);selectedOverlay.id='selectedObjectOverlay';selectedOverlay.className='object-map-selection-overlay';selectedOverlay.setAttribute('aria-hidden','true');document.getElementById('canvasWrap').append(selectedOverlay);
@@ -42,7 +35,7 @@ function sourceKey(base){
 }
 function hydrate(){
   let map=state.objectMap;if(!map?.raster)return false;
-  if(!Array.isArray(map.entries)||map.raster.width*map.raster.height>2500000||state.master&&map.sourceKey!==sourceKey(state.master)){state.objectMap=null;labels=null;return false}
+  if(!Array.isArray(map.entries)||map.raster.width*map.raster.height>2500000||state.master&&map.sourceKey!==sourceKey(state.master)&&!state.objectMapLocked){state.objectMap=null;labels=null;return false}
   if(map.version!==CLEANUP_VERSION){map=prepareInstanceMap(map,makeCanvas,window.MozMaskGeometry);state.objectMap=map;(state.objectMaps??={})[map.sourceKey]=map}
   mapWidth=map.raster.width;mapHeight=map.raster.height;labels=readInstanceLabels(map);
   migrateLegacyGroups(map);
@@ -50,6 +43,7 @@ function hydrate(){
   update(map.labelsAvailable?'Objects ready':'Objects ready · categories unavailable');return true;
 }
 function baseLoaded(base){
+  if(state.objectMapLocked&&state.objectMap?.raster){hydrate();return}
   if(pendingBase===base&&(busy||attemptedBase===base)){if(state.objectMap)hydrate();return}
   pendingBase=base;serial++;busy=false;attemptedBase=null;pendingClick=null;labels=null;state.objectMapSelection=null;selectedOverlay.hidden=true;
   const cached=state.objectMaps?.[sourceKey(base)];if(cached)state.objectMap=cached;
@@ -92,13 +86,55 @@ function maskForIds(ids){
   }
   x.putImageData(pixels,0,0);return mask;
 }
+function liveObjectAt(point){
+  if(point.x<0||point.y<0||point.x>=canvas.width||point.y>=canvas.height)return null;
+  for(const group of state.groups.slice().reverse()){
+    if(group.objectMapBatch||group.mergedInto||group.objectRemoved)continue;
+    if(!group.objectMapObjectKey&&!group.mapPrepared&&!group.objectId)continue;
+    const image=core.groupMask(group);
+    if(image?.getContext('2d',{willReadFrequently:true}).getImageData(Math.floor(point.x),Math.floor(point.y),1,1).data[3]>=128)
+      return group;
+  }
+  return null;
+}
+function partsOverlappingMask(mask){
+  const dimension=384,scale=Math.min(1,dimension/Math.max(canvas.width,canvas.height));
+  const w=Math.max(1,Math.round(canvas.width*scale)),h=Math.max(1,Math.round(canvas.height*scale));
+  const sample=makeCanvas(w,h),sx=sample.getContext('2d',{willReadFrequently:true});
+  sx.imageSmoothingEnabled=false;sx.drawImage(mask,0,0,w,h);
+  const target=sx.getImageData(0,0,w,h).data,parts=[];
+  for(const group of state.groups){
+    if(group.objectMapBatch||group.mergedInto||group.objectRemoved)continue;
+    if(!group.objectMapObjectKey&&!group.mapPrepared&&!group.objectId)continue;
+    const own=core.groupMask(group);
+    if(!own)continue;
+    const overlay=makeCanvas(w,h),ctx=overlay.getContext('2d',{willReadFrequently:true});
+    ctx.imageSmoothingEnabled=false;ctx.drawImage(own,0,0,w,h);
+    const pixels=ctx.getImageData(0,0,w,h).data;
+    let both=0,all=0;
+    for(let i=3;i<pixels.length;i+=4)if(pixels[i]>=128){all++;if(target[i]>=128)both++;}
+    if(both>=Math.max(2,Math.min(8,all*.015))&&both/Math.max(1,all)>=.12){
+      parts.push(window.MosaicObjectManager.partForObject(group));
+    }
+  }
+  return parts;
+}
+
 function refineMask(mask,tool){
-  if(state.objectSelectionParts?.length&&state.selectionMode!=='new'&&!state.maskEditOnly){operation={parts:snapshotSelection()};return mask}
-  if(!state.autoObjectSelect||!['rect','ellipse','lasso','freehand'].includes(tool)||state.pendingSourceId||state.maskEditOnly)return mask;
-  if(!labels){core.toast('Objects are not ready yet. Your drawn selection was kept.');return mask}
-  const ids=idsInShape(labels,mapWidth,mapHeight,mask.getContext('2d').getImageData(0,0,mask.width,mask.height).data,mask.width,mask.height);
-  picking=true;pickingIds=ids;pickingMode=state.selectionMode;operation={parts:snapshotSelection()};if(!ids.length)core.toast('No object is mostly inside this selection. Draw a wider area.');
-  const parts=ids.map(id=>partForId(id)),result=makeCanvas(canvas.width,canvas.height);for(const part of parts)result.getContext('2d').drawImage(part.mask,0,0);return result;
+  // Add/subtract also snap the NEW drawn shape to current object masks.
+  if(!['rect','ellipse','lasso','freehand'].includes(tool)||state.pendingSourceId||state.maskEditOnly)return mask;
+  const parts=partsOverlappingMask(mask);
+  if(!labels&&!parts.length)return mask;
+  if(!parts.length){
+    // Recover initial map shapes if a legacy project has no prepared Object Groups.
+    const ids=idsOverlappingShape(labels,mapWidth,mapHeight,mask.getContext('2d').getImageData(0,0,mask.width,mask.height).data,mask.width,mask.height);
+    for(const id of ids)parts.push(partForId(id));
+  }
+  picking=true;pickingIds=[];pickingMode=state.selectionMode;operation={parts:snapshotSelection(),picked:parts};
+  if(!parts.length)core.toast('No meaningful object overlap found. Enlarge the selection.');
+  const result=makeCanvas(canvas.width,canvas.height);
+  for(const part of parts)result.getContext('2d').drawImage(part.mask,0,0);
+  return result;
 }
 function selectionCompleted(){
   if(picking){
@@ -172,28 +208,38 @@ function migrateLegacyGroups(map){
   }
   if(changed){state.selectedPatchId=null;state.draftGroupId=null;core.renderGroups();core.render()}
 }
-function onToolChange(tool){active=tool==='wand';leave();if(active&&!labels)update(busy?'Preparing objects…':'Upload Base and connect AI to prepare objects',Boolean(attemptedBase&&!busy&&!state.objectMap))}
+function onToolChange(tool){active=tool==='wand'||tool==='select';leave();if(active&&!labels&&!state.groups.some(g=>g.mapPrepared))update(busy?'Preparing objects…':'Upload Base and connect AI to prepare objects',Boolean(attemptedBase&&!busy&&!state.objectMap))}
 function hoverAt(point){
-  if(!active||!labels)return;
-  const id=labelAt(labels,mapWidth,mapHeight,point.x,point.y,canvas.width,canvas.height);if(id===hoverId&&preview.width===canvas.width&&preview.height===canvas.height)return;leave();if(!id)return;hoverId=id;
-  const mask=maskForIds([id]);preview.width=mask.width;preview.height=mask.height;const x=preview.getContext('2d');x.drawImage(mask,0,0);x.globalCompositeOperation='source-in';x.fillStyle='#b493f560';x.fillRect(0,0,preview.width,preview.height);x.globalCompositeOperation='source-over';core.overlay.style.cursor='pointer';
+  if(!active)return;
+  const live=liveObjectAt(point);
+  if(!live&&(!labels||state.objectMapLocked))return leave();
+  const id=live?.id||labelAt(labels,mapWidth,mapHeight,point.x,point.y,canvas.width,canvas.height);
+  if(id===hoverId&&preview.width===canvas.width&&preview.height===canvas.height)return;leave();if(!id)return;hoverId=id;
+  const mask=live?core.groupMask(live):maskForIds([id]);preview.width=mask.width;preview.height=mask.height;const x=preview.getContext('2d');x.drawImage(mask,0,0);x.globalCompositeOperation='source-in';x.fillStyle='#b493f560';x.fillRect(0,0,preview.width,preview.height);x.globalCompositeOperation='source-over';core.overlay.style.cursor='pointer';
 }
 function leave(){hoverId=0;preview.getContext('2d').clearRect(0,0,preview.width,preview.height)}
 function selectAt(point,options={}){
-  if(!active)return;if(!labels){if(busy){pendingClick={point:{...point},options};core.message('Object selection queued until the image map is ready.')}else core.toast('Prepare the image object map first.');return}
-  const id=labelAt(labels,mapWidth,mapHeight,point.x,point.y,canvas.width,canvas.height);if(!id){if(!options.append&&!options.subtract){core.resetSelection();core.render()}return}
+  if(!active)return;
+  const live=liveObjectAt(point);
+  if(!live&&(!labels||state.objectMapLocked)){
+    if(busy){pendingClick={point:{...point},options};core.message('Object selection queued until the image map is ready.');}
+    else if(!options.append&&!options.subtract){core.resetSelection();core.render();}
+    return;
+  }
+  const id=live?.id||labelAt(labels,mapWidth,mapHeight,point.x,point.y,canvas.width,canvas.height);
+  if(!id){if(!options.append&&!options.subtract){core.resetSelection();core.render()}return}
   const hasObjects=state.objectSelectionParts?.length;
   const mode=options.append&&hasObjects?'add':options.subtract&&hasObjects?'subtract':'new';core.setMode(mode);
-  const part=partForId(id);operation={parts:snapshotSelection(),picked:[part]};picking=true;pickingIds=[id];pickingMode=mode;state.maskEditOnly=false;state.selectionTargetPatchId=null;state.draftGroupId=null;core.applyWandMask(part.mask);picking=false;leave();
+  const part=live?window.MosaicObjectManager.partForObject(live):partForId(id);operation={parts:snapshotSelection(),picked:[part]};picking=true;pickingIds=[id];pickingMode=mode;state.maskEditOnly=false;state.selectionTargetPatchId=null;state.draftGroupId=null;core.applyWandMask(part.mask);picking=false;leave();
 }
 function selectObject(object,{append=false}={}){const part=window.MosaicObjectManager.partForObject(object),mode=append&&state.objectSelectionParts?.length?'add':'new';operation={parts:snapshotSelection(),picked:[part]};picking=true;pickingMode=mode;state.selectionTargetPatchId=null;state.draftGroupId=null;state.selectedPatchId=null;state.maskEditOnly=false;core.setMode(mode);core.applyWandMask(part.mask);picking=false}
 function invalidateBase(){serial++;busy=false;pendingBase=state.master;attemptedBase=pendingBase;labels=null;state.objectMap=null;state.objectMapSelection=null;if(state.master)delete state.objectMaps?.[sourceKey(state.master)];leave();window.MosaicMaskProgress?.hide('objects');update('Image changed · prepare objects again',true)}
-function imageChanged(){if(state.master&&state.master!==heldImage&&state.master!==pendingBase)baseLoaded(state.master)}
+function imageChanged(){if(state.objectMapLocked)return;if(state.master&&state.master!==heldImage&&state.master!==pendingBase)baseLoaded(state.master)}
 window.MosaicObjectMap={imageReady:baseLoaded,baseLoaded,prepareBase,refineMask,selectionCompleted,cancelSelection,partsForSelection,adoptSelection,snapshotSelection,selectObject,hasSelection:()=>Boolean(state.objectSelectionParts?.length),hydrate,invalidateBase,drawSelection,holdImage:image=>{heldImage=image}};
 // Preserve the canvas tool integration while removing model downloads and all
 // SAM calls. Wand hover/click are now lookups into the saved Base index map.
 window.MosaicSlimWand={onToolChange,hoverAt,selectAt,leave,reset:()=>{active=false;pendingClick=null;leave()},preload(){},imageChanged,imageKey:()=>state.objectMap?.sourceKey};
 window.addEventListener('mosaic:keyconnected',()=>void prepareBase());
 window.addEventListener('mosaic:account',()=>void prepareBase());
-window.addEventListener('mosaic:projectloaded',()=>{serial++;busy=false;heldImage=null;pendingBase=state.master;attemptedBase=null;state.featherEnabled=false;auto.checked=Boolean(state.autoObjectSelect);labels=null;if(!hydrate()&&state.master)baseLoaded(state.master);if(state.objectSelectionParts?.length)adoptSelection(state.objectSelectionParts)});
+window.addEventListener('mosaic:projectloaded',()=>{serial++;busy=false;heldImage=null;pendingBase=state.master;attemptedBase=null;state.featherEnabled=false;state.autoObjectSelect=true;labels=null;if(!hydrate()&&state.master)baseLoaded(state.master);if(state.objectSelectionParts?.length)adoptSelection(state.objectSelectionParts)});
 if(state.master)baseLoaded(state.master);

@@ -39,7 +39,7 @@ async function loadFileToCanvas(file,maxDimension=2400){if(!file||!file.type.sta
 async function importMaster(file){if(!file)return;if(state.rawMaster&&!state.masterIsBase){toast('Master is already uploaded. Open its preview or generate a new version.');return}
   if(state.masterIsBase&&state.groups.length&&!window.confirm('Upload Master and replace the current Base-only draft and its Groups?'))return;
   try{const c=await loadFileToCanvas(file);setMaster(c,fileName(file));void window.MosaicAccount?.track('master_uploaded');toast('Master ready. Add another image and select a region to keep.')}catch(e){toast(e.message)}}
-function setMaster(c,name,prepareObjects=true){if(!prepareObjects)window.MosaicObjectMap?.holdImage(c);window.MosaicWorkspace?.reset();window.MosaicObjects?.reset();void window.MosaicAccount?.startProject(!state.reference);window.MosaicPremium?.onMasterReset();state.master=c;state.before=false;state.focusedGroupId=null;window.MosaicAutoRegions?.reset?.();window.MosaicSlimWand?.reset?.();state.rawMaster=c;state.masterIsBase=false;state.alignmentTransforms=null;state.sources.clear();state.groups=[];state.objectCollections=[];state.patches.clear();state.pendingSourceId=null;state.queue=[];state.editingPatchId=null;state.selectedPatchId=null;state.undo=[];state.redo=[];state.selectionGeneration++;state.hoveredGroupId=null;state.queuedGroupId=null;
+function setMaster(c,name,prepareObjects=true){if(!prepareObjects)window.MosaicObjectMap?.holdImage(c);window.MosaicWorkspace?.reset();window.MosaicObjects?.reset();void window.MosaicAccount?.startProject(!state.reference);window.MosaicPremium?.onMasterReset();state.master=c;state.sceneVersionCounters={harmonize:0,'ai-edit':0};state.sceneVersionHistory=[];state.sceneTargetSelections=[];state.objectMapLocked=false;state.before=false;state.focusedGroupId=null;window.MosaicAutoRegions?.reset?.();window.MosaicSlimWand?.reset?.();state.rawMaster=c;state.masterIsBase=false;state.alignmentTransforms=null;state.sources.clear();state.groups=[];state.objectCollections=[];state.patches.clear();state.pendingSourceId=null;state.queue=[];state.editingPatchId=null;state.selectedPatchId=null;state.undo=[];state.redo=[];state.selectionGeneration++;state.hoveredGroupId=null;state.queuedGroupId=null;
   canvas.width=overlay.width=c.width;canvas.height=overlay.height=c.height;setSourcePreview('masterPreview',c);window.MosaicPremium?.onMasterLoaded?.(c,name);$('selectionDraft').setAttribute('viewBox',`0 0 ${c.width} ${c.height}`);resetSelection();
   $('welcome').classList.add('hidden');$('canvasWrap').classList.remove('hidden');setProjectTitle(name);$('projectSize').textContent=`${c.width} × ${c.height}`;
   $('masterTitle').textContent='Master';$('masterInfo').textContent=`${name} · ${c.width} × ${c.height}`;$('masterStatus').textContent='✓';$('masterZone').classList.add('ready');updateZoomFit();renderGroups();render();updateSourceActions();message('Upload a variation, select the area you want, then click Apply.');
@@ -114,7 +114,7 @@ function showQuickPrompt(point=state.lastCanvasPointer,keepText=false){
   form.style.left=Math.max(left,Math.min(quickPromptPosition?r.left+quickPromptPosition.x:wantedX,Math.max(left,right-w)))+'px';
   form.style.top=Math.max(top,Math.min(quickPromptPosition?r.top+quickPromptPosition.y:wantedY,Math.max(top,bottom-h)))+'px';
   if(!keepText){window.MosaicPremium?.clearReferenceFiles?.('quick');$('quickAreaPromptInput').value=''}
-  $('quickAreaPromptInput').focus({preventScroll:true});
+  if(!window.matchMedia('(max-width:850px)').matches)$('quickAreaPromptInput').focus({preventScroll:true});
 }
 function setSourcePreview(id,source){const img=$(id);if(!img||!source)return;img.src=source.toDataURL('image/jpeg',.75);img.classList.remove('hidden')}
 function updateSourceActions(){
@@ -128,8 +128,8 @@ function updateSourceActions(){
   $('welcomeContinueBtn').classList.toggle('hidden',!firstImageOnly);
   $('welcomeTitle').textContent=firstImageOnly?'Base uploaded. What next?':'Start with an image.';
   $('welcomeDescription').textContent=firstImageOnly
-    ?'Upload Master on the right, generate one with a prompt, or Continue using Base only.'
-    :'Upload or drag an image into Base or Master.';
+    ?'Generate a Master from this Base, or choose Use Base to edit directly.'
+     :'Upload one Base image to start.';
   $('editBaseBtn').classList.toggle('hidden',!state.reference);
   $('editMasterBtn').classList.toggle('hidden',!state.master);
   $('editPendingBtn').disabled=!state.pendingSourceId;
@@ -168,6 +168,8 @@ function groupMask(group){
   // A region reuses the *visible, transformed* mask of its active option.
   // Do not reuse an original mask left behind after moving/skewing an option.
   const active=state.patches.get(group.active);
+  if(active?.editMode==='remove')return makeCanvas(canvas.width,canvas.height);
+  if(active?.geometryObjectMask&&!active.corners)return active.geometryObjectMask;
   if(active)return displayedPatchMask(active);
   if(group.objectOriginal)return group.objectOriginal.mask;
   if(group.footprint)return group.footprint;
@@ -333,7 +335,7 @@ function chooseGroupOption(group,patchId,{showPrompt=false,showOutline=false}={}
   if(!group||state.pendingSourceId||state.busy)return;
   if(patchId!==null&&(!group.patchIds.includes(patchId)||!state.patches.has(patchId)))return;
   optionChoiceVersions.set(group,groupChoiceVersion(group)+1);
-  state.editingPatchId=null;group.active=patchId;refreshGroupFootprint(group);window.MosaicObjects?.scheduleRepair();
+  state.editingPatchId=null;group.active=patchId;group.objectRemoved=state.patches.get(patchId)?.editMode==='remove';refreshGroupFootprint(group);window.MosaicObjects?.scheduleRepair();
   selectGroupMask(group,{showOutline});
   if(showPrompt)showQuickPrompt(state.lastCanvasPointer,true);
 }
@@ -734,6 +736,14 @@ function drawVectorPaths(layer,paths,{color='#fff',fill='none',width=.95,dashed=
 }
 function updateSelectionOutline(){window.MosaicObjects?.selectionChanged();state.boundaryCanvas=!state.selectionOverlayHidden&&state.selectionMask&&maskBoundingBox(state.selectionMask)?state.selectionMask:null;drawOverlay()}
 function drawOverlay(){ox.clearRect(0,0,overlay.width,overlay.height);drawDraftPreview();window.MosaicPremium?.positionCanvasProgress?.();window.MosaicWorkspace?.drawOverlay();window.MosaicObjectMap?.drawSelection();
+  const pointerRect=vectorLayer('pointerRectVectors');
+  if(state.pointerBoxStart&&state.pointerBoxEnd){
+    const a=state.pointerBoxStart,b=state.pointerBoxEnd;
+    const minX=Math.max(0,Math.min(a.x,b.x)),maxX=Math.min(canvas.width,Math.max(a.x,b.x));
+    const minY=Math.max(0,Math.min(a.y,b.y)),maxY=Math.min(canvas.height,Math.max(a.y,b.y));
+    if(maxX>minX&&maxY>minY)drawVectorPaths(pointerRect,[[{x:minX,y:minY},{x:maxX,y:minY},{x:maxX,y:maxY},{x:minX,y:maxY}]],
+      {fill:'rgba(165,115,236,.18)',dashed:true});
+  }
   const vectors=vectorLayer('selectionOutlineVectors');
   vectors.classList.toggle('is-quiet',Boolean(state.selectionOverlayHidden));
   vectorLayer('regionGuideVectors');
@@ -741,12 +751,12 @@ function drawOverlay(){ox.clearRect(0,0,overlay.width,overlay.height);drawDraftP
   if(!window.MosaicWorkspace?.isSelectingResult())window.MosaicPremium?.drawRegionGuides();
   if(state.selectionOverlayHidden&&state.selectionMask&&state.selectionPaths?.length)
     drawVectorPaths(vectors,state.selectionPaths,{color:'#d6c8fb',width:.7,dashed:true});
-  else if(state.boundaryCanvas&&!window.MosaicObjects?.drawPreview(ox,vectors))drawVectorPaths(vectors,ensureSelectionPaths(),{dashed:true});
+  else if(state.boundaryCanvas&&!window.MosaicObjects?.drawPreview(ox,vectors))drawVectorPaths(vectors,ensureSelectionPaths(),{fill:state.tool==='select'?'rgba(151,109,231,.22)':'none',dashed:true});
   const chosen=state.tool==='transform' && !state.pendingSourceId && !state.editingPatchId && activeTransformPatch();
   if(chosen){
     drawVectorPaths(vectors,patchSelectionPaths(chosen),{dashed:true});
     for(const p of patchControlPoints(chosen)){const r=3/state.zoom;vectors.append(svgNode('rect',{x:p.x-r,y:p.y-r,width:r*2,height:r*2,fill:'#f5f0ff',stroke:'#6555bd','stroke-width':1,'vector-effect':'non-scaling-stroke'}))}
-  }else if(state.boundaryCanvas&&!state.selectionOverlayHidden){
+  }else if(state.boundaryCanvas&&!state.selectionOverlayHidden&&state.tool!=='select'){
     for(const point of state.selectionPoints||[])vectors.append(svgNode('circle',{cx:point.x,cy:point.y,r:2.5/state.zoom,fill:'#e4e2ff'}));
   }
   // The SVG draft layer draws unfinished shapes beyond the image bounds.
@@ -821,9 +831,18 @@ function renderGroups(){
       const thumb=patchThumbnail(p);
       return `<div class="variant-row ${g.active===pid?'selected':''} ${state.maskEditOnly&&state.selectionTargetPatchId===pid?'mask-editing':''}" data-action="choose" data-group="${g.id}" data-patch="${pid}" ${isMaster?'data-master-version="true"':''}><span class="variant-dot"></span>${thumb?`<img class="option-cutout" src="${thumb}" alt="" loading="lazy">`:''}<span class="variant-text">${escapeHTML(p.name)}</span><span class="option-actions" aria-label="Option actions"><button type="button" class="variant-action" title="Edit selection mask" data-action="edit-mask" data-group="${g.id}" data-patch="${pid}">Edit</button><button type="button" class="variant-action" title="Rename option" data-region-action="rename-option" data-group="${g.id}" data-patch="${pid}">Rename</button><button type="button" class="variant-action" title="Delete option" data-action="delete" data-group="${g.id}" data-patch="${pid}">Delete</button><button type="button" class="variant-action" title="Regenerate this option (Pro)" data-region-action="regen-option" data-group="${g.id}" data-patch="${pid}">${p.generating?'Generating…':'✦ Regen'}</button></span></div>`;
     };
+    const versionCategories=new Map();
+    for(const pid of order){
+      const patch=state.patches.get(pid);
+      const category=patch?.versionCategory||(patch?.isOriginalMaster?'Original':patch?.isMasterVersion?'Master versions':'Options');
+      if(!versionCategories.has(category))versionCategories.set(category,[]);
+      versionCategories.get(category).push(pid);
+    }
+    const optionCategories=[...versionCategories].map(([category,ids])=>
+      `<section class="option-version-category" data-version-category="${escapeHTML(category)}"><div class="option-version-heading"><span>${escapeHTML(category)}</span><span>${ids.length}</span></div>${ids.map(optionRow).join('')}</section>`).join('');
     const originalRow=g.hasHarmonizedMaster||!readyIds.length?'':`<div class="variant-row ${g.active===null?'selected':''}" data-action="choose" data-group="${g.id}" data-patch="master"><span class="variant-dot"></span><span class="variant-text">Original Master</span></div>`;
     const groupThumb=groupThumbnail(g);
-    return `<div class="region-group" data-group="${g.id}"><div class="group-head" data-action="focus" data-group="${g.id}"><span class="group-icon">${groupThumb?`<img class="group-cutout" src="${groupThumb}" alt="" loading="lazy">`:'▧'}</span><span class="group-heading-copy"><small>Object ${String(state.groups.indexOf(g)+1).padStart(2,'0')}</small><span class="group-name">${escapeHTML(g.name)}</span></span><span class="group-count">${readyIds.length}</span><span class="group-head-actions"><button type="button" class="variant-action group-add-option" data-region-action="add-option" title="Add an option to this region" aria-label="Add region option">＋</button></span></div><div class="group-options">${order.map(optionRow).join('')}${originalRow}${readyIds.length?'':`<small class="group-pending-options">${g.patchIds.length?'Generating edit…':'Select an area and Generate to add an option'}</small>`}</div></div>`;
+    return `<div class="region-group" data-group="${g.id}"><div class="group-head" data-action="focus" data-group="${g.id}"><span class="group-icon">${groupThumb?`<img class="group-cutout" src="${groupThumb}" alt="" loading="lazy">`:'▧'}</span><span class="group-heading-copy"><small>Object ${String(state.groups.indexOf(g)+1).padStart(2,'0')}</small><span class="group-name">${escapeHTML(g.name)}</span></span><span class="group-count">${readyIds.length}</span><span class="group-head-actions"><button type="button" class="variant-action group-add-option" data-region-action="add-option" title="Add an option to this region" aria-label="Add region option">＋</button></span></div><div class="group-options">${optionCategories}${originalRow}${readyIds.length?'':`<small class="group-pending-options">${g.patchIds.length?'Generating edit…':'Select an area and Generate to add an option'}</small>`}</div></div>`;
   };
   const collapsed=new Set(state.collapsedCategories||[]);
   list.innerHTML=[...categories].map(([id,groups])=>{
@@ -866,17 +885,18 @@ function groupEvent(e){if(window.MosaicRegions?.handleGroupEvent(e))return;if(wi
 function selectTool(tool){if(window.MosaicSourceEditor?.isEditing())return;clearHover();clearDraft();hideQuickPrompt();state.tool=tool;if(state.pendingSourceId&&tool==='reveal'){state.pendingRevealOnly=true;render()}$('resetTransformBtn').classList.toggle('hidden',tool!=='transform'||!activeTransformPatch());
   $('viewport').classList.toggle('is-selecting',['lasso','rect','ellipse','wand','reveal','erase'].includes(tool));
   $('wandOptions').classList.toggle('hidden',tool!=='wand');
-  document.querySelector('.selection-modes').classList.toggle('hidden',!['lasso','rect','ellipse','wand'].includes(tool));
+  document.querySelector('.selection-modes').classList.add('hidden');
   $('brushOptions').classList.toggle('hidden',tool!=='reveal'&&tool!=='erase');
   $('brushIntensityOptions').classList.toggle('hidden',tool!=='reveal'&&tool!=='erase');
   overlay.style.cursor='';
   if(tool==='select'&&state.boundaryCanvas)ensureSelectionPaths();
-  if(tool==='select')message('Pointer: click a mask to see its outline. Drag a point to refine the selection.');
+  if(tool==='select')message('Select: tap an object, or drag a rectangle to select overlapping object masks.');
+  else if(tool==='cut')message('Cut: select an object first, then draw one line all the way through it.');
   else if(tool==='wand')message('Wand: click to select one prepared object. Ctrl/Cmd-click adds another object.');
   else if(tool==='lasso')message('Line: click each corner, then click the first point or press Enter to close.');
   else if(tool==='zoom')message('Zoom: click to zoom in. Shift-click to zoom out.');
   else if(tool==='pan')message('Pan: drag to move around the canvas.');
-  else if(tool==='rect'||tool==='ellipse')message('Drag to select; holding Shift constrains to a square or circle. Selection clips to image edges.');
+  else if(tool==='rect'||tool==='ellipse')message('Create a new foreground object. Holding Shift constrains proportions.');
 document.querySelectorAll('.tool').forEach(b=>{b.classList.toggle('active',b.dataset.tool===tool);b.setAttribute('aria-pressed',String(b.dataset.tool===tool))});$('canvasWrap').className=`canvas-wrap${state.master?'':' hidden'} ${tool==='pan'?'pan':tool==='zoom'?'zoom':tool==='transform'?'transform':tool==='reveal'?'brush':tool==='erase'?'eraser':''}`;drawOverlay();window.MosaicSlimWand?.onToolChange?.(tool)}
 function canvasPoint(e,clipped=true){const rect=overlay.getBoundingClientRect(), x=(e.clientX-rect.left)/rect.width*canvas.width,y=(e.clientY-rect.top)/rect.height*canvas.height;return {x:clipped?clamp(x,0,canvas.width):x,y:clipped?clamp(y,0,canvas.height):y}}
 function pointInImage(p){return p.x>=0&&p.y>=0&&p.x<canvas.width&&p.y<canvas.height}
@@ -1185,6 +1205,11 @@ function commitMaskPath(trace,points=[],polygon=false){if(!state.selectionMask)r
   if(state.selectionMode==='add')state.forceNewSelectionGroup=true;
   const raw=makeCanvas(canvas.width,canvas.height),r=raw.getContext('2d');r.fillStyle='#fff';r.beginPath();trace(r);r.closePath();r.fill();
   const hard=r.getImageData(0,0,raw.width,raw.height);for(let i=3;i<hard.data.length;i+=4)hard.data[i]=hard.data[i]>=128?255:0;r.putImageData(hard,0,0);
+  if(['lasso','rect','ellipse'].includes(state.tool)&&!state.pendingSourceId&&!state.editingPatchId&&!state.maskEditOnly){
+    m.restore();
+    window.MosaicObjectCreateCut?.create(raw);
+    return;
+  }
   const region=window.MosaicObjectMap?.refineMask(raw,state.tool)||raw;
   m.globalCompositeOperation=state.selectionMode==='subtract'?'destination-out':'source-over';m.drawImage(region,0,0);m.restore();
   if(region===raw&&state.selectionMode==='new'&&polygon&&points.length>=3)setSelectionPaths([points]);else{state.selectionPaths=[];state.selectionPoints=[];activeMaskVertex=null;hoverMaskEdge=null;maskEditVersion++}
@@ -1229,7 +1254,7 @@ function applySelection(){if(state.lasso.length){if(!updateMaskWithLasso()){toas
   }}
 function findRegionAt(point){
   if(!state.master||!pointInImage(point))return null;
-  for(const group of state.groups.filter(g=>!g.mergedInto&&!g.objectMapBatch).slice().reverse()){
+  for(const group of state.groups.filter(g=>!g.mergedInto&&!g.objectMapBatch&&!g.objectRemoved).slice().reverse()){
     const alpha=groupMask(group).getContext('2d',{willReadFrequently:true}).getImageData(Math.floor(point.x),Math.floor(point.y),1,1).data[3];
     if(alpha>0)return group;
   }
@@ -1328,18 +1353,16 @@ function pointerDown(e){if(e.target.closest('form,button,input,textarea,select')
   if(state.tool==='pan'){state.panAnchor={x:e.clientX,y:e.clientY,left:$('viewport').scrollLeft,top:$('viewport').scrollTop};e.currentTarget.setPointerCapture(e.pointerId);return}
   state.lastCanvasPointer={clientX:e.clientX,clientY:e.clientY};
   if(state.tool==='select'){
-    const point=canvasPoint(e,false);
-    if((e.ctrlKey||e.metaKey)&&pointInImage(point)){const region=findRegionAt(point);if(region){e.preventDefault();appendGroupSelection(region);focusGroupInSidebar(region);showQuickPrompt(state.lastCanvasPointer);return}}
-    if(beginMaskVertexDrag(e,point))return;
-    if(state.boundaryCanvas&&pointInImage(point)&&state.selectionMask.getContext('2d').getImageData(Math.floor(point.x),Math.floor(point.y),1,1).data[3]>0){
-      focusGroupInSidebar(state.groups.find(group=>group.id===state.draftGroupId));
-      if(selectedImagePatch())beginTransform(e,point);else beginSelectionMove(e,point);return;
-    }
-    const region=findRegionAt(point);
-    if(region){
-      selectGroupMask(region,{showOutline:true});focusGroupInSidebar(region);showQuickPrompt(state.lastCanvasPointer);
-      if(selectedImagePatch())beginTransform(e,point);else beginSelectionMove(e,point);
-    }else{if(!state.pendingSourceId&&!state.editingPatchId)deselectCanvasRegion();else hideQuickPrompt();message('Click a saved Group, or draw a selection.')}
+    state.pointerBoxStart=canvasPoint(e,false);
+    state.pointerBoxEnd=state.pointerBoxStart;
+    state.pointerBoxPointerId=e.pointerId;
+    state.pointerBoxModifier={append:e.ctrlKey||e.metaKey,subtract:e.altKey};
+    e.preventDefault();e.currentTarget.setPointerCapture(e.pointerId);
+    return;
+  }
+  if(state.tool==='cut'){
+    const ok=window.MosaicObjectCreateCut?.beginCut?.(canvasPoint(e,false));
+    if(ok){e.preventDefault();e.currentTarget.setPointerCapture(e.pointerId);}
     return;
   }
   if(state.tool==='reveal'||state.tool==='erase'){
@@ -1374,7 +1397,14 @@ function pointerMove(e){
   if(state.maskVertexDrag){moveMaskVertex(canvasPoint(e));return}
   if(state.maskMoveDrag){moveSelection(canvasPoint(e));return}
   if(state.transformDrag){moveTransform(canvasPoint(e));return}
-  if(state.tool==='select'){const p=canvasPoint(e,false);overlay.style.cursor=selectionVertexAt(p)>=0?'crosshair':'default';updateMaskEdgeHover(p);window.MosaicRegions?.onPointerMove(e);return}
+  if(state.tool==='select'){
+    const p=canvasPoint(e,false);
+    if(state.pointerBoxStart){state.pointerBoxEnd=p;drawOverlay();return;}
+    overlay.style.cursor='default';
+    window.MosaicSlimWand?.hoverAt?.(p);
+    return;
+  }
+  if(state.tool==='cut'){if(window.MosaicObjectCreateCut?.isCutting?.())window.MosaicObjectCreateCut.moveCut(canvasPoint(e,false));return;}
   // A lasso can finish via Enter or clicking its starting point. Remember the
   // latest pointer *move*, not only pointerdown/up, for prompt anchoring.
   if(Number.isFinite(e.clientX)&&Number.isFinite(e.clientY))
@@ -1386,7 +1416,42 @@ function pointerMove(e){
   if(!state.drawing)return;
   if(state.tool==='rect'||state.tool==='ellipse'){state.shapeEnd=p;state.constrainShape=e.shiftKey;drawOverlay()}
   else if(state.tool==='reveal'||state.tool==='erase')paint(e,false)}
-function pointerUp(e){if(state.maskVertexDrag){endMaskVertexDrag();return}if(state.maskMoveDrag){endSelectionMove();return}if(state.transformDrag){endTransform();return}if(state.tool==='transform'){if(state.transformDrag)endTransform();return}if(state.tool==='pan'){state.panAnchor=null;return}if(!state.drawing)return;
+function pointerUp(e){
+  if(state.tool==='select'&&state.pointerBoxStart){
+    const start=state.pointerBoxStart,end=canvasPoint(e,false),mods=state.pointerBoxModifier||{};
+    state.pointerBoxStart=null;state.pointerBoxEnd=null;state.pointerBoxPointerId=null;
+    if(Math.hypot((end.x-start.x)*state.zoom,(end.y-start.y)*state.zoom)>8){
+      const bounds={x:Math.max(0,Math.min(start.x,end.x)),y:Math.max(0,Math.min(start.y,end.y)),
+        right:Math.min(canvas.width,Math.max(start.x,end.x)),bottom:Math.min(canvas.height,Math.max(start.y,end.y))};
+      const raw=makeCanvas(canvas.width,canvas.height),c=raw.getContext('2d');
+      c.fillStyle='#fff';c.fillRect(bounds.x,bounds.y,Math.max(0,bounds.right-bounds.x),Math.max(0,bounds.bottom-bounds.y));
+      resetSelection();setMode('new');
+      const hasExistingObjects=state.groups.some(g=>!g.mergedInto&&!g.objectRemoved&&!g.objectMapBatch);
+      if(!hasExistingObjects&&!state.objectMap?.raster){
+        toast('No objects yet. Run Object Map or draw a new object with Create.');
+        drawOverlay();return;
+      }
+      const snapped=window.MosaicObjectMap?.refineMask?.(raw,'rect')||raw;
+      state.selectionMask.getContext('2d').drawImage(snapped,0,0);
+      window.MosaicObjectMap?.selectionCompleted?.();
+      state.selectionPaths=maskPathsFromRaster(state.selectionMask);state.selectionPoints=[];
+      state.selectionOverlayHidden=false;updateSelectionOutline();renderGroups();render();
+      if(maskBoundingBox(state.selectionMask))showQuickPrompt({clientX:e.clientX,clientY:e.clientY});
+      else toast('No object found in the rectangle. Try a larger box.');
+    }else{
+      const point=end,group=findRegionAt(point);
+      if(group){if(mods.append)appendGroupSelection(group);else selectGroupMask(group,{showOutline:true});
+        focusGroupInSidebar(group);showQuickPrompt({clientX:e.clientX,clientY:e.clientY});}
+      else if(state.objectMap?.raster)window.MosaicSlimWand?.selectAt?.(point,mods);
+      else{resetSelection();render();message('Upload a Base and prepare objects, or use Create to draw one.');}
+    }
+    drawOverlay();return;
+  }
+  if(state.tool==='cut'){
+    if(window.MosaicObjectCreateCut?.isCutting?.()){window.MosaicObjectCreateCut.moveCut(canvasPoint(e,false));window.MosaicObjectCreateCut.endCut();}
+    return;
+  }
+  if(state.maskVertexDrag){endMaskVertexDrag();return}if(state.maskMoveDrag){endSelectionMove();return}if(state.transformDrag){endTransform();return}if(state.tool==='transform'){if(state.transformDrag)endTransform();return}if(state.tool==='pan'){state.panAnchor=null;return}if(!state.drawing)return;
   const p=canvasPoint(e,!['lasso','rect','ellipse'].includes(state.tool)),tool=state.tool;state.lastCanvasPointer={clientX:e.clientX,clientY:e.clientY};state.drawing=false;state.lastPoint=null;
   if(tool==='lasso'){if(state.dragFreehand){const last=state.lasso.at(-1);if(Math.hypot(p.x-last.x,p.y-last.y)>0.1/state.zoom)state.lasso.push(p);updateMaskWithLasso()}
     else if(state.pointerStart){const first=state.lasso[0],nearFirst=state.lasso.length>=3&&Math.hypot(p.x-first.x,p.y-first.y)<=10/state.zoom;
@@ -1407,7 +1472,9 @@ function pointerUp(e){if(state.maskVertexDrag){endMaskVertexDrag();return}if(sta
     state.brushTargetId=null;render();
   }
   renderGroups()}
-function pointerCancel(){if(state.maskVertexDrag){endMaskVertexDrag(true);return}if(state.maskMoveDrag){endSelectionMove(true);return}if(state.transformDrag){endTransform();return}if(state.tool==='transform'){endTransform();return}if(state.tool==='pan')state.panAnchor=null;
+function pointerCancel(){if(state.pointerBoxStart){state.pointerBoxStart=null;state.pointerBoxEnd=null;drawOverlay();return}
+  if(state.tool==='cut'){window.MosaicObjectCreateCut?.cancelCut?.();return}
+  if(state.maskVertexDrag){endMaskVertexDrag(true);return}if(state.maskMoveDrag){endSelectionMove(true);return}if(state.transformDrag){endTransform();return}if(state.tool==='transform'){endTransform();return}if(state.tool==='pan')state.panAnchor=null;
   if(state.drawing){
     if((state.tool==='reveal'||state.tool==='erase')&&!state.pendingSourceId&&!state.editingPatchId){
       const patch=state.patches.get(state.brushTargetId);
@@ -1498,7 +1565,9 @@ $('quickAreaPromptForm').addEventListener('submit',e=>{
   e.preventDefault();
   const prompt=$('quickAreaPromptInput').value.trim();if(!prompt)return;
   const referenceFiles=window.MosaicPremium?.getReferenceFiles?.('quick')||[];
-  hideQuickPrompt();void window.MosaicPremium?.generateSelection?.(prompt,null,referenceFiles);
+  hideQuickPrompt();
+  if(window.MosaicGeometryEdit?.getMode?.()==='shape')void window.MosaicGeometryEdit.generate(prompt,referenceFiles,'shape');
+  else void window.MosaicPremium?.generateSelection?.(prompt,null,referenceFiles);
 });
 $('discardPendingBtn').addEventListener('click',discardPending);$('exportBtn').addEventListener('click',exportImage);
 $('groupList').addEventListener('click',groupEvent);

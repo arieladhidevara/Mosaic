@@ -1,0 +1,47 @@
+name: Object-aware editing tests
+on:
+  push:
+    branches: [feature/object-aware-shape-editing]
+  pull_request:
+    paths:
+      - 'workspace-mobile.js'
+      - 'workspace-mobile.css'
+      - 'object-create-cut.js'
+      - 'mask-cut.mjs'
+      - 'tests/mask-cut.test.mjs'
+      - 'scene-targeting.js'
+      - 'scene-versioning.js'
+      - 'api/ai/scene-intent.js'
+      - 'object-map.js'
+      - 'object-map-utils.mjs'
+      - 'canvas-workspace.js'
+      - 'tests/scene-*'
+      - 'geometry-edit.js'
+      - 'geometry-mask.mjs'
+      - 'geometry-edit.css'
+      - 'lib/image-provider.js'
+      - 'premium.js'
+      - 'app.js'
+      - 'project-file.js'
+      - 'tests/geometry-*'
+      - 'package.json'
+      - '.github/workflows/geometry-ci.yml'
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm ci
+      - run: npm test
+      - run: node --check object-create-cut.js
+      - run: node --check mask-cut.mjs
+      - run: node --check workspace-mobile.js
+      - run: node --check scene-targeting.js
+      - run: node --check scene-versioning.js
+      - run: node --check canvas-workspace.js
+      - run: node --check geometry-edit.js
+      - run: node --check premium.js
+      - run: node --check lib/image-provider.js

@@ -833,30 +833,16 @@ async function harmonizeWithAI(prompt,sourceVersion=null) {
     originalBase: state.reference||premium.initialMaster||state.master, collage: cloneCanvas(sourceVersion?.image||flattened),
     prompt, snapshotId: node.id
   };
-  // Preserve region/material alternatives. Share a single image source per Master version,
-  // rather than duplicating a large full-resolution canvas for every region.
-  const original = premium.initialMaster || cloneCanvas(state.master);
-  const savedRegionMasks = state.groups.map(g=>({group:g,mask:cloneCanvas(core.groupMask(g))}));
-  state.master = finalImage;
-  const needsOriginal=savedRegionMasks.some(({group})=>!group.patchIds.some(id=>state.patches.get(id)?.isOriginalMaster));
-  const originalSource=needsOriginal?uid('original_source'):null;
-  if(originalSource)state.sources.set(originalSource,{id:originalSource,name:'Original Master',canvas:cloneCanvas(original)});
-  const sourceId=savedRegionMasks.length?uid('master_source'):null;
-  if(sourceId)state.sources.set(sourceId,{id:sourceId,name:'Master '+masterVersion,canvas:cloneCanvas(finalImage)});
-  for(const {group,mask} of savedRegionMasks){
-    if(!group.patchIds.some(id=>state.patches.get(id)?.isOriginalMaster)){
-      const initialId=uid('original_master');
-      state.patches.set(initialId,{id:initialId,sourceId:originalSource,mask:cloneCanvas(mask),bbox:maskBoundingBox(mask),name:'Original Master',manualName:true,isOriginalMaster:true,groupId:group.id});
-      group.patchIds.unshift(initialId);
-    }
-    const nextId=uid('master_version');
-    state.patches.set(nextId,{id:nextId,sourceId,mask:cloneCanvas(mask),bbox:maskBoundingBox(mask),name:'Master '+masterVersion,manualName:true,isMasterVersion:true,masterVersion,groupId:group.id});
-    group.patchIds.push(nextId);
-    // A newly rendered Master is available as an option without replacing
-    // the option whose mask the user is currently drawing or refining.
-    if(!editingInProgress)group.active=nextId;
-    group.hasHarmonizedMaster=true;
-  }
+  // Every Harmonize result becomes its own named option on EACH persistent object.
+  // SAM 3 resegments the full generated scene and spatially matches candidates
+  // to the existing Object IDs. Unmatched objects retain their previous masks.
+  let versionResult;
+  try{
+    versionResult=await window.MosaicSceneVersions.apply(finalImage,{
+      type:'harmonize',prompt,preserveEditing:editingInProgress,
+      onStatus:detail=>progress.update(94,detail)
+    });
+  }catch(error){progress.fail(error.message);toast('Harmonize versioning failed: '+error.message);return}
   // Preserve pending imports, selection canvas, in-progress lasso, mask editor,
   // undo/redo stack, tool and keyboard focus across the background Master update.
   premium.branchFrom = node.id;
@@ -1121,6 +1107,7 @@ async function createMasterFromBase(prompt,files,button,afterSuccess){
         const isFirstMaster=state.masterIsBase||!premium.masterVersions.length;
         if(firstMaster)revealMaster(currentComposite());
         state.master=generated;state.rawMaster=generated;state.masterIsBase=false;
+        if(!state.objectMap?.raster)window.MosaicObjectMap?.imageReady?.(generated);
         const version=addMasterVersion(generated,'AI generated',prompt);
         if(isFirstMaster)premium.initialMaster=cloneCanvas(generated);
         premium.originalMaster=cloneCanvas(baseAtRequest);
@@ -1214,7 +1201,7 @@ function onPatchApplied() {
   // A committed patch stays selected so its four corner handles are immediately available.
   if(state.selectedPatchId){const group=state.groups.find(g=>g.active===state.selectedPatchId);if(group)core.selectGroupMask(group);else core.selectTool('select')}
 }
-async function generateComposition(prompt,files,source,markup=null){
+async function generateComposition(prompt,files,source,markup=null,options={}){
   const master=state.master,generation=state.selectionGeneration;
   const size={width:canvas.width,height:canvas.height};
   if(!master)throw Error('Upload an image first.');
@@ -1224,6 +1211,8 @@ async function generateComposition(prompt,files,source,markup=null){
   if(state.master!==master||state.selectionGeneration!==generation)throw Error('The project changed. Submit again.');
   const payload=encodeRequest(prompt,null,source,references,markup);
   payload.mode='chat';
+  if(['shape','remove'].includes(options?.editIntent))payload.editIntent=options.editIntent;
+  if(options?.targetLabel)payload.targetObject=String(options.targetLabel).slice(0,80);
   const result=await window.MosaicAuth.request('/api/ai/harmonize',payload);
   const image=await fromGeneratedJPEG(result.image,size);
   if(state.master!==master||state.selectionGeneration!==generation)throw Error('The project changed during generation. Your current work was kept.');
