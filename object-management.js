@@ -32,14 +32,14 @@ function ensureObjects(map,maskForIds){
       }
     }
     object.objectName=title(entry.label);object.suggestedCollection=entry.suggestedGroup||entry.category;
-    object.spatialBox={x:entry.box.x*canvas.width/map.raster.width,
+    if(entry.box)object.spatialBox={x:entry.box.x*canvas.width/map.raster.width,
       y:entry.box.y*canvas.height/map.raster.height,
       w:entry.box.w*canvas.width/map.raster.width,h:entry.box.h*canvas.height/map.raster.height};
     if(!object.manualName)object.name=object.objectName;
   }
   // The saved instance map is already enough for semantic-spatial clustering.
   // No additional AI call and no mask or Object ID modifications.
-  autoGroup();
+  if(typeof autoGroup==='function')autoGroup();
 }
 function partForObject(object){
   object.objectMapObjectKey||=object.id;object.objectMapKey||='manual';object.objectName||=object.name;
