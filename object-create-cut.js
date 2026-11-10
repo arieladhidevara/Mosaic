@@ -35,6 +35,11 @@ function registerForeground(mask,name='Created object'){
   group.objectId=group.id;group.mapPrepared=true;group.manualName=true;
   group.objectName=group.name=name;group.objectBehind=[...behind];
   group.createdLocally=true;group.collectionId=null;
+  // An object drawn later is ABOVE every object it overlaps; place its ID
+  // in the behind object's scene relationship, not the other way around.
+  group.objectBehind=[];
+  for(const id of behind){const covered=state.groups.find(item=>item.id===id);if(covered)
+    covered.objectBehind=[...new Set([...(covered.objectBehind||[]),group.id])];}
   const sourceId=core.uid('create_source'),patchId=core.uid('create_option');
   state.sources.set(sourceId,{id:sourceId,name:'Created object pixels',canvas:clone(frame)});
   const paths=core.maskPathsFromRaster(mask);
@@ -99,7 +104,7 @@ function cut(){
     child.objectMapKey='manual';child.objectMapObjectKey=core.uid('cut_object');
     child.objectId=child.id;child.mapPrepared=true;child.cutParentId=group.id;
     child.collectionId=group.collectionId||null;
-    child.objectBehind=[...new Set([...(group.objectBehind||[]),group.id,...(k?[newGroups[0].id]:[])])];
+    child.objectBehind=[...(group.objectBehind||[])];
     let active=null;
     for(const oldId of group.patchIds){
       const previous=state.patches.get(oldId);if(!previous)continue;
@@ -130,7 +135,13 @@ function cut(){
     }
     child.active=active;core.refreshGroupFootprint(child);newGroups.push(child);
   }
-  group.mergedInto=newGroups[0].id;group.splitChildren=newGroups.map(g=>g.id);
+  group.mergedInto=newGroups[0].id;group.cutArchived=true;
+  group.splitChildren=newGroups.map(g=>g.id);
+  for(const foreground of state.groups){
+    if(foreground===group)continue;
+    if(foreground.objectBehind?.includes(group.id))
+      foreground.objectBehind=[...new Set(foreground.objectBehind.flatMap(id=>id===group.id?group.splitChildren:[id]))];
+  }
   (state.cutHistory??=[]).push({parentId:group.id,children:group.splitChildren,
     originalName:group.name,createdAt:new Date().toISOString(),cutPoints:job.points});
   core.resetSelection();core.renderGroups();core.render();
