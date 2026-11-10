@@ -1426,6 +1426,11 @@ function pointerUp(e){
       const raw=makeCanvas(canvas.width,canvas.height),c=raw.getContext('2d');
       c.fillStyle='#fff';c.fillRect(bounds.x,bounds.y,Math.max(0,bounds.right-bounds.x),Math.max(0,bounds.bottom-bounds.y));
       resetSelection();setMode('new');
+      const hasExistingObjects=state.groups.some(g=>!g.mergedInto&&!g.objectRemoved&&!g.objectMapBatch);
+      if(!hasExistingObjects&&!state.objectMap?.raster){
+        toast('No objects yet. Run Object Map or draw a new object with Create.');
+        drawOverlay();return;
+      }
       const snapped=window.MosaicObjectMap?.refineMask?.(raw,'rect')||raw;
       state.selectionMask.getContext('2d').drawImage(snapped,0,0);
       window.MosaicObjectMap?.selectionCompleted?.();
