@@ -123,8 +123,8 @@ function partsOverlappingMask(mask){
 function refineMask(mask,tool){
   // Add/subtract also snap the NEW drawn shape to current object masks.
   if(!['rect','ellipse','lasso','freehand'].includes(tool)||state.pendingSourceId||state.maskEditOnly)return mask;
-  if(!labels){core.toast('Objects are not ready yet. Your drawn selection was kept.');return mask}
   const parts=partsOverlappingMask(mask);
+  if(!labels&&!parts.length)return mask;
   if(!parts.length){
     // Recover initial map shapes if a legacy project has no prepared Object Groups.
     const ids=idsOverlappingShape(labels,mapWidth,mapHeight,mask.getContext('2d').getImageData(0,0,mask.width,mask.height).data,mask.width,mask.height);
@@ -208,17 +208,25 @@ function migrateLegacyGroups(map){
   }
   if(changed){state.selectedPatchId=null;state.draftGroupId=null;core.renderGroups();core.render()}
 }
-function onToolChange(tool){active=tool==='wand';leave();if(active&&!labels)update(busy?'Preparing objects…':'Upload Base and connect AI to prepare objects',Boolean(attemptedBase&&!busy&&!state.objectMap))}
+function onToolChange(tool){active=tool==='wand'||tool==='select';leave();if(active&&!labels&&!state.groups.some(g=>g.mapPrepared))update(busy?'Preparing objects…':'Upload Base and connect AI to prepare objects',Boolean(attemptedBase&&!busy&&!state.objectMap))}
 function hoverAt(point){
-  if(!active||!labels)return;
-  const live=liveObjectAt(point),id=live?.id||labelAt(labels,mapWidth,mapHeight,point.x,point.y,canvas.width,canvas.height);
+  if(!active)return;
+  const live=liveObjectAt(point);
+  if(!live&&(!labels||state.objectMapLocked))return leave();
+  const id=live?.id||labelAt(labels,mapWidth,mapHeight,point.x,point.y,canvas.width,canvas.height);
   if(id===hoverId&&preview.width===canvas.width&&preview.height===canvas.height)return;leave();if(!id)return;hoverId=id;
   const mask=live?core.groupMask(live):maskForIds([id]);preview.width=mask.width;preview.height=mask.height;const x=preview.getContext('2d');x.drawImage(mask,0,0);x.globalCompositeOperation='source-in';x.fillStyle='#b493f560';x.fillRect(0,0,preview.width,preview.height);x.globalCompositeOperation='source-over';core.overlay.style.cursor='pointer';
 }
 function leave(){hoverId=0;preview.getContext('2d').clearRect(0,0,preview.width,preview.height)}
 function selectAt(point,options={}){
-  if(!active)return;if(!labels){if(busy){pendingClick={point:{...point},options};core.message('Object selection queued until the image map is ready.')}else core.toast('Prepare the image object map first.');return}
-  const live=liveObjectAt(point),id=live?.id||labelAt(labels,mapWidth,mapHeight,point.x,point.y,canvas.width,canvas.height);
+  if(!active)return;
+  const live=liveObjectAt(point);
+  if(!live&&(!labels||state.objectMapLocked)){
+    if(busy){pendingClick={point:{...point},options};core.message('Object selection queued until the image map is ready.');}
+    else if(!options.append&&!options.subtract){core.resetSelection();core.render();}
+    return;
+  }
+  const id=live?.id||labelAt(labels,mapWidth,mapHeight,point.x,point.y,canvas.width,canvas.height);
   if(!id){if(!options.append&&!options.subtract){core.resetSelection();core.render()}return}
   const hasObjects=state.objectSelectionParts?.length;
   const mode=options.append&&hasObjects?'add':options.subtract&&hasObjects?'subtract':'new';core.setMode(mode);
