@@ -906,6 +906,7 @@ body:has(.source-editor-active) .mask-edit-controls,body:has(.source-editor-acti
   stroke:#fff;stroke-dasharray:4 6;stroke-width:1.1px;opacity:.8;
   animation:mask-ants-march 6s linear infinite
 }
+.selection-modes .mode[hidden]{display:none!important}
 #selectionOutlineVectors.is-quiet path{
   stroke-width:1.1px;opacity:.2;stroke-dasharray:4 6
 }
