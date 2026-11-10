@@ -6,8 +6,11 @@ BYOK connection is ready. Base upload alone and the provisional Base shown
 during initial Master generation do not start mapping. `/api/ai/object-map` requests a flat
 PNG in a fixed 64-color palette at the submitted dimensions. A lightweight
 `gpt-4.1-mini` vision call assigns Group categories. Both are billable calls.
-The browser validates dimensions and flat colors, then saves the index raster
-and categories in `.moz`. Reopening a project or returning to a cached working
+The browser validates dimensions and decodes even off-palette colors to internal
+Object IDs, then saves the index raster and categories in `.moz`. Exact palette
+matching is not required. Single-color or textured outputs receive nonblocking
+quality notices instead of being rejected. Fully empty/transparent images are
+still rejected because they contain no selectable objects. Reopening a project or returning to a cached working
 image reuses its map. The map request targets about one megapixel, with edges
 on a 16-pixel grid and the same framing. For example, 1024x608 becomes 1344x800;
 the server rejects requests below the minimum pixel budget before inference.
@@ -59,7 +62,7 @@ and offsets and can complete out of order without overwriting another object.
 Missing AI connection waits for the normal key-connected event. Failed requests
 require explicit Retry. Editing Base invalidates its map and requires explicit
 preparation again. If category labeling fails, the UI says so and unlabeled
-objects use Other. Dimension/palette checks cannot guarantee that generative
+objects use Other. Dimension and advisory color-consistency checks cannot guarantee that generative
 object boundaries exactly match Base.
 
 Tests: `node --test tests/object-map-cleanup.test.mjs tests/object-map.test.mjs tests/object-map-provider.test.cjs`.
