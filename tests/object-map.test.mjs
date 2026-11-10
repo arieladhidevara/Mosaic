@@ -19,7 +19,30 @@ test('shape selection picks objects predominantly inside and ignores grazing an 
   for(const index of [0,1,2,3,4,6])rgba[index*4+3]=255;
   assert.deepEqual(idsInShape(labels,9,1,rgba,9,1),[1,2]);
 });
-test('flat-map validation rejects an unchanged photograph or a single-color result',()=>{
-  assert.throws(()=>decodeColors(new Uint8Array([255,255,255,255,255,255,255,255]),2,1),/flat-color/);
-  const one=new Uint8Array([...PALETTE[0].rgb,255,...PALETTE[0].rgb,255]);assert.throws(()=>decodeColors(one,2,1),/separate enough/);
+test('off-palette output is decoded without a palette-distance rejection',()=>{
+  const rgba=new Uint8Array([250,10,10,255,10,240,10,255]);
+  const decoded=decodeColors(rgba,2,1);
+  assert.equal(decoded.ids.length,2);
+  assert.notEqual(decoded.labels[0],decoded.labels[1]);
+  assert.deepEqual(decoded.warnings,[]);
+});
+test('single-color results are nonblocking but flagged for review',()=>{
+  const one=new Uint8Array([...PALETTE[0].rgb,255,...PALETTE[0].rgb,255]);
+  const decoded=decodeColors(one,2,1);
+  assert.deepEqual(decoded.ids,[1]);
+  assert.match(decoded.warnings.join(' '),/one object color/i);
+});
+test('empty and transparent results are still rejected',()=>{
+  assert.throws(()=>decodeColors(new Uint8Array(8),2,1),/empty or transparent/);
+  assert.throws(()=>decodeColors(new Uint8Array([0,0,0,255,0,0,0,255]),2,1),/empty or transparent/);
+});
+test('color variation is checked independently of the fixed palette and only warns',()=>{
+  const w=128,h=32,rgba=new Uint8Array(w*h*4);
+  for(let y=0;y<h;y++)for(let x=0;x<w;x++){
+    const i=(y*w+x)*4;
+    rgba[i]=40+(x*7)%200;rgba[i+1]=40+(y*13)%200;rgba[i+2]=120;rgba[i+3]=255;
+  }
+  const decoded=decodeColors(rgba,w,h);
+  assert.ok(decoded.ids.length>1);
+  assert.match(decoded.warnings.join(' '),/gradients or texture/);
 });
