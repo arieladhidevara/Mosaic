@@ -1107,6 +1107,7 @@ async function createMasterFromBase(prompt,files,button,afterSuccess){
         const isFirstMaster=state.masterIsBase||!premium.masterVersions.length;
         if(firstMaster)revealMaster(currentComposite());
         state.master=generated;state.rawMaster=generated;state.masterIsBase=false;
+        if(!state.objectMap?.raster)window.MosaicObjectMap?.imageReady?.(generated);
         const version=addMasterVersion(generated,'AI generated',prompt);
         if(isFirstMaster)premium.initialMaster=cloneCanvas(generated);
         premium.originalMaster=cloneCanvas(baseAtRequest);
