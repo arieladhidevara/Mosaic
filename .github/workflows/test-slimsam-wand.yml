@@ -59,7 +59,7 @@ jobs:
           const fs = require('node:fs');
           const html = fs.readFileSync('index.html', 'utf8');
           const app = fs.readFileSync('app.js','utf8');
-          if(!html.includes('./slimsam-wand.js')) throw Error('Wand controller not loaded');
+          if(!html.includes('./object-map.js')) throw Error('Active object selection controller not loaded');
           if(!html.includes('id="slimsamWandStatus"')) throw Error('SlimSAM UI state missing');
           if(html.includes('id="wandTolerance"') || html.includes('id="wandEngine"')) throw Error('Obsolete Color Wand UI');
           if(app.includes('applyMagicWand(')) throw Error('Obsolete Color Wand processor');
