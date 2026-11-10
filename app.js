@@ -168,6 +168,7 @@ function groupMask(group){
   // A region reuses the *visible, transformed* mask of its active option.
   // Do not reuse an original mask left behind after moving/skewing an option.
   const active=state.patches.get(group.active);
+  if(active?.geometryObjectMask&&!active.corners)return active.geometryObjectMask;
   if(active)return displayedPatchMask(active);
   if(group.objectOriginal)return group.objectOriginal.mask;
   if(group.footprint)return group.footprint;
@@ -1498,7 +1499,9 @@ $('quickAreaPromptForm').addEventListener('submit',e=>{
   e.preventDefault();
   const prompt=$('quickAreaPromptInput').value.trim();if(!prompt)return;
   const referenceFiles=window.MosaicPremium?.getReferenceFiles?.('quick')||[];
-  hideQuickPrompt();void window.MosaicPremium?.generateSelection?.(prompt,null,referenceFiles);
+  hideQuickPrompt();
+  if(window.MosaicGeometryEdit?.getMode?.()==='shape')void window.MosaicGeometryEdit.generate(prompt,referenceFiles,'shape');
+  else void window.MosaicPremium?.generateSelection?.(prompt,null,referenceFiles);
 });
 $('discardPendingBtn').addEventListener('click',discardPending);$('exportBtn').addEventListener('click',exportImage);
 $('groupList').addEventListener('click',groupEvent);
