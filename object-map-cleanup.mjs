@@ -173,7 +173,7 @@ export function splitColorInstances(colors,width,height,options={}){
   if(tail<components.reduce((sum,c)=>sum+c.area,0)){
     for(const part of components){
       if(componentIds[part.index])continue;
-      const p=part.seed;if(labels[p])continue;
+      const p=part.seed;if(labels[p]||part.area<minimum)continue;
       const id=clusters.length<maxObjects?clusters.length+1:0;
       if(!id)continue;
       clusters.push({anchor:part,colorId:part.colorId,seed:part.seed,area:part.area,parts:[part]});
