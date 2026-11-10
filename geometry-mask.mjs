@@ -239,51 +239,106 @@ function rasterMaskBits(canvas,width,height,makeCanvas){
 // A small mask-guided mesh: the top and bottom boundary profiles of Mask B
 // are mapped onto the locked Mask A. All interpolation is computed in image
 // coordinates; only resulting RGB pixels move, not the canonical selection.
-function silhouetteEdges(bits,width,height,box,position){
-  const y=Math.max(0,Math.min(height-1,Math.floor(box.y+box.h*position)));
-  const radius=Math.max(1,Math.round(box.h*.07));
-  let minX=width,maxX=-1,filled=0;
-  for(let yy=Math.max(box.y,y-radius);yy<=Math.min(height-1,box.y+box.h-1,y+radius);yy++)
-    for(let x=box.x;x<box.x+box.w;x++)
-      if(bits[yy*width+x]){minX=Math.min(minX,x);maxX=Math.max(maxX,x);filled++;}
-  if(maxX<minX)return {left:box.x,right:box.x+box.w,stable:false};
-  const coverage=filled/Math.max(1,(maxX-minX+1)*(Math.min(box.y+box.h-1,y+radius)-Math.max(box.y,y-radius)+1));
-  return {left:minX,right:maxX+1,stable:coverage>.55};
+
+// Piecewise contour registration. Every destination scanline is mapped from
+// the actual NEW Mask B outline to the original Mask A outline. Unlike a
+// bounding-box-only resize, this follows sloped walls and perspective edges.
+function contourProfile(bits,width,box){
+  const left=new Float32Array(box.h),right=new Float32Array(box.h),valid=new Uint8Array(box.h);
+  for(let row=0;row<box.h;row++){
+    const y=box.y+row;let lo=width,hi=-1;
+    for(let x=box.x;x<box.x+box.w;x++)if(bits[y*width+x]){lo=Math.min(lo,x);hi=Math.max(hi,x);}
+    if(hi>=lo){left[row]=lo;right[row]=hi+1;valid[row]=1;}
+  }
+  for(let row=0;row<box.h;row++)if(!valid[row]){
+    let before=row-1,after=row+1;
+    while(before>=0&&!valid[before])before--;
+    while(after<box.h&&!valid[after])after++;
+    const source=before<0?after>=box.h?-1:after:after>=box.h?before:
+      (row-before<=after-row?before:after);
+    left[row]=source<0?box.x:left[source];
+    right[row]=source<0?box.x+box.w:right[source];
+  }
+  // Three-row smoothing avoids visible seams from individual jagged pixels
+  // without flattening the larger perspective variation.
+  const smooth=new Float32Array(box.h*2);
+  for(let row=0;row<box.h;row++){
+    let l=0,r=0,n=0;
+    for(let j=Math.max(0,row-1);j<=Math.min(box.h-1,row+1);j++){l+=left[j];r+=right[j];n++;}
+    smooth[row*2]=l/n;smooth[row*2+1]=r/n;
+  }
+  return smooth;
 }
-function alignedCanvas(generated,lockedBits,newBits,width,height,fit,makeCanvas){
+function contourAt(profile,box,t){
+  const position=Math.max(0,Math.min(box.h-1,Math.max(0,t)*box.h-.5));
+  const low=Math.floor(position),high=Math.min(box.h-1,low+1),blend=position-low;
+  return {
+    left:profile[low*2]*(1-blend)+profile[high*2]*blend,
+    right:profile[low*2+1]*(1-blend)+profile[high*2+1]*blend
+  };
+}
+function contourMapping(targetProfile,sourceProfile,fit,t){
+  const target=fit.targetBox,source=fit.sourceBox;
+  const a=contourAt(targetProfile,target,t),b=contourAt(sourceProfile,source,t);
+  const aWidth=a.right-a.left,bWidth=b.right-b.left;
+  if(aWidth<.4||bWidth<.4)return null;
+  const stretch=aWidth/bWidth;
+  if(!Number.isFinite(stretch)||stretch<.53||stretch>1.90)return null;
+  return {leftA:a.left,rightA:a.right,leftB:b.left,rightB:b.right,
+    sourceY:source.y+Math.max(0,Math.min(1,t))*source.h,stretch};
+}
+export function measureContourWarpCoverage(targetBits,sourceBits,width,height,fit){
+  if(!fit?.approved)return {coverage:0,valid:false};
+  const a=fit.targetBox,b=fit.sourceBox;
+  const outlineA=contourProfile(targetBits,width,a),outlineB=contourProfile(sourceBits,width,b);
+  let covered=0,total=0,validRows=0;
+  for(let y=a.y;y<a.y+a.h;y++){
+    const t=(y-a.y+.5)/a.h,mapping=contourMapping(outlineA,outlineB,fit,t);
+    if(!mapping)continue;
+    validRows++;
+    const sy=Math.min(height-1,Math.max(0,Math.floor(mapping.sourceY)));
+    for(let x=a.x;x<a.x+a.w;x++){
+      if(!targetBits[y*width+x])continue;
+      total++;
+      const sx=Math.min(width-1,Math.max(0,Math.floor(
+        mapping.leftB+(x+.5-mapping.leftA)/(mapping.rightA-mapping.leftA)*
+        (mapping.rightB-mapping.leftB))));
+      if(sourceBits[sy*width+sx])covered++;
+    }
+  }
+  const coverage=covered/Math.max(1,a.area),valid=coverage>=.83&&
+    validRows>=a.h*.86&&total>=a.area*.80;
+  return {coverage,valid,validRows};
+}
+function alignedCanvas(generated,lockedBits,newBits,width,height,fit,makeCanvas,lockedMask){
   const target=fit.targetBox,source=fit.sourceBox;
   const scaleX=generated.width/width,scaleY=generated.height/height;
   const out=makeCanvas(generated.width,generated.height),ctx=out.getContext('2d');
   ctx.drawImage(generated,0,0);
   if(fit.iou>=.965)return out;
+  const profileA=contourProfile(lockedBits,width,target),profileB=contourProfile(newBits,width,source);
   const warp=makeCanvas(out.width,out.height),c=warp.getContext('2d');
-  const topA=silhouetteEdges(lockedBits,width,height,target,.12);
-  const botA=silhouetteEdges(lockedBits,width,height,target,.88);
-  const topB=silhouetteEdges(newBits,width,height,source,.12);
-  const botB=silhouetteEdges(newBits,width,height,source,.88);
-  // When silhouettes are fragmented (chairs, trees), use an affine correction
-  // rather than stretching across empty regions between disconnected parts.
-  const skew=[topA,botA,topB,botB].every(edge=>edge.stable);
-  const yStart=Math.max(0,Math.floor(target.y*scaleY)),yEnd=Math.min(out.height,Math.ceil((target.y+target.h)*scaleY));
-  for(let y=yStart;y<yEnd;y++){
-    const t=Math.max(0,Math.min(1,(y/scaleY-target.y)/Math.max(1,target.h)));
-    const sourceY=(source.y+t*source.h)*scaleY;
-    const leftA=(skew?topA.left*(1-t)+botA.left*t:target.x)*scaleX;
-    const rightA=(skew?topA.right*(1-t)+botA.right*t:target.x+target.w)*scaleX;
-    const leftB=(skew?topB.left*(1-t)+botB.left*t:source.x)*scaleX;
-    const rightB=(skew?topB.right*(1-t)+botB.right*t:source.x+source.w)*scaleX;
-    const sw=Math.max(1,rightB-leftB),dw=Math.max(1,rightA-leftA);
-    if(leftB<0||sourceY<0||leftB+sw>out.width+.5||sourceY+scaleY>out.height+.5)continue;
-    c.drawImage(generated,leftB,sourceY,sw,Math.max(1,scaleY),leftA,y,dw,1.5);
+  c.imageSmoothingEnabled=true;
+  const first=Math.max(0,Math.floor(target.y*scaleY));
+  const last=Math.min(out.height,Math.ceil((target.y+target.h)*scaleY));
+  const verticalStretch=source.h/target.h;
+  for(let y=first;y<last;y++){
+    const t=((y+.5)/scaleY-target.y)/target.h;
+    const map=contourMapping(profileA,profileB,fit,t);
+    if(!map)continue;
+    const sourceX=map.leftB*scaleX,sourceY=map.sourceY*scaleY;
+    const sourceWidth=(map.rightB-map.leftB)*scaleX;
+    const sourceHeight=Math.max(.7,Math.min(2.5,verticalStretch));
+    const destX=map.leftA*scaleX,destWidth=(map.rightA-map.leftA)*scaleX;
+    if(sourceX<0||sourceY<0||sourceX+sourceWidth>out.width+1||
+      sourceY+sourceHeight>out.height+1)continue;
+    c.drawImage(generated,sourceX,sourceY,sourceWidth,sourceHeight,destX,y,destWidth,1.1);
   }
-  // The target mask is the ONLY final boundary, regardless of Mask B shape.
-  const mask=makeCanvas(out.width,out.height),mc=mask.getContext('2d');
-  const rgba=mc.createImageData(width,height);
-  for(let i=0;i<lockedBits.length;i++)if(lockedBits[i])rgba.data.fill(255,i*4,i*4+4);
-  const low=makeCanvas(width,height);low.getContext('2d').putImageData(rgba,0,0);
-  mc.imageSmoothingEnabled=false;mc.drawImage(low,0,0,out.width,out.height);
-  c.globalCompositeOperation='destination-in';c.drawImage(mask,0,0);
-  c.globalCompositeOperation='source-over';ctx.drawImage(warp,0,0);
+  // Use full-resolution Mask A for final registration compositing; resampled
+  // low-resolution masks would introduce stair-step fringes at wall/door edges.
+  c.globalCompositeOperation='destination-in';c.drawImage(lockedMask,0,0);
+  c.globalCompositeOperation='source-over';
+  ctx.drawImage(warp,0,0);
   return out;
 }
 export function alignGeneratedToLockedMask({before,generated,lockedMask,candidateMask=null,makeCanvas,
@@ -321,7 +376,12 @@ export function alignGeneratedToLockedMask({before,generated,lockedMask,candidat
   const fit=registerBinaryMasks(target,candidate,w,h);
   if(!fit.approved)return {image:generated,status:'locked-mask-unsafe-warp',aligned:false,
     segmentation:method,iou:fit.iou,reason:fit.reason};
-  return {image:alignedCanvas(generated,target,candidate,w,h,fit,makeCanvas),
-    status:fit.iou<.965?'mask-b-warped-to-locked-a':'mask-b-already-aligned',
+  if(fit.iou<.965){
+    const verification=measureContourWarpCoverage(target,candidate,w,h,fit);
+    if(!verification.valid)return {image:generated,status:'locked-mask-unreliable-contour',
+      aligned:false,segmentation:method,iou:fit.iou,coverage:verification.coverage};
+  }
+  return {image:alignedCanvas(generated,target,candidate,w,h,fit,makeCanvas,lockedMask),
+    status:fit.iou<.965?'mask-b-contour-warped-to-a':'mask-b-already-aligned',
     aligned:fit.iou<.965,segmentation:method,iou:fit.iou};
 }
