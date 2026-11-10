@@ -27,12 +27,12 @@ function drawSelection(){
   if(selectedOverlay.width!==canvas.width||selectedOverlay.height!==canvas.height){selectedOverlay.width=canvas.width;selectedOverlay.height=canvas.height}
   const x=selectedOverlay.getContext('2d');x.clearRect(0,0,canvas.width,canvas.height);x.drawImage(state.selectionMask,0,0);x.globalCompositeOperation='source-in';x.fillStyle='rgba(180,147,245,0.12)';x.fillRect(0,0,canvas.width,canvas.height);x.globalCompositeOperation='source-over';
 }
-function update(text,failed=false){
+function update(text,failed=false,allowRetry=failed){
   status.textContent=text;
   groupsStatus.textContent=text;
   groupsStatus.classList.toggle('error',failed);
   status.classList.toggle('error',failed);
-  retry.hidden=!failed;
+  retry.hidden=!allowRetry;
   // The old SlimSAM status element is no longer present in index.html.
   const legacyStatus=document.getElementById('slimsamWandStatus');
   if(legacyStatus)legacyStatus.textContent=text;
@@ -50,7 +50,7 @@ function hydrate(){
   migrateLegacyGroups(map);
   window.MosaicObjectManager.ensureObjects(map,maskForIds);core.renderGroups();
   const needsReview=Array.isArray(map.qualityWarnings)&&map.qualityWarnings.length>0;
-  update(needsReview?'Objects ready · review map quality':map.labelsAvailable?'Objects ready':'Objects ready · categories unavailable');return true;
+  update(needsReview?'Objects ready · review map quality':map.labelsAvailable?'Objects ready':'Objects ready · categories unavailable',false,needsReview);return true;
 }
 function baseLoaded(base){
   if(state.objectMapLocked&&state.objectMap?.raster){hydrate();return}
