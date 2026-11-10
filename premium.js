@@ -1214,7 +1214,7 @@ function onPatchApplied() {
   // A committed patch stays selected so its four corner handles are immediately available.
   if(state.selectedPatchId){const group=state.groups.find(g=>g.active===state.selectedPatchId);if(group)core.selectGroupMask(group);else core.selectTool('select')}
 }
-async function generateComposition(prompt,files,source,markup=null){
+async function generateComposition(prompt,files,source,markup=null,options={}){
   const master=state.master,generation=state.selectionGeneration;
   const size={width:canvas.width,height:canvas.height};
   if(!master)throw Error('Upload an image first.');
@@ -1224,6 +1224,7 @@ async function generateComposition(prompt,files,source,markup=null){
   if(state.master!==master||state.selectionGeneration!==generation)throw Error('The project changed. Submit again.');
   const payload=encodeRequest(prompt,null,source,references,markup);
   payload.mode='chat';
+  if(['shape','remove'].includes(options?.editIntent))payload.editIntent=options.editIntent;
   const result=await window.MosaicAuth.request('/api/ai/harmonize',payload);
   const image=await fromGeneratedJPEG(result.image,size);
   if(state.master!==master||state.selectionGeneration!==generation)throw Error('The project changed during generation. Your current work was kept.');
