@@ -2,6 +2,7 @@
    SAM 3 proposes fresh silhouettes; spatial matching keeps object identities stable.
    Uncertain matches fall back to the prior visible masks (never silently inventing IDs). */
 import './app.js';
+import {alignGeneratedToLockedMask} from './geometry-mask.mjs';
 const core=window.MosaicCore,{state,canvas,makeCanvas,render,renderGroups}=core;
 const clone=input=>{const out=makeCanvas(input.width,input.height);out.getContext('2d').drawImage(input,0,0);return out;};
 const isVisible=g=>!g.objectMapBatch&&!g.mergedInto;
@@ -58,12 +59,12 @@ async function apply(image,{type='ai-edit',prompt='',onStatus=()=>{},preserveEdi
   const before=core.composeApprovedCanvas();
   const groups=state.groups.filter(isVisible);
   const snapshots=groups.map(group=>({group,mask:originalMask(group),choice:group.active}));
-  let segmentation;
-  try{segmentation=await segmentFullFrame(image,snapshots,onStatus);}
-  catch(error){segmentation={masks:new Map(),status:'fallback'};
-    onStatus('SAM 3 unavailable · preserving existing masks. '+(error?.message||''));}
+  // The original Object Map is immutable during ordinary AI Edit and
+  // Harmonize. No SAM 3 calls here: every Option keeps its original mask.
+  // A generated silhouette may guide pixel registration only, never mask ID.
+  onStatus('Aligning generated pixels to the original locked masks…');
   if(generation!==state.selectionGeneration||previous!==state.master)
-    throw Error('The working project changed while the new scene was being segmented.');
+    throw Error('The working project changed while the image was generated.');
   const kind=type==='harmonize'?'harmonize':'ai-edit';
   const number=(state.sceneVersionCounters?.[kind]||0)+1;
   const category=(kind==='harmonize'?'Harmonize ':'AI Edit ')+number;
@@ -85,31 +86,48 @@ async function apply(image,{type='ai-edit',prompt='',onStatus=()=>{},preserveEdi
         name:'Before full image',manualName:true,isOriginalMaster:true,versionCategory:'Original'});
       group.patchIds.unshift(oldId);
     }
-    const proposed=segmentation.masks.get(group.id);
-    const fresh=proposed?.mask||mask,paths=core.maskPathsFromRaster(fresh);
-    const patchId=core.uid('scene_option');
-    state.patches.set(patchId,{id:patchId,groupId:group.id,sourceId,mask:clone(fresh),
-      bbox:core.exactMaskBoundingBox(fresh),maskPaths:paths,maskPoints:paths.flat(),
+    // Register the newly generated RGB to A (the original locked mask).
+    // Mask B is measured from image differences locally; SAM is never run.
+    // No trustworthy correspondence => use unchanged RGB clipped to A.
+    let aligned={image:fullImage,aligned:false,status:'locked-mask'};
+    if(snapshots.length<=128){
+      try{
+        aligned=alignGeneratedToLockedMask({before,generated:fullImage,lockedMask:mask,makeCanvas});
+      }catch(error){console.warn('[mozAI:mask-fit]',error);}
+    }
+    let optionSourceId=sourceId;
+    if(aligned.aligned&&aligned.image!==fullImage){
+      optionSourceId=core.uid('aligned_scene_source');
+      state.sources.set(optionSourceId,{id:optionSourceId,name:category+' · aligned',canvas:aligned.image,
+        maskAlignment:aligned.status});
+    }
+    const paths=core.maskPathsFromRaster(mask),patchId=core.uid('scene_option');
+    state.patches.set(patchId,{id:patchId,groupId:group.id,sourceId:optionSourceId,mask:clone(mask),
+      bbox:core.exactMaskBoundingBox(mask),maskPaths:paths,maskPoints:paths.flat(),
       name:category,versionCategory:category,sceneVersion:category,sceneType:kind,
       manualName:true,createdFromFullImage:true,isMasterVersion:kind==='harmonize',
       objectId:group.objectId||group.id,objectLabel:group.objectLabel||group.objectName||group.name,
-      segmentationStatus:proposed?'sam3':'previous-mask-fallback',
-      segmentationConfidence:proposed?.confidence||0,prompt});
+      segmentationStatus:'locked-original',maskAlignmentStatus:aligned.status,
+      segmentationConfidence:0,prompt});
     group.patchIds.push(patchId);
     group.hasHarmonizedMaster=true;
     if(!preserveEditing||!state.selectionTargetPatchId)group.active=patchId;
     core.refreshGroupFootprint(group);
-    records.push({groupId:group.id,patchId,matched:Boolean(proposed),confidence:proposed?.confidence||0});
+    records.push({groupId:group.id,patchId,matched:Boolean(aligned.aligned),alignment:aligned.status});
   }
-  state.master=fullImage;state.masterIsBase=false;state.objectMapLocked=true;
+  // Full Image AI Edit respects saved Object IDs. With existing groups,
+  // keep the previous Master as the immutable outside-mask background.
+  // Harmonize is intentionally allowed to replace the complete background.
+  if(kind==='harmonize'||!groups.length){state.master=fullImage;state.masterIsBase=false;}
+  state.objectMapLocked=Boolean(groups.length)||state.objectMapLocked;
   (state.sceneVersionHistory??=[]).push({type:kind,number,category,sourceId,
-    prompt,createdAt:new Date().toISOString(),segmentationStatus:segmentation.status,
+    prompt,createdAt:new Date().toISOString(),segmentationStatus:'locked-original',
     records});
   // If no original Object Map exists, at least keep the generated options usable.
   if(!groups.length)window.MosaicObjectMap?.imageReady?.(fullImage);
   renderGroups();render();
   return {category,objectCount:records.length,matched:records.filter(v=>v.matched).length,
-    segmentationStatus:segmentation.status};
+    segmentationStatus:'locked-original'};
 }
 // A manually Created selection may cover parts of several independently selected
 // objects. On the generated RGB result, re-segment those intersections and store
