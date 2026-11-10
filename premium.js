@@ -564,9 +564,16 @@ async function generateRegion(patchId,regenerate=false){
         source.canvas=result;source.name='AI region '+patch.regionNumber;source.revealComplete=true;
       }
       if(existing.objectMapParts?.length){
-        // Created masks retain their object ID, but a generated image can
-        // intersect other prepared objects. Re-run SAM over the result and
-        // distribute verified intersections into independent Group options.
+        // A combined Line/Rectangle/Oval selection is one temporary generation.
+        // After the image arrives, split it across every touched original ID.
+        // Only compound selections ask SAM for candidate masks, and all final
+        // masks remain the original user-approved geometry.
+        const ownerPart=existing.objectMapParts.find(part=>state.groups.some(g=>
+          g.createdLocally&&g.objectMapKey===part.mapKey&&g.objectMapObjectKey===part.objectKey));
+        if(ownerPart){
+          existing.splitManualGroupId=state.groups.find(g=>g.objectMapKey===ownerPart.mapKey&&
+            g.objectMapObjectKey===ownerPart.objectKey)?.id||null;
+        }
         try{
           const separated=await window.MosaicSceneVersions?.splitCreatedOverlap?.(
             placed,existing.objectMapParts,{
@@ -575,8 +582,8 @@ async function generateRegion(patchId,regenerate=false){
             });
           if(Array.isArray(separated)&&separated.length)existing.objectMapParts=separated;
         }catch(error){
-          console.warn('[mozAI:create-overlap]',error?.message||error);
-          // Never lose a completed image because optional SAM is unavailable.
+          console.warn('[mozAI:compound-split]',error?.message||error);
+          // Original masks still provide a safe deterministic fallback.
         }
         if(state.patches.get(patchId)!==patch||state.selectionGeneration!==projectAtStart||
           existing.sourceId!==generationId){existing.generating=false;return;}
@@ -643,19 +650,51 @@ function commitObjectMapParts(batch,result,underlay,requestOrder){
     group.objectMapKey=part.mapKey;group.objectMapCategory=part.category;group.objectMapObjectKey=part.objectKey;group.objectMapInstanceId=part.instanceId;
     group.objectName=part.label.charAt(0).toUpperCase()+part.label.slice(1);
     if(!group.manualName)group.name=group.objectName;
-    const source=cloneCanvas(underlay),layer=cloneCanvas(result),lx=layer.getContext('2d');lx.globalCompositeOperation='destination-in';lx.drawImage(part.mask,0,0);
+    // Fresh SAM silhouette B is only a correspondence hint: warp its RGB to
+    // the locked original silhouette A. We never write B into patch.mask.
+    let aligned={image:result,aligned:false,status:'locked-mask'};
+    try{
+      aligned=alignGeneratedToLockedMask({
+        before:underlay,generated:result,lockedMask:part.previousMask||part.mask,
+        candidateMask:part.candidateMask||null,makeCanvas
+      });
+    }catch(error){console.warn('[mozAI:compound-mask-registration]',error);}
+    const source=cloneCanvas(underlay),layer=cloneCanvas(aligned.image),lx=layer.getContext('2d');lx.globalCompositeOperation='destination-in';lx.drawImage(part.mask,0,0);
     const sx=source.getContext('2d');sx.drawImage(layer,0,0);sx.globalCompositeOperation='destination-in';sx.drawImage(mask,0,0);
     const sourceId=uid('object_source');state.sources.set(sourceId,{id:sourceId,name:group.objectName+' edit',canvas:source});
     const {objectMapParts,aiProgress,...template}=batch;
     const patch={...template,id:uid('object_patch'),sourceId,mask,bbox:core.exactMaskBoundingBox(mask),maskPaths:core.maskPathsFromRaster(mask),maskPoints:[],groupId:group.id,
       objectMapKey:part.mapKey,objectMapCategory:part.category,objectMapObjectKey:part.objectKey,objectMapInstanceId:part.instanceId,objectLabel:part.label,generating:false,awaitingResult:false,hideUntilReady:false,
-      request:{...batch.request,mask},name:core.optionNameFromPrompt(batch.prompt,part.category+' edit')};
+      request:{...batch.request,mask},maskAlignmentStatus:aligned.status,
+      name:core.optionNameFromPrompt(batch.prompt,part.category+' edit')};
     patch.maskPoints=patch.maskPaths.flat();
     const activeBefore=group.active,choice=core.groupChoiceVersion(group),previous=lastAppliedGenerations.get(group);
     assignGroup(patch,group.id);core.updateGroupCategory(group,part.category,'object-map');
     if(choice===part.choiceAtStart&&requestOrder>(previous?.order||0)){group.active=patch.id;lastAppliedGenerations.set(group,{order:requestOrder,patchId:patch.id})}
     else group.active=activeBefore;
     core.refreshGroupFootprint(group);
+  }
+  // A foreground Create was a combined temporary selection. Remove only
+  // its overlaps from the original Created layer after splitting, so the
+  // saved Original option cannot hide newly generated objects underneath.
+  if(batch.splitManualGroupId){
+    const manual=state.groups.find(g=>g.id===batch.splitManualGroupId);
+    const remainder=batch.objectMapParts.find(part=>manual&&part.mapKey===manual.objectMapKey&&
+      part.objectKey===manual.objectMapObjectKey)?.mask;
+    if(manual&&remainder){
+      for(const id of manual.patchIds){
+        const old=state.patches.get(id);
+        if(!old||old.generating||old.awaitingResult)continue;
+        const restricted=cloneCanvas(old.mask),mc=restricted.getContext('2d');
+        mc.globalCompositeOperation='destination-in';mc.drawImage(remainder,0,0);
+        old.mask=restricted;old.bbox=core.exactMaskBoundingBox(restricted)||old.bbox;
+        old.maskPaths=core.maskPathsFromRaster(restricted);old.maskPoints=old.maskPaths.flat();
+        core.invalidateDisplayedMask(old);
+      }
+      core.refreshGroupFootprint(manual);
+    }else if(manual){
+      manual.cutArchived=true;manual.objectRemoved=true;
+    }
   }
   const temporary=state.groups.find(g=>g.id===batch.groupId);
   state.groups=state.groups.filter(g=>g!==temporary);state.patches.delete(batch.id);state.sources.delete(batch.sourceId);
