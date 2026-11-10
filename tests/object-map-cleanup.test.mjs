@@ -32,3 +32,42 @@ test('shape multi-selection supports instance IDs above the 64-color palette lim
   const rgba=new Uint8Array(12);rgba[3]=rgba[7]=255;
   assert.deepEqual(idsInShape(new Uint32Array([300,300,701]),3,1,rgba,3,1),[300]);
 });
+
+
+test('highly fragmented color noise is recovered without asking for retry',()=>{
+  const width=320,height=320,colors=new Uint8Array(width*height);
+  let seed=42;
+  for(let i=0;i<colors.length;i++){
+    seed=(Math.imul(seed,1664525)+1013904223)>>>0;
+    colors[i]=1+(seed%64);
+  }
+  const result=splitColorInstances(colors,width,height);
+  assert.ok(result.objects.length>0);
+  assert.ok(result.objects.length<=512);
+  assert.equal(result.labels.length,width*height);
+  assert.equal(result.stats.noiseRecovered,true);
+});
+
+test('thousands of disconnected color islands do not exceed object limits',()=>{
+  const width=360,height=360,colors=new Uint8Array(width*height);
+  for(let y=1;y<height-2;y+=3)for(let x=1;x<width-2;x+=3){
+    const color=1+(Math.floor(x/3)+Math.floor(y/3))%64;
+    for(let dy=0;dy<2;dy++)for(let dx=0;dx<2;dx++)
+      colors[(y+dy)*width+x+dx]=color;
+  }
+  const result=splitColorInstances(colors,width,height);
+  assert.ok(result.objects.length>0&&result.objects.length<=512);
+  assert.ok(result.labels.some(id=>id>0));
+});
+
+test('complexity recovery still preserves meaningful distinct objects and genuine voids',()=>{
+  const width=180,height=120,colors=new Uint8Array(width*height);
+  for(let y=0;y<height;y++)for(let x=0;x<width;x++)colors[y*width+x]=1;
+  for(let y=20;y<95;y++)for(let x=15;x<75;x++)colors[y*width+x]=2;
+  for(let y=22;y<92;y++)for(let x=105;x<165;x++)colors[y*width+x]=2;
+  for(let y=42;y<52;y++)for(let x=80;x<95;x++)colors[y*width+x]=0;
+  const result=splitColorInstances(colors,width,height);
+  assert.ok(result.labels[45*width+20]);
+  assert.notEqual(result.labels[45*width+20],result.labels[45*width+125]);
+  assert.equal(result.labels[45*width+85],0);
+});
