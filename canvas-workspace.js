@@ -13,7 +13,7 @@ state.markups??=[];state.chatMessages??=[];state.chatResult??=null;
 let markupMode=false,markupTool=null,draft=null,selectedMarkup=-1,markupDrag=null,textSession=null,clipboard=null,job=null,epoch=0;
 const peekKeys=new Set();
 const markupModeButton=document.createElement('button');
-markupModeButton.id='markupModeButton';markupModeButton.type='button';markupModeButton.className='tool';markupModeButton.setAttribute('aria-pressed','false');markupModeButton.setAttribute('aria-controls','markupToolbar');markupModeButton.title='Markup mode';markupModeButton.innerHTML='✎ <span>Markup</span>';
+markupModeButton.id='markupModeButton';markupModeButton.type='button';markupModeButton.className='tool';markupModeButton.setAttribute('aria-pressed','false');markupModeButton.setAttribute('aria-controls','markupToolbar');markupModeButton.title='Markup mode';markupModeButton.innerHTML='✎ <span>Markup</span>';markupModeButton.hidden=true;markupModeButton.disabled=true;
 document.querySelector('.layer-toolset').append(markupModeButton);
 const textEditor=document.createElement('textarea');
 textEditor.id='markupTextEditor';textEditor.className='markup-text-editor';textEditor.hidden=true;textEditor.maxLength=180;textEditor.setAttribute('aria-label','Edit markup text');textEditor.spellcheck=false;wrap.append(textEditor);
@@ -49,11 +49,11 @@ dock.innerHTML=`
 document.querySelector('.canvas-foot').before(dock);
 
 const chat=document.createElement('aside');
-chat.id='compositionChat';chat.className='composition-chat';chat.setAttribute('aria-label','AI Edit Full Image');
+chat.id='compositionChat';chat.className='composition-chat';chat.setAttribute('aria-label','AI Edit');
 chat.innerHTML=`
     <form id="compositionChatForm" autocomplete="off">
-      <label class="full-image-label" for="compositionChatPrompt">AI Edit Full Image</label>
-      <div class="chat-prompt-row"><textarea id="compositionChatPrompt" rows="1" maxlength="6000" placeholder="Describe changes to the full image…" aria-label="Prompt for the full image" required></textarea><button type="button" class="prompt-add-reference region-reference-button" aria-label="Attach reference images" title="Add up to 3 material or style references">+</button><button id="chatGenerate" type="submit" class="workspace-accent">Generate ↗</button></div>
+      <label class="full-image-label" for="compositionChatPrompt">AI Edit</label>
+      <div class="chat-prompt-row"><textarea id="compositionChatPrompt" rows="1" maxlength="6000" placeholder="Change all tables to red…" aria-label="Prompt for the full image" required></textarea><button type="button" class="prompt-add-reference region-reference-button" aria-label="Attach reference images" title="Add up to 3 image references">+</button><button id="chatGenerate" type="submit" class="workspace-accent">Generate ↗</button></div>
       <input class="region-reference-input" type="file" accept="image/png,image/jpeg,image/webp" multiple hidden/>
       <div class="region-inline-previews reference-previews"></div>
     </form>
@@ -193,7 +193,7 @@ function drawOverlay(){
 }
 // Snapshot the image shown in the viewport. Editor handles, selection guides and
 // the result-selection tint are UI; user-created markup belongs to the image.
-function visibleImage({annotations=true}={}){
+function visibleImage({annotations=false}={}){
   if(!state.master)return state.reference?clone(state.reference):null;
   const out=window.MosaicSourceEditor?.visibleImage?.()||clone(canvas),target=out.getContext('2d');
   if(state.before){
@@ -353,30 +353,53 @@ viewport.addEventListener('pointerdown',e=>{
 async function submitChat(event){
   event?.preventDefault();if(job)return;
   const prompt=$('compositionChatPrompt').value.trim();if(!prompt)return;
-  if(!state.master){toast('Upload Base or Master first.');return}
+  if(!state.master){toast('Upload a Base image and choose Generate or Use Base first.');return;}
   if(state.pendingSourceId||state.editingPatchId||state.before||premium.isPreviewing()||window.MosaicSourceEditor?.isEditing()){
-    toast('Finish the current edit and return to the collage before generating.');return;
+    toast('Finish the current edit before AI Edit.');return;
   }
-  if([...state.patches.values()].some(p=>p.generating||p.awaitingResult)){toast('Wait for the current region generation to finish.');return}
+  if([...state.patches.values()].some(p=>p.generating||p.awaitingResult)){
+    toast('Finish the active region generation before AI Edit.');return;
+  }
   setMarkupMode(false);core.hideQuickPrompt();
-  const source=visibleImage({annotations:false}),underlay=state.chatResult?.underlay||clone(source);
-  const notes=[...(state.markups||[])],annotated=notes.length&&!state.chatResult?clone(source):null;
-  if(annotated)drawMarkups(annotated.getContext('2d'));
-  const files=references.getFiles(),requestEpoch=epoch,token={};job=token;
-  state.chatMessages.push({role:'user',text:prompt+(files.length?` · ${files.length} reference image(s)`:'')});
-  $('chatGenerate').disabled=true;$('chatGenerate').textContent='Generating…';$('chatStatus').textContent='Generating from the latest collage…';
-  const previousBusy=state.busy;state.busy=true;
+  const imageBefore=visibleImage({annotations:false}),files=references.getFiles(),requestEpoch=epoch,token={};job=token;
+  state.chatMessages.push({role:'user',text:prompt,referenceCount:files.length});
+  $('chatGenerate').disabled=true;$('chatGenerate').textContent='Analyzing…';
+  $('chatStatus').textContent='Analyzing objects before generating…';
+  const wasBusy=state.busy;state.busy=true;
   try{
-    const image=await premium.generateComposition(prompt,files,source,annotated);
+    if(!await window.MosaicAuth.ensure())throw Error('Connect AI before generating an edit.');
+    const intent=await window.MosaicSceneTargeting.analyzeAndGroup(prompt,imageBefore,
+      status=>$('chatStatus').textContent=status);
     if(requestEpoch!==epoch)return;
-    state.chatMessages.push({role:'assistant',text:prompt,image});
+    $('chatGenerate').textContent='Generating…';
+    const editedPrompt=intent.scope==='global'?prompt:
+      prompt+'\n\nTARGETED FULL-SCENE EDIT: Change only the confirmed '+intent.label+
+      ' objects. Preserve all other objects, geometry and camera. Return the complete image.';
+    $('chatStatus').textContent='Generating the complete image…';
+    const image=await premium.generateComposition(editedPrompt,files,imageBefore,null,{
+      targetLabel:intent.scope==='global'?null:intent.label
+    });
+    if(requestEpoch!==epoch)return;
+    const version=await window.MosaicSceneVersions.apply(image,{
+      type:'ai-edit',prompt,onStatus:status=>$('chatStatus').textContent=status
+    });
+    if(requestEpoch!==epoch)return;
+    state.chatMessages.push({role:'assistant',text:version.category,
+      version:version.category,matched:version.matched,total:version.objectCount});
     references.clear();$('compositionChatPrompt').value='';
-    showResult(image,prompt,underlay,notes);
-    $('chatStatus').textContent='Result ready. Select an area on the canvas and click Done.';
+    core.resetSelection();
+    $('chatStatus').textContent=version.category+' saved as a new option on '+version.objectCount+
+      ' objects · '+version.matched+' resegmented by SAM 3.';
+    toast(version.category+' created for each object.');
   }catch(error){
-    if(requestEpoch===epoch){$('chatStatus').textContent=error.message;state.chatMessages.push({role:'assistant',text:'Generation failed: '+error.message});toast(error.message)}
+    if(requestEpoch===epoch){
+      $('chatStatus').textContent=error.message;
+      state.chatMessages.push({role:'assistant',text:'Generation failed: '+error.message});
+      toast(error.message);
+    }
   }finally{
-    if(job===token){job=null;state.busy=previousBusy;$('chatGenerate').disabled=false;$('chatGenerate').textContent='Generate ↗'}
+    if(job===token){job=null;state.busy=wasBusy;$('chatGenerate').disabled=false;
+      $('chatGenerate').textContent='Generate ↗';}
   }
 }
 $('compositionChatForm').addEventListener('submit',submitChat);
