@@ -307,3 +307,11 @@
   :root{--moz-mobile-panel-height:230px}
   html.moz-sheet-expanded{--moz-mobile-panel-height:min(60dvh,360px)}
 }
+
+
+/* Prevent accidental New on an already selected object. */
+.selection-modes .mode:disabled{opacity:.33;cursor:not-allowed;pointer-events:none}
+@media(max-width:850px){
+  #mobileToolPane .selection-modes .mode{min-width:0!important;min-height:44px!important}
+  #mobileToolPane .selection-modes .mode:disabled{color:#8a8493!important;background:transparent!important}
+}
