@@ -168,6 +168,7 @@ function groupMask(group){
   // A region reuses the *visible, transformed* mask of its active option.
   // Do not reuse an original mask left behind after moving/skewing an option.
   const active=state.patches.get(group.active);
+  if(active?.editMode==='remove')return makeCanvas(canvas.width,canvas.height);
   if(active?.geometryObjectMask&&!active.corners)return active.geometryObjectMask;
   if(active)return displayedPatchMask(active);
   if(group.objectOriginal)return group.objectOriginal.mask;
@@ -334,7 +335,7 @@ function chooseGroupOption(group,patchId,{showPrompt=false,showOutline=false}={}
   if(!group||state.pendingSourceId||state.busy)return;
   if(patchId!==null&&(!group.patchIds.includes(patchId)||!state.patches.has(patchId)))return;
   optionChoiceVersions.set(group,groupChoiceVersion(group)+1);
-  state.editingPatchId=null;group.active=patchId;refreshGroupFootprint(group);window.MosaicObjects?.scheduleRepair();
+  state.editingPatchId=null;group.active=patchId;group.objectRemoved=state.patches.get(patchId)?.editMode==='remove';refreshGroupFootprint(group);window.MosaicObjects?.scheduleRepair();
   selectGroupMask(group,{showOutline});
   if(showPrompt)showQuickPrompt(state.lastCanvasPointer,true);
 }
@@ -1230,7 +1231,7 @@ function applySelection(){if(state.lasso.length){if(!updateMaskWithLasso()){toas
   }}
 function findRegionAt(point){
   if(!state.master||!pointInImage(point))return null;
-  for(const group of state.groups.filter(g=>!g.mergedInto&&!g.objectMapBatch).slice().reverse()){
+  for(const group of state.groups.filter(g=>!g.mergedInto&&!g.objectMapBatch&&!g.objectRemoved).slice().reverse()){
     const alpha=groupMask(group).getContext('2d',{willReadFrequently:true}).getImageData(Math.floor(point.x),Math.floor(point.y),1,1).data[3];
     if(alpha>0)return group;
   }
