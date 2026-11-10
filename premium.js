@@ -2,6 +2,7 @@
 import './generation-pool.js';
 import './object-aware.js';
 import {assertGeneratedImage} from './generated-image.mjs';
+import {alignGeneratedToLockedMask} from './geometry-mask.mjs';
 const core = window.MosaicCore;
 if (!core) throw new Error('Mosaic core must load before Premium');
 const {state, canvas, makeCanvas, uid, render, renderGroups, resetSelection, assignGroup, maskBoundingBox, toast, message} = core;
@@ -536,21 +537,23 @@ async function generateRegion(patchId,regenerate=false){
       const placed=makeCanvas(canvasSize.width,canvasSize.height),placedContext=placed.getContext('2d');
       placedContext.drawImage(capture.collage,0,0);
       placedContext.drawImage(image,region.x,region.y,region.w,region.h);
-      const validated=await window.MosaicObjects?.validateGenerated(existing,placed,visibleMask,capture.collage)||{mask:visibleMask,valid:true};
+      // Material/appearance never calls SAM 3 and never replaces the initial
+      // object mask. Detect a provisional Mask B locally from generated RGB
+      // changes, register/warp B to locked Mask A, and warp RGB with it.
+      // If shape correspondence is weak, composite unwarped RGB through A.
+      let aligned={image:placed,status:'locked-mask',aligned:false};
+      try{
+        aligned=alignGeneratedToLockedMask({
+          before:capture.collage,generated:placed,lockedMask:visibleMask,makeCanvas
+        });
+      }catch(error){console.warn('[mozAI:mask-registration]',error);}
       if(state.patches.get(patchId)!==patch||state.selectionGeneration!==projectAtStart||existing.sourceId!==generationId){existing.generating=false;return}
       const currentMaskUnchanged=maskAtStart===window.MosaicObjects?.maskKey(existing.mask);
-      const finalMask=currentMaskUnchanged?validated.mask:visibleMask;
-      // Keep the full unmasked RGB source. The patch mask clips it at draw time.
-      // A destructive destination-in here erased the pixels needed by Reveal
-      // when a user expands an area after generation.
-      // Restore source coordinates before applying the option's existing warp.
-      // A move/skew made while this request was queued remains in effect.
-      const result=core.unwarpPatchSelection(placed,submittedPatch);
-      if(currentMaskUnchanged&&finalMask!==visibleMask){
-        existing.mask=core.unwarpPatchSelection(finalMask,submittedPatch);
-        existing.bbox=core.exactMaskBoundingBox(existing.mask)||existing.bbox;
-        existing.maskPaths=core.maskPathsFromRaster(existing.mask);existing.maskPoints=existing.maskPaths.flat();
-      }
+      // Preserve the complete unmasked RGB source for Reveal/Add.
+      // Restore source coordinates before the existing option warp; this does
+      // NOT alter the saved selection or its immutable Object ID.
+      const result=core.unwarpPatchSelection(aligned.image,submittedPatch);
+      existing.maskAlignmentStatus=aligned.status;
       // Always fork on regeneration to preserve shared source images and older options.
       if(regenerate){
         const id=uid('ai_source');
@@ -581,7 +584,7 @@ async function generateRegion(patchId,regenerate=false){
         renderGroups();render();progress.done('Edit saved for '+count+' '+(count===1?'object.':'objects.'));
         message('Generated image clipped to each original object mask.');toast('Saved edits for '+count+' '+(count===1?'object.':'objects.'));return;
       }
-      window.MosaicObjects?.generated(existing,existing.mask,validated.valid&&currentMaskUnchanged);
+      window.MosaicObjects?.generated(existing,existing.mask,currentMaskUnchanged);
       core.invalidateDisplayedMask(existing);
       existing.awaitingResult=false;
       // New options enter the right sidebar only after a real image is ready.
@@ -749,8 +752,10 @@ async function generateSelection(prompt,groupId=null,referenceFiles=[]){
   const initialGroup=groupId||state.draftGroupId||null;
   try{
     const parts=!groupId?window.MosaicObjectMap?.partsForSelection(initialMask):null;
-    const [referenceImages,legacySelection]=await Promise.all([prepareReferenceImages(referenceFiles),parts?.length?null:window.MosaicObjects?.prepare(prompt)]);
-    const objectSelection=parts?.length?{mask:initialMask,paths:initialPaths,groupId:null,parts}:legacySelection;
+    // Material selection uses existing masks only. Smart/SAM preflight is
+    // reserved for explicit Shape, handled separately by GeometryEdit.
+    const referenceImages=await prepareReferenceImages(referenceFiles);
+    const objectSelection=parts?.length?{mask:initialMask,paths:initialPaths,groupId:null,parts}:null;
     const savedMask=objectSelection?.mask||initialMask;
     const savedPaths=objectSelection?.paths||initialPaths,savedPoints=objectSelection?.intent?savedPaths.flat():initialPoints;
     const requestedGroupId=groupId||(objectSelection?objectSelection.groupId:initialGroup);
