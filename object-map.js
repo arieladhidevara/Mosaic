@@ -1,6 +1,6 @@
 import './app.js';
 import './object-management.js';
-import {PALETTE,decodeColors,idsInShape,labelAt,CATEGORIES,objectMapSize} from './object-map-utils.mjs';
+import {PALETTE,decodeColors,idsOverlappingShape,labelAt,CATEGORIES,objectMapSize} from './object-map-utils.mjs';
 import {CLEANUP_VERSION} from './object-map-cleanup.mjs';
 import {prepareInstanceMap,readInstanceLabels} from './object-map-geometry.mjs';
 const core=window.MosaicCore,{state,canvas,makeCanvas}=core;
@@ -90,7 +90,7 @@ function refineMask(mask,tool){
   if(state.objectSelectionParts?.length&&state.selectionMode!=='new'&&!state.maskEditOnly){operation={parts:snapshotSelection()};return mask}
   if(!['rect','ellipse','lasso','freehand'].includes(tool)||state.pendingSourceId||state.maskEditOnly)return mask;
   if(!labels){core.toast('Objects are not ready yet. Your drawn selection was kept.');return mask}
-  const ids=idsInShape(labels,mapWidth,mapHeight,mask.getContext('2d').getImageData(0,0,mask.width,mask.height).data,mask.width,mask.height);
+  const ids=idsOverlappingShape(labels,mapWidth,mapHeight,mask.getContext('2d').getImageData(0,0,mask.width,mask.height).data,mask.width,mask.height);
   picking=true;pickingIds=ids;pickingMode=state.selectionMode;operation={parts:snapshotSelection()};if(!ids.length)core.toast('No object is mostly inside this selection. Draw a wider area.');
   const parts=ids.map(id=>partForId(id)),result=makeCanvas(canvas.width,canvas.height);for(const part of parts)result.getContext('2d').drawImage(part.mask,0,0);return result;
 }
