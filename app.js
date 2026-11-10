@@ -899,7 +899,16 @@ function groupEvent(e){if(window.MosaicRegions?.handleGroupEvent(e))return;if(wi
 function selectTool(tool){if(window.MosaicSourceEditor?.isEditing())return;clearHover();clearDraft();hideQuickPrompt();state.tool=tool;if(state.pendingSourceId&&tool==='reveal'){state.pendingRevealOnly=true;render()}$('resetTransformBtn').classList.toggle('hidden',tool!=='transform'||!activeTransformPatch());
   $('viewport').classList.toggle('is-selecting',['lasso','rect','ellipse','wand','reveal','erase'].includes(tool));
   $('wandOptions').classList.toggle('hidden',tool!=='wand');
-  document.querySelector('.selection-modes').classList.add('hidden');
+  const modes=document.querySelector('.selection-modes');
+  const creating=['lasso','rect','ellipse'].includes(tool);
+  modes.classList.toggle('hidden',!creating);
+  if(creating){
+    const selected=Boolean(state.draftGroupId&&state.groups.some(g=>g.id===state.draftGroupId&&!g.mergedInto));
+    const newButton=modes.querySelector('[data-mode="new"]');
+    if(newButton){newButton.disabled=selected;newButton.title=selected?'Clear the current object selection to create a new object':'Create a new object';}
+    if(selected&&state.selectionMode==='new')setMode('add');
+    if(!selected&&state.selectionMode!=='new')setMode('new');
+  }
   $('brushOptions').classList.toggle('hidden',tool!=='reveal'&&tool!=='erase');
   $('brushIntensityOptions').classList.toggle('hidden',tool!=='reveal'&&tool!=='erase');
   overlay.style.cursor='';
@@ -1230,16 +1239,70 @@ function finishMaskSelection(){
   if(state.tool!=='wand')selectTool('select');render();
   if(!state.maskEditOnly&&!state.pendingSourceId)showQuickPrompt(state.lastCanvasPointer);
 }
-function commitMaskPath(trace,points=[],polygon=false){if(!state.selectionMask)return;const m=state.selectionMask.getContext('2d');if(state.maskEditOnly&&state.selectionTargetPatchId)snapshotPointEdit();else snapshotSelection();m.save();
+function editExistingCreateMask(patch,shape){
+  const input=patch.corners?.length?unwarpPatchSelection(shape,patch):shape;
+  const previous=cloneMask(patch.mask),ctx=patch.mask.getContext('2d');
+  if(state.selectionMode==='subtract')ctx.globalCompositeOperation='destination-out';
+  else ctx.globalCompositeOperation='source-over';
+  ctx.drawImage(input,0,0);ctx.globalCompositeOperation='source-over';
+  const box=exactMaskBoundingBox(patch.mask);
+  if(!box){
+    ctx.clearRect(0,0,canvas.width,canvas.height);ctx.drawImage(previous,0,0);
+    toast('An object must retain some visible area. Use Delete to remove it.');
+    return;
+  }
+  patch.bbox=box;patch.maskPaths=null;patch.maskPoints=[];
+  invalidateDisplayedMask(patch);
+  const group=state.groups.find(g=>g.active===patch.id);
+  if(group)refreshGroupFootprint(group);
+  state.selectionMask=cloneMask(displayedPatchMask(patch));
+  setSelectionPaths(maskPathsFromRaster(state.selectionMask));
+  state.selectionTargetPatchId=patch.id;state.selectedPatchId=patch.id;
+  if(group)state.draftGroupId=group.id;
+  state.selectionOverlayHidden=false;
+  state.forceNewSelectionGroup=false;
+  selectTool('select');updateSelectionOutline();renderGroups();render();
+  message(state.selectionMode==='subtract'?'Selected area hidden from this Option.':'Original unmasked pixels revealed in the added area.');
+}
+function commitMaskPath(trace,points=[],polygon=false){
+  if(!state.selectionMask)return;
+  const selectedPatch=state.patches.get(state.selectionTargetPatchId);
+  const selectedGroup=state.groups.find(g=>g.id===state.draftGroupId);
+  const modifyingSelected=['add','subtract'].includes(state.selectionMode)&&!state.pendingSourceId&&!state.editingPatchId&&!state.maskEditOnly&&
+    (selectedPatch&&selectedGroup?.active===selectedPatch.id);
+  if(modifyingSelected)snapshotPatch(selectedPatch);
+  else if(state.maskEditOnly&&state.selectionTargetPatchId)snapshotPointEdit();
+  else snapshotSelection();
+  const m=state.selectionMask.getContext('2d');m.save();
   if(state.selectionMode==='new'){if(!state.maskEditOnly){state.selectionTargetPatchId=null;releaseDraftGroupForNewSelection()}m.clearRect(0,0,canvas.width,canvas.height)}
-  if(state.selectionMode==='add')state.forceNewSelectionGroup=true;
   const raw=makeCanvas(canvas.width,canvas.height),r=raw.getContext('2d');r.fillStyle='#fff';r.beginPath();trace(r);r.closePath();r.fill();
   const hard=r.getImageData(0,0,raw.width,raw.height);for(let i=3;i<hard.data.length;i+=4)hard.data[i]=hard.data[i]>=128?255:0;r.putImageData(hard,0,0);
   if(['lasso','rect','ellipse'].includes(state.tool)&&!state.pendingSourceId&&!state.editingPatchId&&!state.maskEditOnly){
     m.restore();
+    // Add/Subtract modifies the currently selected object without creating a
+    // second overlapping object. Revealed pixels come from its unmasked image.
+    if(modifyingSelected){
+      if(state.selectionMode==='add')prepareRevealSource(selectedPatch);
+      editExistingCreateMask(selectedPatch,raw);
+      return;
+    }
+    if(['add','subtract'].includes(state.selectionMode)&&selectedGroup&&!selectedGroup.active){
+      const x=state.selectionMask.getContext('2d');
+      x.globalCompositeOperation=state.selectionMode==='subtract'?'destination-out':'source-over';
+      x.drawImage(raw,0,0);x.globalCompositeOperation='source-over';
+      if(!exactMaskBoundingBox(state.selectionMask)){toast('Selection cannot be empty.');return}
+      selectedGroup.footprint=cloneMask(state.selectionMask);
+      selectedGroup.maskCrop=null;
+      selectedGroup.maskPaths=maskPathsFromRaster(state.selectionMask);
+      state.selectionPaths=selectedGroup.maskPaths;state.selectionPoints=state.selectionPaths.flat();
+      state.selectionOverlayHidden=false;state.forceNewSelectionGroup=false;
+      selectTool('select');updateSelectionOutline();renderGroups();render();
+      return;
+    }
     window.MosaicObjectCreateCut?.create(raw);
     return;
   }
+  if(state.selectionMode==='add')state.forceNewSelectionGroup=true;
   const region=window.MosaicObjectMap?.refineMask(raw,state.tool)||raw;
   m.globalCompositeOperation=state.selectionMode==='subtract'?'destination-out':'source-over';m.drawImage(region,0,0);m.restore();
   if(region===raw&&state.selectionMode==='new'&&polygon&&points.length>=3)setSelectionPaths([points]);else{state.selectionPaths=[];state.selectionPoints=[];activeMaskVertex=null;hoverMaskEdge=null;maskEditVersion++}
