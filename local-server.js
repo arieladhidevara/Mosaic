@@ -76,6 +76,7 @@ const publicFiles = new Set([
   'geometry-mask.mjs',
   'object-map.js',
   'object-management.js',
+  'object-clustering.mjs',
   'generated-image.mjs',
   'object-map-utils.mjs',
   'object-map-cleanup.mjs',
