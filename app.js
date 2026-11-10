@@ -356,6 +356,11 @@ function selectGroupMask(group,{showOutline=false,append=false}={}){
 function focusGroupInSidebar(group){
   if(!group)return;
   state.focusedGroupId=group.id;
+  // Expand the relevant top-level assembly when its part is selected on canvas.
+  if(group.collectionId&&(state.collapsedCategories||[]).includes(group.collectionId)){
+    state.collapsedCategories=state.collapsedCategories.filter(id=>id!==group.collectionId);
+    renderGroups();
+  }
   const list=$('groupList'),section=[...list.querySelectorAll('.region-group')].find(row=>row.dataset.group===group.id);
   if(section)section.scrollIntoView({block:'nearest'});
 }
@@ -880,7 +885,7 @@ function renderGroups(){
   list.innerHTML=[...categories].map(([id,groups])=>{
     const collection=collections.find(c=>c.id===id),isCollapsed=collapsed.has(id),objects=groups.slice().sort((a,b)=>Number(b.id===state.focusedGroupId)-Number(a.id===state.focusedGroupId));
     const name=collection?collection.name:'Ungrouped objects';
-    return `<section class="object-category ${collection?.auto?'auto-cluster':''}" data-collection="${escapeHTML(id)}"><div class="object-collection-heading"><button type="button" class="object-category-head" data-action="toggle-category" data-category="${escapeHTML(id)}" aria-expanded="${!isCollapsed}"><span class="category-chevron" aria-hidden="true">${isCollapsed?'&#9656;':'&#9662;'}</span><strong>${escapeHTML(name)}</strong><span>${groups.length} ${groups.length===1?'part':'parts'}</span></button>${collection&&groups.length>1?`<button type="button" class="merge-collection" data-merge-collection="${escapeHTML(id)}" title="Consolidate all parts into one Object ID and mask">Merge Object</button>`:''}</div>${collection&&!isCollapsed?`<div class="object-category-controls"><input class="collection-name" aria-label="Group name" data-collection-name="${escapeHTML(collection.id)}" value="${escapeHTML(collection.name)}"><button type="button" class="remove-collection" data-remove-collection="${escapeHTML(collection.id)}" title="Remove group; keep its objects">&#215;</button></div>`:''}<div class="object-category-items" ${isCollapsed?'hidden':''}>${objects.map(renderGroup).join('')}${objects.length?'':'<small class="empty-collection">Add objects using their group menu or a multi-selection.</small>'}</div></section>`;
+    return `<section class="object-category ${collection?.auto?'auto-cluster':''}" data-collection="${escapeHTML(id)}"><div class="object-collection-heading"><button type="button" class="object-category-head" data-action="toggle-category" data-category="${escapeHTML(id)}" aria-expanded="${!isCollapsed}"><span class="category-chevron" aria-hidden="true">${isCollapsed?'&#9656;':'&#9662;'}</span><strong>${escapeHTML(name)}</strong><span>${groups.length} ${groups.length===1?'part':'parts'}</span></button>${collection&&groups.length>1?`<button type="button" class="merge-collection" data-merge-collection="${escapeHTML(id)}" title="Consolidate all parts into one Object ID and mask">Merge Object</button>`:''}</div>${collection&&!isCollapsed?`<div class="object-category-controls"><input class="collection-name" aria-label="Group name" data-collection-name="${escapeHTML(collection.id)}" value="${escapeHTML(collection.name)}"><button type="button" class="remove-collection" data-remove-collection="${escapeHTML(collection.id)}" title="Remove group; keep its objects">&#215;</button></div>`:''}<div class="object-category-items" ${isCollapsed?'hidden':''}>${isCollapsed?'':objects.map(renderGroup).join('')}${objects.length?'':'<small class="empty-collection">Add objects using their group menu or a multi-selection.</small>'}</div></section>`;
   }).join('');
   if(liveForm&&liveGroup){
     const section=[...list.querySelectorAll('.region-group[data-group]')]
