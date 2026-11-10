@@ -19,7 +19,7 @@ groupsStatus.textContent='Objects not prepared';
 document.getElementById('inspectorHeading')?.after(groupsStatus);
 state.autoObjectSelect=true;state.featherEnabled=false;
 retry.addEventListener('click',()=>void prepareBase(true));
-const preview=makeCanvas(1,1);preview.className='slimsam-wand-preview';preview.setAttribute('aria-hidden','true');document.getElementById('canvasWrap').append(preview);
+const preview=makeCanvas(1,1);preview.className='object-map-hover-overlay';preview.hidden=true;preview.setAttribute('aria-hidden','true');document.getElementById('canvasWrap').append(preview);
 const selectedOverlay=makeCanvas(1,1);selectedOverlay.id='selectedObjectOverlay';selectedOverlay.className='object-map-selection-overlay';selectedOverlay.setAttribute('aria-hidden','true');document.getElementById('canvasWrap').append(selectedOverlay);
 function drawSelection(){
   selectedOverlay.hidden=!state.objectMapSelection||!state.selectionMask||state.before||state.selectionOverlayHidden||Boolean(window.MosaicPremium?.isPreviewing());
@@ -220,14 +220,14 @@ function migrateLegacyGroups(map){
 }
 function onToolChange(tool){active=tool==='wand'||tool==='select';leave();if(active&&!labels&&!state.groups.some(g=>g.mapPrepared))update(busy?'Preparing objects…':'Upload Base and connect AI to prepare objects',Boolean(attemptedBase&&!busy&&!state.objectMap))}
 function hoverAt(point){
-  if(!active)return;
+  if(!active||state.before||state.busy||window.MosaicPremium?.isPreviewing())return leave();
   const live=liveObjectAt(point);
   if(!live&&(!labels||state.objectMapLocked))return leave();
   const id=live?.id||labelAt(labels,mapWidth,mapHeight,point.x,point.y,canvas.width,canvas.height);
   if(id===hoverId&&preview.width===canvas.width&&preview.height===canvas.height)return;leave();if(!id)return;hoverId=id;
-  const mask=live?core.groupMask(live):maskForIds([id]);preview.width=mask.width;preview.height=mask.height;const x=preview.getContext('2d');x.drawImage(mask,0,0);x.globalCompositeOperation='source-in';x.fillStyle='#b493f560';x.fillRect(0,0,preview.width,preview.height);x.globalCompositeOperation='source-over';core.overlay.style.cursor='pointer';
+  const mask=live?core.groupMask(live):maskForIds([id]);preview.width=mask.width;preview.height=mask.height;const x=preview.getContext('2d');x.drawImage(mask,0,0);x.globalCompositeOperation='source-in';x.fillStyle='rgba(180,147,245,0.10)';x.fillRect(0,0,preview.width,preview.height);x.globalCompositeOperation='source-over';preview.hidden=false;core.overlay.style.cursor='pointer';
 }
-function leave(){hoverId=0;preview.getContext('2d').clearRect(0,0,preview.width,preview.height)}
+function leave(){hoverId=0;preview.hidden=true;preview.getContext('2d').clearRect(0,0,preview.width,preview.height)}
 function selectAt(point,options={}){
   if(!active)return;
   const live=liveObjectAt(point);
