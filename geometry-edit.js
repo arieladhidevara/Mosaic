@@ -139,6 +139,70 @@ function compositedResult(before,generated,changeMask){
   result.getContext('2d').drawImage(clip,0,0);
   return result;
 }
+// SAM assigns only well-supported newly revealed pixels to existing objects.
+// Ambiguous pixels stay unassigned instead of corrupting a permanent texture.
+async function matchRevealedOwners(image,revealedMask,excludedGroup){
+  const exposed=binary(revealedMask),revealCount=exposed.reduce((a,b)=>a+b,0);
+  if(revealCount<64)return [];
+  const oldBox=core.exactMaskBoundingBox(revealedMask);
+  const center=b=>({x:b.x+b.w/2,y:b.y+b.h/2});
+  const candidates=state.groups.filter(g=>g!==excludedGroup&&!g.mergedInto&&!g.objectRemoved)
+    .map(g=>({group:g,label:promptLabel(g),mask:core.groupMask(g)}))
+    .filter(o=>o.label&&o.mask&&core.exactMaskBoundingBox(o.mask))
+    .map(o=>{
+      const b=core.exactMaskBoundingBox(o.mask),a=center(oldBox),c=center(b);
+      const distance=Math.hypot(a.x-c.x,a.y-c.y);
+      const surface=/floor|wall|ceiling|ground|pavement|carpet|tile/i.test(o.label)?1:0;
+      return {...o,distance,priority:surface*10000-distance};
+    })
+    .sort((a,b)=>b.priority-a.priority).slice(0,3);
+  const collected=[],claimed=new Uint8Array(exposed.length);
+  for(const entry of candidates){
+    try{
+      const next=await samMask(image,entry.label,entry.mask);
+      const old=binary(entry.mask),fresh=binary(next);
+      let original=0,retained=0,newlyVisible=0;
+      for(let i=0;i<old.length;i++){
+        if(old[i]){original++;if(fresh[i]&&!exposed[i])retained++;}
+        if(exposed[i]&&fresh[i]&&!claimed[i])newlyVisible++;
+      }
+      // Both shape continuity AND ownership of exposed pixels are necessary.
+      if(original<20||retained/original<.4||newlyVisible<Math.max(16,revealCount*.04))continue;
+      const bits=new Uint8Array(exposed.length);
+      for(let i=0;i<bits.length;i++)if(exposed[i]&&fresh[i]&&!claimed[i]){bits[i]=1;claimed[i]=1;}
+      collected.push({groupId:entry.group.id,mask:rasterFromBits(bits),confidence:Math.min(1,retained/original)});
+    }catch(error){console.warn('[mozAI:revealed-owner]',entry.label,error?.message||error);}
+  }
+  return collected;
+}
+function accumulateRevealedPixels(event,before,aligned){
+  state.objectReconstruction??={version:1,events:[]};
+  state.objectReconstruction.objects??={};
+  state.objectReconstruction.occlusions??=[];
+  for(const match of event.assignments||[]){
+    const group=state.groups.find(g=>g.id===match.groupId);
+    if(!group)continue;
+    const key=group.id+':'+(group.geometryVersion||0);
+    let record=state.objectReconstruction.objects[key];
+    if(!record){
+      const originalMask=clone(core.groupMask(group));
+      const texture=clone(before),x=texture.getContext('2d');
+      x.globalCompositeOperation='destination-in';x.drawImage(originalMask,0,0);
+      record={groupId:group.id,geometryVersion:group.geometryVersion||0,texture,coverage:originalMask,patches:0};
+      state.objectReconstruction.objects[key]=record;
+    }
+    const patch=clone(aligned),ctx=patch.getContext('2d');
+    ctx.globalCompositeOperation='destination-in';ctx.drawImage(match.mask,0,0);
+    record.texture.getContext('2d').drawImage(patch,0,0);
+    record.coverage.getContext('2d').drawImage(match.mask,0,0);
+    record.patches++;
+    state.objectReconstruction.occlusions.push({
+      frontId:event.groupId,backId:group.id,sourceEvent:event.id,
+      region:clone(match.mask),confidence:match.confidence
+    });
+  }
+}
+
 const previewLayer=document.createElement('canvas');
 previewLayer.id='geometryPreviewLayer';previewLayer.className='geometry-preview-layer';previewLayer.hidden=true;
 $('canvasWrap').append(previewLayer);
@@ -181,14 +245,18 @@ function commit(){
   // Retain the RGB evidence, its source, and the portion of the previous object
   // that was uncovered. Ownership is deliberately unresolved until verified.
   state.objectReconstruction??={version:1,events:[]};
-  state.objectReconstruction.events.push({
+  const reconstructionEvent={
     id:core.uid('reconstruction'),groupId:group.id,patchId,sourceId,
     operation:item.operation,geometryVersion:group.geometryVersion,
     oldMask:clone(item.oldMask),newMask:item.newMask?clone(item.newMask):null,
     revealedMask:clone(item.masks.reveal),
     revealedRGB:(()=>{const c=clone(item.aligned),x=c.getContext('2d');x.globalCompositeOperation='destination-in';x.drawImage(item.masks.reveal,0,0);return c;})(),
-    cameraOffset:item.offset,ownership:'unassigned',createdAt:new Date().toISOString()
-  });
+    cameraOffset:item.offset,ownership:item.assignments.length?'partially-matched':'unassigned',
+    assignments:item.assignments.map(a=>({groupId:a.groupId,mask:clone(a.mask),confidence:a.confidence})),
+    createdAt:new Date().toISOString()
+  };
+  state.objectReconstruction.events.push(reconstructionEvent);
+  accumulateRevealedPixels(reconstructionEvent,item.before,item.aligned);
   core.invalidateDisplayedMask(patch);
   closeReview();renderGroups();render();core.selectGroupMask(group,{showOutline:false});
   toast('Edit applied. Previous options and newly revealed pixels are retained in the .moz project.');
@@ -219,8 +287,10 @@ async function generate(prompt,files=[],operation='shape'){
     if(operation==='shape')newMask=await samMask(alignedResult.image,label,oldMask);
     if(generation!==state.selectionGeneration||state.master!==master){toast('The project changed during segmentation; result discarded.');return;}
     const masks=operationMasks(oldMask,newMask,operation);
+    const assignments=await matchRevealedOwners(alignedResult.image,masks.reveal,group);
+    if(generation!==state.selectionGeneration||state.master!==master){toast('Project changed while matching surfaces.');return;}
     const result=compositedResult(before,alignedResult.image,masks.padded);
-    review={generation,master,oldMask,newMask,group,label,prompt:task,operation,masks,aligned:alignedResult.image,offset:alignedResult.offset,result};
+    review={generation,master,oldMask,newMask,group,label,prompt:task,operation,masks,aligned:alignedResult.image,offset:alignedResult.offset,result,assignments,before};
     showReview(result,alignedResult.status+' · '+(operation==='remove'?'Background recovered': 'SAM outline validated'),operation);
     toast('Review the new image, then Apply or Discard.');
   }catch(error){toast('Shape edit: '+(error?.message||'Unable to generate. Original image is unchanged.'));}
