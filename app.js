@@ -114,7 +114,7 @@ function showQuickPrompt(point=state.lastCanvasPointer,keepText=false){
   form.style.left=Math.max(left,Math.min(quickPromptPosition?r.left+quickPromptPosition.x:wantedX,Math.max(left,right-w)))+'px';
   form.style.top=Math.max(top,Math.min(quickPromptPosition?r.top+quickPromptPosition.y:wantedY,Math.max(top,bottom-h)))+'px';
   if(!keepText){window.MosaicPremium?.clearReferenceFiles?.('quick');$('quickAreaPromptInput').value=''}
-  $('quickAreaPromptInput').focus({preventScroll:true});
+  if(!window.matchMedia('(max-width:850px)').matches)$('quickAreaPromptInput').focus({preventScroll:true});
 }
 function setSourcePreview(id,source){const img=$(id);if(!img||!source)return;img.src=source.toDataURL('image/jpeg',.75);img.classList.remove('hidden')}
 function updateSourceActions(){
