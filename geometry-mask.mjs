@@ -49,6 +49,136 @@ export function registerBinaryMasks(target,source,width,height,options={}){
 }
 
 
+
+// Fresh Mask B from the GENERATED RGB, not the old selection's raster and not
+// SAM. Use the locked mask only to seed a local foreground/background color
+// model; boundaries are classified from the new image's actual appearance.
+// Uncertain color models safely return null (the immutable Mask A wins).
+function materialColorDistance(rgb,center){
+  const dr=rgb[0]-center[0],dg=rgb[1]-center[1],db=rgb[2]-center[2];
+  return dr*dr*.85+dg*dg*1.15+db*db;
+}
+function materialColorCenters(samples,count=4){
+  if(!samples.length)return [];
+  const centers=[samples[Math.floor(samples.length/2)].slice()];
+  for(let j=1;j<count;j++){
+    let farthest=0,choice=null;
+    for(const rgb of samples){
+      const distance=Math.min(...centers.map(c=>materialColorDistance(rgb,c)));
+      if(distance>farthest){farthest=distance;choice=rgb;}
+    }
+    if(!choice||farthest<196)break;
+    centers.push(choice.slice());
+  }
+  for(let iteration=0;iteration<6;iteration++){
+    const totals=centers.map(()=>[0,0,0,0]);
+    for(const rgb of samples){
+      let best=0,distance=Infinity;
+      for(let j=0;j<centers.length;j++){
+        const d=materialColorDistance(rgb,centers[j]);
+        if(d<distance){best=j;distance=d;}
+      }
+      const t=totals[best];t[0]+=rgb[0];t[1]+=rgb[1];t[2]+=rgb[2];t[3]++;
+    }
+    centers.forEach((c,j)=>{
+      const t=totals[j];if(t[3]){c[0]=t[0]/t[3];c[1]=t[1]/t[3];c[2]=t[2]/t[3];}
+    });
+  }
+  return centers;
+}
+function materialNearest(rgb,centers){
+  let distance=Infinity;
+  for(const c of centers)distance=Math.min(distance,materialColorDistance(rgb,c));
+  return distance;
+}
+export function segmentGeneratedMaterial({before,after,target,width,height}){
+  if(!before||!after||!target||before.length!==width*height*4||
+     after.length!==before.length||target.length!==width*height)
+    throw new TypeError('Material segmentation requires matched RGBA and mask dimensions.');
+  const box=measureBinaryMask(target,width,height);
+  if(!box||box.area<24)return null;
+  const marginX=Math.max(5,Math.ceil(box.w*.22)),marginY=Math.max(5,Math.ceil(box.h*.22));
+  const x0=Math.max(0,box.x-marginX),x1=Math.min(width,box.x+box.w+marginX);
+  const y0=Math.max(0,box.y-marginY),y1=Math.min(height,box.y+box.h+marginY);
+  const stride=Math.max(1,Math.floor(Math.sqrt(((x1-x0)*(y1-y0))/5000)));
+  const foreground=[],background=[];
+  let insideChanged=0,insideTotal=0;
+  for(let y=y0+1;y<y1-1;y+=stride)for(let x=x0+1;x<x1-1;x+=stride){
+    const p=y*width+x,i=p*4,inside=target[p]!==0;
+    const rgb=[after[i],after[i+1],after[i+2]];
+    const diff=(Math.abs(after[i]-before[i])+Math.abs(after[i+1]-before[i+1])+
+      Math.abs(after[i+2]-before[i+2]))/3;
+    if(inside){
+      insideTotal++;if(diff>18)insideChanged++;
+      // Boundary pixels may be mixed with antialiasing. Train foreground only
+      // from confident old interior, but classify NEW boundaries independently.
+      if(diff>=14&&target[p-1]&&target[p+1]&&target[p-width]&&target[p+width])
+        foreground.push(rgb);
+    }else if(diff<20&&!target[p-1]&&!target[p+1]&&!target[p-width]&&!target[p+width]){
+      // Stable surroundings provide negative examples; never assume pixels
+      // outside A are the new target, because the new object may have shifted.
+      background.push(rgb);
+    }
+  }
+  if(foreground.length<Math.max(12,insideTotal*.10)||background.length<12||
+     insideChanged<insideTotal*.24)return null;
+  const fg=materialColorCenters(foreground,4),bg=materialColorCenters(background,4);
+  if(!fg.length||!bg.length)return null;
+  // Reject ambiguous edits where generated material cannot be distinguished
+  // from its background: auto-warp must not stretch a door/frame into a wall.
+  let distinct=0;
+  for(const rgb of foreground)if(materialNearest(rgb,fg)*1.16+225<materialNearest(rgb,bg))distinct++;
+  if(distinct/foreground.length<.56)return null;
+  let mask=new Uint8Array(width*height),classifiedInside=0;
+  for(let y=y0;y<y1;y++)for(let x=x0;x<x1;x++){
+    const p=y*width+x,i=p*4,rgb=[after[i],after[i+1],after[i+2]];
+    const f=materialNearest(rgb,fg),b=materialNearest(rgb,bg);
+    // A deliberately conservative color classifier. Material RGB must fit
+    // the learned new foreground and be separated from the adjacent scene.
+    if(f*1.12+135<b){mask[p]=1;if(target[p])classifiedInside++;}
+  }
+  if(classifiedInside<box.area*.52)return null;
+  // Repair pinholes in photographic materials (wood grain, stone speckles)
+  // without dilating the object's outer silhouette into neighboring objects.
+  for(let repeat=0;repeat<2;repeat++){
+    const updated=mask.slice();
+    for(let y=Math.max(1,y0);y<Math.min(height-1,y1);y++)
+      for(let x=Math.max(1,x0);x<Math.min(width-1,x1);x++){
+        const p=y*width+x;if(mask[p])continue;
+        let neighbors=0;
+        for(let yy=-1;yy<=1;yy++)for(let xx=-1;xx<=1;xx++)
+          if(yy||xx)neighbors+=mask[p+yy*width+xx];
+        if(neighbors>=7)updated[p]=1;
+      }
+    mask=updated;
+  }
+  // Connected region(s) must intersect the original object. Same-colored
+  // regions elsewhere in the photograph are not part of Mask B.
+  const seen=new Uint8Array(width*height),output=new Uint8Array(width*height);
+  const queue=new Uint32Array(width*height),minIsland=Math.max(5,box.area*.008);
+  let area=0,overlap=0;
+  for(let y=y0;y<y1;y++)for(let x=x0;x<x1;x++){
+    const index=y*width+x;if(!mask[index]||seen[index])continue;
+    let head=0,tail=1,attached=0;queue[0]=index;seen[index]=1;
+    while(head<tail){
+      const p=queue[head++],px=p%width,py=(p-px)/width;
+      if(target[p])attached++;
+      if(px>0&&mask[p-1]&&!seen[p-1]){seen[p-1]=1;queue[tail++]=p-1;}
+      if(px+1<width&&mask[p+1]&&!seen[p+1]){seen[p+1]=1;queue[tail++]=p+1;}
+      if(py>0&&mask[p-width]&&!seen[p-width]){seen[p-width]=1;queue[tail++]=p-width;}
+      if(py+1<height&&mask[p+width]&&!seen[p+width]){seen[p+width]=1;queue[tail++]=p+width;}
+    }
+    if(attached>=Math.min(6,tail)&&tail>=minIsland){
+      for(let i=0;i<tail;i++)output[queue[i]]=1;
+      area+=tail;overlap+=attached;
+    }
+  }
+  const ratio=area/box.area,iou=overlap/Math.max(1,box.area+area-overlap);
+  if(ratio<.64||ratio>1.48||iou<.52)return null;
+  return {mask:output,method:'generated-rgb-segmentation',confidence:iou,
+    coverage:overlap/box.area,area};
+}
+
 // Derive a provisional new silhouette from image changes, WITHOUT SAM. It is
 // never saved as the object's mask. Only use it as registration evidence.
 function differenceSilhouette(before,after,target,width,height){
@@ -165,15 +295,33 @@ export function alignGeneratedToLockedMask({before,generated,lockedMask,candidat
   const w=Math.max(4,Math.round(fullW*scale)),h=Math.max(4,Math.round(fullH*scale));
   const target=rasterMaskBits(lockedMask,w,h,makeCanvas);
   let candidate=candidateMask?rasterMaskBits(candidateMask,w,h,makeCanvas):null;
+  let method=candidate?'supplied-generated-mask':'generated-rgb-segmentation';
   if(!candidate&&allowDifference){
     const sample=image=>{const temp=makeCanvas(w,h);temp.getContext('2d').drawImage(image,0,0,w,h);
       return temp.getContext('2d',{willReadFrequently:true}).getImageData(0,0,w,h).data;};
-    candidate=differenceSilhouette(sample(before),sample(generated),target,w,h);
+    const beforePixels=sample(before),afterPixels=sample(generated);
+    // Material mode ALWAYS estimates a new Mask B from generated RGB first.
+    // The old mask is only a training prior, never the returned segmentation.
+    const segmented=segmentGeneratedMaterial({before:beforePixels,after:afterPixels,target,width:w,height:h});
+    if(segmented)candidate=segmented.mask;
+    else{
+      // A pixel difference cannot distinguish an old silhouette from a new
+      // shifted one. Only use it as a last-resort correspondence when it
+      // almost perfectly overlaps A; otherwise skip warp.
+      method='difference-fallback';
+      candidate=differenceSilhouette(beforePixels,afterPixels,target,w,h);
+      if(candidate){
+        const fallback=registerBinaryMasks(target,candidate,w,h,{minIou:.90,maxSizeChange:.08});
+        if(!fallback.approved)candidate=null;
+      }
+    }
   }
-  if(!candidate)return {image:generated,status:'locked-mask-no-candidate',aligned:false};
+  if(!candidate)return {image:generated,status:'locked-mask-no-confident-b',aligned:false,
+    segmentation:method};
   const fit=registerBinaryMasks(target,candidate,w,h);
   if(!fit.approved)return {image:generated,status:'locked-mask-unsafe-warp',aligned:false,
-    iou:fit.iou,reason:fit.reason};
+    segmentation:method,iou:fit.iou,reason:fit.reason};
   return {image:alignedCanvas(generated,target,candidate,w,h,fit,makeCanvas),
-    status:'mask-b-warped-to-locked-a',aligned:fit.iou<.965,iou:fit.iou};
+    status:fit.iou<.965?'mask-b-warped-to-locked-a':'mask-b-already-aligned',
+    aligned:fit.iou<.965,segmentation:method,iou:fit.iou};
 }
