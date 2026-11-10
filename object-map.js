@@ -86,13 +86,55 @@ function maskForIds(ids){
   }
   x.putImageData(pixels,0,0);return mask;
 }
+function liveObjectAt(point){
+  if(point.x<0||point.y<0||point.x>=canvas.width||point.y>=canvas.height)return null;
+  for(const group of state.groups.slice().reverse()){
+    if(group.objectMapBatch||group.mergedInto||group.objectRemoved)continue;
+    if(!group.objectMapObjectKey&&!group.mapPrepared&&!group.objectId)continue;
+    const image=core.groupMask(group);
+    if(image?.getContext('2d',{willReadFrequently:true}).getImageData(Math.floor(point.x),Math.floor(point.y),1,1).data[3]>=128)
+      return group;
+  }
+  return null;
+}
+function partsOverlappingMask(mask){
+  const dimension=384,scale=Math.min(1,dimension/Math.max(canvas.width,canvas.height));
+  const w=Math.max(1,Math.round(canvas.width*scale)),h=Math.max(1,Math.round(canvas.height*scale));
+  const sample=makeCanvas(w,h),sx=sample.getContext('2d',{willReadFrequently:true});
+  sx.imageSmoothingEnabled=false;sx.drawImage(mask,0,0,w,h);
+  const target=sx.getImageData(0,0,w,h).data,parts=[];
+  for(const group of state.groups){
+    if(group.objectMapBatch||group.mergedInto||group.objectRemoved)continue;
+    if(!group.objectMapObjectKey&&!group.mapPrepared&&!group.objectId)continue;
+    const own=core.groupMask(group);
+    if(!own)continue;
+    const overlay=makeCanvas(w,h),ctx=overlay.getContext('2d',{willReadFrequently:true});
+    ctx.imageSmoothingEnabled=false;ctx.drawImage(own,0,0,w,h);
+    const pixels=ctx.getImageData(0,0,w,h).data;
+    let both=0,all=0;
+    for(let i=3;i<pixels.length;i+=4)if(pixels[i]>=128){all++;if(target[i]>=128)both++;}
+    if(both>=Math.max(2,Math.min(8,all*.015))&&both/Math.max(1,all)>=.12){
+      parts.push(window.MosaicObjectManager.partForObject(group));
+    }
+  }
+  return parts;
+}
+
 function refineMask(mask,tool){
   if(state.objectSelectionParts?.length&&state.selectionMode!=='new'&&!state.maskEditOnly){operation={parts:snapshotSelection()};return mask}
   if(!['rect','ellipse','lasso','freehand'].includes(tool)||state.pendingSourceId||state.maskEditOnly)return mask;
   if(!labels){core.toast('Objects are not ready yet. Your drawn selection was kept.');return mask}
-  const ids=idsOverlappingShape(labels,mapWidth,mapHeight,mask.getContext('2d').getImageData(0,0,mask.width,mask.height).data,mask.width,mask.height);
-  picking=true;pickingIds=ids;pickingMode=state.selectionMode;operation={parts:snapshotSelection()};if(!ids.length)core.toast('No object is mostly inside this selection. Draw a wider area.');
-  const parts=ids.map(id=>partForId(id)),result=makeCanvas(canvas.width,canvas.height);for(const part of parts)result.getContext('2d').drawImage(part.mask,0,0);return result;
+  const parts=partsOverlappingMask(mask);
+  if(!parts.length){
+    // Recover initial map shapes if a legacy project has no prepared Object Groups.
+    const ids=idsOverlappingShape(labels,mapWidth,mapHeight,mask.getContext('2d').getImageData(0,0,mask.width,mask.height).data,mask.width,mask.height);
+    for(const id of ids)parts.push(partForId(id));
+  }
+  picking=true;pickingIds=[];pickingMode=state.selectionMode;operation={parts:snapshotSelection(),picked:parts};
+  if(!parts.length)core.toast('No meaningful object overlap found. Enlarge the selection.');
+  const result=makeCanvas(canvas.width,canvas.height);
+  for(const part of parts)result.getContext('2d').drawImage(part.mask,0,0);
+  return result;
 }
 function selectionCompleted(){
   if(picking){
@@ -169,16 +211,18 @@ function migrateLegacyGroups(map){
 function onToolChange(tool){active=tool==='wand';leave();if(active&&!labels)update(busy?'Preparing objects…':'Upload Base and connect AI to prepare objects',Boolean(attemptedBase&&!busy&&!state.objectMap))}
 function hoverAt(point){
   if(!active||!labels)return;
-  const id=labelAt(labels,mapWidth,mapHeight,point.x,point.y,canvas.width,canvas.height);if(id===hoverId&&preview.width===canvas.width&&preview.height===canvas.height)return;leave();if(!id)return;hoverId=id;
-  const mask=maskForIds([id]);preview.width=mask.width;preview.height=mask.height;const x=preview.getContext('2d');x.drawImage(mask,0,0);x.globalCompositeOperation='source-in';x.fillStyle='#b493f560';x.fillRect(0,0,preview.width,preview.height);x.globalCompositeOperation='source-over';core.overlay.style.cursor='pointer';
+  const live=liveObjectAt(point),id=live?.id||labelAt(labels,mapWidth,mapHeight,point.x,point.y,canvas.width,canvas.height);
+  if(id===hoverId&&preview.width===canvas.width&&preview.height===canvas.height)return;leave();if(!id)return;hoverId=id;
+  const mask=live?core.groupMask(live):maskForIds([id]);preview.width=mask.width;preview.height=mask.height;const x=preview.getContext('2d');x.drawImage(mask,0,0);x.globalCompositeOperation='source-in';x.fillStyle='#b493f560';x.fillRect(0,0,preview.width,preview.height);x.globalCompositeOperation='source-over';core.overlay.style.cursor='pointer';
 }
 function leave(){hoverId=0;preview.getContext('2d').clearRect(0,0,preview.width,preview.height)}
 function selectAt(point,options={}){
   if(!active)return;if(!labels){if(busy){pendingClick={point:{...point},options};core.message('Object selection queued until the image map is ready.')}else core.toast('Prepare the image object map first.');return}
-  const id=labelAt(labels,mapWidth,mapHeight,point.x,point.y,canvas.width,canvas.height);if(!id){if(!options.append&&!options.subtract){core.resetSelection();core.render()}return}
+  const live=liveObjectAt(point),id=live?.id||labelAt(labels,mapWidth,mapHeight,point.x,point.y,canvas.width,canvas.height);
+  if(!id){if(!options.append&&!options.subtract){core.resetSelection();core.render()}return}
   const hasObjects=state.objectSelectionParts?.length;
   const mode=options.append&&hasObjects?'add':options.subtract&&hasObjects?'subtract':'new';core.setMode(mode);
-  const part=partForId(id);operation={parts:snapshotSelection(),picked:[part]};picking=true;pickingIds=[id];pickingMode=mode;state.maskEditOnly=false;state.selectionTargetPatchId=null;state.draftGroupId=null;core.applyWandMask(part.mask);picking=false;leave();
+  const part=live?window.MosaicObjectManager.partForObject(live):partForId(id);operation={parts:snapshotSelection(),picked:[part]};picking=true;pickingIds=[id];pickingMode=mode;state.maskEditOnly=false;state.selectionTargetPatchId=null;state.draftGroupId=null;core.applyWandMask(part.mask);picking=false;leave();
 }
 function selectObject(object,{append=false}={}){const part=window.MosaicObjectManager.partForObject(object),mode=append&&state.objectSelectionParts?.length?'add':'new';operation={parts:snapshotSelection(),picked:[part]};picking=true;pickingMode=mode;state.selectionTargetPatchId=null;state.draftGroupId=null;state.selectedPatchId=null;state.maskEditOnly=false;core.setMode(mode);core.applyWandMask(part.mask);picking=false}
 function invalidateBase(){serial++;busy=false;pendingBase=state.master;attemptedBase=pendingBase;labels=null;state.objectMap=null;state.objectMapSelection=null;if(state.master)delete state.objectMaps?.[sourceKey(state.master)];leave();window.MosaicMaskProgress?.hide('objects');update('Image changed · prepare objects again',true)}
