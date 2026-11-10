@@ -27,7 +27,14 @@ function drawSelection(){
   if(selectedOverlay.width!==canvas.width||selectedOverlay.height!==canvas.height){selectedOverlay.width=canvas.width;selectedOverlay.height=canvas.height}
   const x=selectedOverlay.getContext('2d');x.clearRect(0,0,canvas.width,canvas.height);x.drawImage(state.selectionMask,0,0);x.globalCompositeOperation='source-in';x.fillStyle='rgba(180,147,245,0.12)';x.fillRect(0,0,canvas.width,canvas.height);x.globalCompositeOperation='source-over';
 }
-function update(text,failed=false){status.textContent=text;retry.hidden=!failed;document.getElementById('slimsamWandStatus').textContent=text}
+function update(text,failed=false){
+  status.textContent=text;
+  status.classList.toggle('error',failed);
+  retry.hidden=!failed;
+  // The old SlimSAM status element is no longer present in index.html.
+  const legacyStatus=document.getElementById('slimsamWandStatus');
+  if(legacyStatus)legacyStatus.textContent=text;
+}
 function sourceKey(base){
   const sample=makeCanvas(64,64),x=sample.getContext('2d');x.drawImage(base,0,0,64,64);let hash=2166136261;
   for(const byte of x.getImageData(0,0,64,64).data)hash=Math.imul(hash^byte,16777619)>>>0;
