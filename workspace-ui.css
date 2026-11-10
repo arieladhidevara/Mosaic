@@ -43,10 +43,17 @@
 .object-category-head:focus-visible{outline:2px solid #b493f5;outline-offset:-2px}.category-chevron{width:10px;color:#b493f5}
 .object-category-items{padding:0 5px 4px 10px;border-left:1px solid #b493f530;margin-left:9px}
 .object-category-items[hidden]{display:none}.object-category-items>.region-group{margin:6px 0 0}
-.object-collection-heading{display:flex;align-items:center;flex-wrap:wrap;gap:4px;padding-right:5px;background:#ffffff03}
-.object-collection-heading>.object-category-head{flex:1;min-width:100%;background:transparent}
-.collection-name{flex:1;min-width:0;margin:0 0 5px 22px;padding:4px 6px;border:1px solid transparent;border-radius:4px;background:transparent;color:#e8dff2;font:600 11px system-ui}
-.collection-name:focus{border-color:#b493f5}.remove-collection{margin-bottom:5px;border:0;background:transparent;color:#9a90a5;cursor:pointer}
+.object-collection-heading{display:flex;align-items:center;gap:5px;padding:4px 6px;background:#ffffff03}
+.object-collection-heading>.object-category-head{flex:1;min-width:0;background:transparent}
+.object-category-head strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px}
+.object-category-head>span:last-child{flex:none;white-space:nowrap}
+.object-category.auto-cluster{border-color:#aa92dc25;background:#9b82cc06}
+.object-category.auto-cluster>.object-collection-heading{background:linear-gradient(90deg,#a28bda12,transparent)}
+.object-category-controls{display:flex;align-items:center;gap:5px;padding:0 8px 4px 26px}
+.collection-name{flex:1;min-width:0;margin:0;padding:4px 6px;border:1px solid transparent;border-radius:4px;background:transparent;color:#e8dff2;font:600 11px system-ui}
+.collection-name:focus{border-color:#b493f5}.remove-collection{margin:0;border:0;background:transparent;color:#9a90a5;cursor:pointer}
+.merge-collection{flex:none;border:1px solid #b493f54a;border-radius:5px;background:#352945;color:#dcccf6;font:600 9px system-ui;padding:5px 7px;white-space:nowrap;cursor:pointer}
+.merge-collection:hover{background:#4e3c64}
 .empty-collection{display:block;padding:12px 6px;color:#948a9f;font:10px/1.5 system-ui}
 .object-collection-picker{width:100%;font:10px system-ui;color:#c8bed3;background:#1b1b24;border:1px solid #ffffff1c;border-radius:4px;padding:4px}
 .group-details:has(.object-collection-picker){flex-wrap:wrap}.group-details .object-collection-picker{flex-basis:100%}
