@@ -363,22 +363,20 @@ async function submitChat(event){
   setMarkupMode(false);core.hideQuickPrompt();
   const imageBefore=visibleImage({annotations:false}),files=references.getFiles(),requestEpoch=epoch,token={};job=token;
   state.chatMessages.push({role:'user',text:prompt,referenceCount:files.length});
-  $('chatGenerate').disabled=true;$('chatGenerate').textContent='Analyzing…';
-  $('chatStatus').textContent='Analyzing objects before generating…';
+  $('chatGenerate').disabled=true;$('chatGenerate').textContent='Generating…';
+  $('chatStatus').textContent='Preparing full-image edit…';
   const wasBusy=state.busy;state.busy=true;
   try{
     if(!await window.MosaicAuth.ensure())throw Error('Connect AI before generating an edit.');
-    const intent=await window.MosaicSceneTargeting.analyzeAndGroup(prompt,imageBefore,
-      status=>$('chatStatus').textContent=status);
-    if(requestEpoch!==epoch)return;
-    $('chatGenerate').textContent='Generating…';
-    const editedPrompt=intent.scope==='global'?prompt:
-      prompt+'\n\nTARGETED FULL-SCENE EDIT: Change only the confirmed '+intent.label+
-      ' objects. Preserve all other objects, geometry and camera. Return the complete image.';
+    // Full Image must be callable with no Object Map or SAM service at all.
+    // Semantic intent is guided by the prompt, not a blocking preflight.
+    // After the image arrives SceneVersions attempts fresh SAM segmentation,
+    // falling back to the saved masks without losing the generated image.
+    const editedPrompt=prompt+'\n\nFULL IMAGE EDIT: Return one complete, coherent image at the same camera view. '+ 
+      'Apply the requested changes and preserve all objects, geometry and materials not explicitly changed. '+ 
+      'The existing object identities will be resegmented after generation.';
     $('chatStatus').textContent='Generating the complete image…';
-    const image=await premium.generateComposition(editedPrompt,files,imageBefore,null,{
-      targetLabel:intent.scope==='global'?null:intent.label
-    });
+    const image=await premium.generateComposition(editedPrompt,files,imageBefore);
     if(requestEpoch!==epoch)return;
     const version=await window.MosaicSceneVersions.apply(image,{
       type:'ai-edit',prompt,onStatus:status=>$('chatStatus').textContent=status
@@ -388,9 +386,10 @@ async function submitChat(event){
       version:version.category,matched:version.matched,total:version.objectCount});
     references.clear();$('compositionChatPrompt').value='';
     core.resetSelection();
-    $('chatStatus').textContent=version.category+' saved as a new option on '+version.objectCount+
-      ' objects · '+version.matched+' resegmented by SAM 3.';
-    toast(version.category+' created for each object.');
+    $('chatStatus').textContent=version.category+' applied to full image · '+
+      version.objectCount+' object options · '+version.matched+' SAM 3 matches'+
+      (version.segmentationStatus==='fallback'?' (saved masks retained)':'')+'.';
+    toast(version.category+' applied.');
   }catch(error){
     if(requestEpoch===epoch){
       $('chatStatus').textContent=error.message;
