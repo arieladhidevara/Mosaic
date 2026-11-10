@@ -90,11 +90,12 @@ async function apply(image,{type='ai-edit',prompt='',onStatus=()=>{},preserveEdi
     // Mask B is measured from image differences locally; SAM is never run.
     // No trustworthy correspondence => use unchanged RGB clipped to A.
     let aligned={image:fullImage,aligned:false,status:'locked-mask'};
-    if(snapshots.length<=128){
-      try{
-        aligned=alignGeneratedToLockedMask({before,generated:fullImage,lockedMask:mask,makeCanvas});
-      }catch(error){console.warn('[mozAI:mask-fit]',error);}
-    }
+    try{
+      // Complex scenes can have many objects. Reduce sampling resolution
+      // rather than silently disabling alignment when the map is dense.
+      aligned=alignGeneratedToLockedMask({before,generated:fullImage,lockedMask:mask,makeCanvas,
+        maxDimension:snapshots.length>100?160:320});
+    }catch(error){console.warn('[mozAI:mask-fit]',error);}
     let optionSourceId=sourceId;
     if(aligned.aligned&&aligned.image!==fullImage){
       optionSourceId=core.uid('aligned_scene_source');
