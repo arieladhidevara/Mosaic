@@ -40,14 +40,30 @@ export function idsInShape(labels,width,height,alpha,targetWidth,targetHeight){
     const tx=Math.min(targetWidth-1,Math.floor((x+.5)*targetWidth/width)),ty=Math.min(targetHeight-1,Math.floor((y+.5)*targetHeight/height));
     if(alpha[(ty*targetWidth+tx)*4+3]>=128)intersections[id]++;
   }
-  // Rectangle, oval and lasso automatically snap to intersecting instance masks.
-  // Use meaningful overlap instead of requiring 50% of the object's area;
-  // tiny accidental edge contacts must not select an entire wall.
-  const selected=alpha.reduce((sum,value,index)=>sum+(index%4===3&&value>=128?1:0),0);
-  const normalizedSelected=selected*width*height/Math.max(1,targetWidth*targetHeight);
-  return Array.from(totals.keys()).filter(id=>id&&intersections[id]>=Math.max(8,Math.min(totals[id]*.12,normalizedSelected*.16)));
+  // Preserve legacy strict selection for direct calls and older projects.
+  return Array.from(totals.keys()).filter(id=>id&&intersections[id]>0&&intersections[id]>=totals[id]*.5);
 }
 export function labelAt(labels,width,height,x,y,targetWidth,targetHeight){
   if(x<0||y<0||x>=targetWidth||y>=targetHeight)return 0;
   return labels[Math.min(height-1,Math.floor(y*height/targetHeight))*width+Math.min(width-1,Math.floor(x*width/targetWidth))]||0;
+}
+
+// New automatic rectangle/lasso/oval behavior: any meaningful intersection of
+// an existing Object ID can snap into the selection, without an Auto Select toggle.
+export function idsOverlappingShape(labels,width,height,alpha,targetWidth,targetHeight){
+  const intersections=new Map(),totals=new Map();
+  let selected=0;
+  for(let y=0;y<height;y++)for(let x=0;x<width;x++){
+    const id=labels[y*width+x];if(!id)continue;
+    totals.set(id,(totals.get(id)||0)+1);
+    const tx=Math.min(targetWidth-1,Math.floor((x+.5)*targetWidth/width));
+    const ty=Math.min(targetHeight-1,Math.floor((y+.5)*targetHeight/height));
+    if(alpha[(ty*targetWidth+tx)*4+3]>=128){
+      intersections.set(id,(intersections.get(id)||0)+1);selected++;
+    }
+  }
+  return [...totals.keys()].filter(id=>{
+    const overlap=intersections.get(id)||0;
+    return overlap>=Math.max(1,Math.min(8,selected*.08))&&overlap/totals.get(id)>=.12;
+  });
 }
