@@ -647,6 +647,19 @@ async function generateRegion(patchId,regenerate=false){
 }
 function commitObjectMapParts(batch,result,underlay,requestOrder){
   const selectedBefore=state.selectedPatchId;
+  // Keep one shared full-image source for all selected objects. Every Option
+  // retains its independent mask, but we don't duplicate 2K/4K RGB per object.
+  // Only an object that needs a different mesh warp receives its own source.
+  const combined=cloneCanvas(underlay),union=makeCanvas(canvas.width,canvas.height);
+  const unionContext=union.getContext('2d');
+  for(const part of batch.objectMapParts)unionContext.drawImage(part.mask,0,0);
+  const changed=cloneCanvas(result),changedContext=changed.getContext('2d');
+  changedContext.globalCompositeOperation='destination-in';
+  changedContext.drawImage(union,0,0);
+  combined.getContext('2d').drawImage(changed,0,0);
+  const sharedSourceId=uid('object_batch_source');
+  state.sources.set(sharedSourceId,{id:sharedSourceId,name:'Selected objects · generated',canvas:combined,
+    revealComplete:true});
   for(const part of batch.objectMapParts){
     let group=state.groups.find(g=>g.objectMapKey===part.mapKey&&g.objectMapObjectKey===part.objectKey);
     const mask=cloneCanvas(part.mask);if(part.previousMask)mask.getContext('2d').drawImage(part.previousMask,0,0);
@@ -663,9 +676,15 @@ function commitObjectMapParts(batch,result,underlay,requestOrder){
         candidateMask:part.candidateMask||null,makeCanvas
       });
     }catch(error){console.warn('[mozAI:compound-mask-registration]',error);}
-    const source=cloneCanvas(underlay),layer=cloneCanvas(aligned.image),lx=layer.getContext('2d');lx.globalCompositeOperation='destination-in';lx.drawImage(part.mask,0,0);
-    const sx=source.getContext('2d');sx.drawImage(layer,0,0);sx.globalCompositeOperation='destination-in';sx.drawImage(mask,0,0);
-    const sourceId=uid('object_source');state.sources.set(sourceId,{id:sourceId,name:group.objectName+' edit',canvas:source});
+    let sourceId=sharedSourceId;
+    if(aligned.aligned&&aligned.image!==result){
+      const source=cloneCanvas(combined),layer=cloneCanvas(aligned.image),lx=layer.getContext('2d');
+      lx.globalCompositeOperation='destination-in';lx.drawImage(part.mask,0,0);
+      source.getContext('2d').drawImage(layer,0,0);
+      sourceId=uid('aligned_object_source');
+      state.sources.set(sourceId,{id:sourceId,name:group.objectName+' · aligned',canvas:source,
+        revealComplete:true});
+    }
     const {objectMapParts,aiProgress,...template}=batch;
     const patch={...template,id:uid('object_patch'),sourceId,mask,bbox:core.exactMaskBoundingBox(mask),maskPaths:core.maskPathsFromRaster(mask),maskPoints:[],groupId:group.id,
       objectMapKey:part.mapKey,objectMapCategory:part.category,objectMapObjectKey:part.objectKey,objectMapInstanceId:part.instanceId,objectLabel:part.label,generating:false,awaitingResult:false,hideUntilReady:false,
