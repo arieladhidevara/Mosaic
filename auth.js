@@ -72,7 +72,7 @@ async function ensure(){
   return false;
 }
 async function request(path,body={}){
-  if(!/^\/api\/ai\/(?:master|edit|harmonize|classify|option-name)$/.test(path))throw Error('Unsupported AI request.');
+  if(!/^\/api\/ai\/(?:master|edit|harmonize|classify|option-name|object-map)$/.test(path))throw Error('Unsupported AI request.');
   if(!await ensure())throw Error('Connect your OpenAI API key in your profile.');
   // Only the verified account/session and image data are sent. No secret is in browser requests.
   const result=await window.MosaicAccount.request(path,{method:'POST',body:{...body,projectId:await window.MosaicAccount.projectId()}});

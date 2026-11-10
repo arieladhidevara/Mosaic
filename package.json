@@ -9,7 +9,7 @@
     "dev:local": "node scripts/dev-server.js --auto-login",
     "dev:login": "node scripts/dev-server.js --real-login",
     "dev:reset": "node scripts/reset-local-data.js",
-    "test": "node --test tests/hf-sam3.test.cjs tests/image-provider.test.cjs tests/generation-pool.test.cjs tests/mask-geometry.test.cjs tests/mask-feather.test.cjs tests/admin-analytics.test.cjs tests/auth.test.cjs tests/database.test.cjs tests/credential-store.test.cjs tests/launch-safety.test.cjs tests/slimsam-wand.test.mjs tests/local-assets.test.cjs tests/object-masks.test.mjs tests/object-intent.test.cjs"
+    "test": "node --test tests/generated-image.test.mjs tests/object-map-cleanup.test.mjs tests/object-map.test.mjs tests/object-map-provider.test.cjs tests/hf-sam3.test.cjs tests/image-provider.test.cjs tests/generation-pool.test.cjs tests/mask-geometry.test.cjs tests/mask-feather.test.cjs tests/admin-analytics.test.cjs tests/auth.test.cjs tests/database.test.cjs tests/credential-store.test.cjs tests/launch-safety.test.cjs tests/slimsam-wand.test.mjs tests/local-assets.test.cjs tests/object-masks.test.mjs tests/object-intent.test.cjs"
   },
   "engines": {
     "node": ">=18"

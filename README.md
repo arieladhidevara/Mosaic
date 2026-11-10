@@ -12,12 +12,12 @@ Supabase membership checks. Signing in from the editor preserves its canvas.
 1. Upload a **Base image**. mozAI stays on onboarding until you **upload a Master**, **generate a Master from the inline prompt**, or deliberately click **Continue with Base only**. Just uploading Base never silently starts the editor or creates Master. Clicking Generate opens the main canvas immediately with Base and centered generation progress; the Base fades into the generated Master when it is ready. Mask editing remains available while generating.
 2. Upload your own **Master image**, generate a Master with Pro, or click **Continue with Base only** to start a local manual working draft. The draft is not registered as an uploaded/generated Master, and a real Master can still be added later (with confirmation if it would replace existing Group work).
 3. Upload one or more AI images. Each becomes a temporary top layer, one at a time.
-4. Choose **Line**, **Rect**, **Oval** or **Wand (SlimSAM)**. Wand downloads and caches the quantized model in the browser on first load, then highlights objects on hover and selects on click. The right **Groups → Auto Create** action uses the hosted SAM 3 Space to detect objects and create empty Groups immediately; an Option is added only after the user selects a Group and generates. **New / Add / Subtract** work with selection tools and Ctrl/Cmd-click unions multiple masks.
+4. After **Continue with Base only**, or after the generated Master arrives, mozAI prepares its object-color map in the background. **Wand** selects a prepared object immediately. Enable **Auto Select** with **Line**, **Rectangle** or **Oval** to select objects predominantly inside the shape. Selected objects receive a thin purple overlay. **New / Add / Subtract** combine masks. Category Groups appear after Generate returns its image. See [Object maps](docs/object-maps.md).
 5. Click **Apply** to keep only the selected region of the uploaded image. **Enter** closes an unfinished Line; selection remains a draft until Apply. The unselected pixels are hidden non-destructively.
 6. Refine a patch later with **Edit**, **Brush**, or **Eraser**. Overlapping patches from the same region are automatically grouped as alternatives, with the newest active.
 7. Click **Compare** to open a draggable Base/latest divider. Base is on the left; the latest approved composition is on the right. Drag across the image, use the slider's arrow keys, then click Compare again or press Escape to close. Without a Base, the original Master is used.
-8. Use the bottom **Markup** toolbar to add arrows with text, standalone text, lines, boxes, ovals or freehand notes. Color and stroke size are adjustable; Undo/Redo also work on markup.
-9. Open **Image chat** at the lower right to generate from the latest visible collage and a prompt, with up to three material/style reference images. Base controls geometry and camera. Markup is supplied as a separate instruction image and is removed from the AI output. A result opens directly on the canvas with a slight dark tint: select with Rectangle, Oval or Line/freehand, then **Done** to keep only that area as an editable layer. **Use full image** keeps the entire result, **Cancel** returns to the collage, and chat thumbnails reopen earlier results. Hold **Space** or **R** to see the collage behind the result.
+8. Click **Markup** in the left toolbar to reveal arrows, text, lines, boxes, ovals and freehand tools. Markup starts purple. Choose **Text**, then click the image and type directly there; double-click existing text to edit it. **Select** lets you move any markup and drag its bounding-box handles to resize it. Delete and Undo/Redo also work on markup.
+9. Use the bottom **AI Edit Full Image** prompt bar to generate from the latest visible collage, with the **+** button for up to three material/style references. Base controls geometry and camera. Markup is supplied as a separate instruction image and is removed from the AI output. A result opens directly on the canvas with a slight dark tint: select with Rectangle, Oval or Line/freehand, then **Done** to keep only that area as an editable layer. **Use full image** keeps the entire result and **Cancel** returns to the collage. Hold **Space** or **R** to see the collage behind the result.
 10. **Ctrl/Cmd+C**, then **Ctrl/Cmd+V**, copies the exact pixels inside the current mask into a new layer with transparency. Drag the layer or its four corner handles to move or skew it.
 11. Click **Save image** to download the image currently shown in the canvas, including pending uploads, generated previews and user markup. Selection guides, handles and the temporary result-selection tint are excluded. A Base-only project can also be saved. **Save project** also preserves markup, chat history and any result awaiting selection.
 
@@ -25,9 +25,9 @@ The prompt can also be copied directly from the interface. Manual image processi
 
 ## Important notes
 
-- **Wand** uses locally cached SlimSAM model weights (no server-side Wand API usage). **Auto Create** uses hosted SAM 3 to create reusable Groups; masking progress is shown during model loading and inference. Browser cache may be evicted under device storage pressure.
-- Automatic Group matching requires strong **actual mask intersection**, not just similar bounding boxes. Use the **+ beside Groups** in the right sidebar for a new Group. Desktop drag/drop can move options between Groups without adding a fifth option button.
-- Use **Select** to move or reshape an applied image and its mask together. Use the option's **Edit** action to change only its selection. **Edit** beside Base, Master, or a pending upload opens the image position editor. Changes to one option preserve source images shared by other options.
+- **Wand** and **Auto Select** reuse the saved working-image object map. Preparing it uses Sunburst and a lightweight category-label call through the connected BYOK account. Selecting afterward needs no SAM service, browser model or provider inference.
+- Objects own masks and independent Options; Groups are explicit containers. Use **+ beside Groups** for a manual Group or **AI group** to apply the initial scene suggestions. Move objects using their right-side group menu or **Add to group** in a multi-selection prompt. **Merge to object** is the explicit persistent mask union.
+- Use **Pointer** to move or reshape an applied image and its mask together. Use the option's **Edit** action to change only its selection. **Edit** beside Base, Master, or a pending upload opens the image position editor. Changes to one option preserve source images shared by other options.
 - Maximum import size defaults to 2400 pixels on the longest side to limit browser memory; hidden Base image can be imported at up to 4000 pixels.
 - Live project data is kept **in browser memory** and refresh clears unsaved changes. Use **Save project** before leaving and **Open project** to restore it. Editable image content remains local. Account access and metadata analytics use Supabase in production, with an isolated file store for local developer mode.
 - Final AI harmonization is done manually and can still reinterpret visual references.
@@ -49,7 +49,7 @@ git pull --ff-only origin main
 npm run dev:local
 ```
 
-The local server serves the same frontend JavaScript and model workers as the GitHub `main` branch, including Wand preload, masking progress, and Auto Create. In local development, the SAM 3 backend defaults to the same public `https://arieladhidevara-mozai.hf.space` Space as production; an explicit `MOZAI_HF_SAM3_SPACE_URL` in `.env.local` overrides this. Model downloads require an internet connection.
+The local server serves the current editor and same-origin routes, including `/api/ai/object-map`. The selection workflow uses a saved object map and requires no Hugging Face Space or browser-model download.
 
 Open http://127.0.0.1:8000, click **Connect AI**, and enter your OpenAI API
 key. Local auto-login uses an isolated development account; production requires Supabase setup described in [Phase 2 setup](docs/phase2-setup.md). The OpenAI key is forwarded by the same-origin server for each OpenAI request; optional browser remembering reconnects it after refresh.
@@ -67,7 +67,7 @@ The GitHub repository `arieladhidevara/Mosaic` is connected to its Vercel deploy
 - `app.js`: masks, Groups, selection modes, canvas rendering and PNG downloads
 - `premium.js`: Premium AI edits, local crops, regeneration and Master history
 - `project-file.js`: portable lossless Save/Open project serialization
-- `canvas-workspace.js` / `canvas-workspace.css`: bottom markup toolbar, composition chat, result selection and clipboard layers
+- `canvas-workspace.js` / `canvas-workspace.css`: markup mode, compact full-image edit bar, result selection and clipboard layers
 - `regions.js`: Group controls, names, hover and drag/drop
 - `vercel.json`: static hosting config
 
@@ -107,7 +107,7 @@ For the first Master, Base is the sole geometry/camera authority; attached refer
 
 ## Move & Skew layers
 
-Patch edges use an inward alpha feather: image texture stays sharp, the editable mask stays unchanged, and pixels outside the mask are preserved. Active selection outlines use white/transparent dashes at 80% opacity; sidebar-selected Groups use a quiet 20% outline. Click **Simplify** beside Clear selection to straighten noisy edges; Undo restores the previous mask. Wand hover previews use a translucent fill without an outline.
+Patch edges and raster selection outlines follow selected pixels without automatic feather or smoothing. **Feather edges** defaults off and changes compositing without changing saved masks. **Simplify** is an explicit manual action. Object selections receive a thin purple overlay; selection overlays are excluded from exports.
 
 Click an existing region or variation in **Layers** to select it. mozAI activates **Move / Skew** on the canvas:
 
@@ -124,7 +124,7 @@ The original Base geometry is preserved separately from the working Master.
 - Up to three regional edits generate in parallel. Additional edits start when a slot is free. Each request keeps its own collage/mask snapshot, and loading highlights cover all running regions. Late results remain saved as Options without replacing a newer generated result or a manual option choice. Queued edits are skipped when their project has changed.
 - Clicking an object on the canvas brings its Group to the top of the sidebar without changing canvas layer order. Sidebar selections keep the floating prompt closed. The floating prompt includes a compact vertical rail of existing Group Options; switching Options preserves prompt text, and the rail moves together with the prompt.
 
-Regional generation displays persistent progress and a purple/white shimmer clipped to the submitted mask, even before its new Option appears. Wand analyzes the approved image as soon as it is ready; switching selection tools reuses that analysis. Changed composition pixels trigger fresh analysis. Auto Create also caches its region map for unchanged pixels and shares those detected object masks with Wand.
+Regional generation displays progress and a shimmer clipped to the submitted mask. Wand and Auto Select reuse the saved image map. A multi-object edit submits one crop with offsets, then clips the result into independent object Options. Prepared objects appear by name in the inspector before generating; Groups are created explicitly. Wand stays active until another tool is selected, replaces the selection on each plain click, and adds separate selections with Ctrl/Cmd-click. Rectangle, Line and Freehand can refine these masks using Add/Subtract. Color-map cleanup separates distant objects, removes isolated flecks and straightens jagged contours with hard edges; Feather is removed. The initial map prompt distinguishes physical objects even when they share a material and requires contrasting colors for adjacent objects.
 
 For an isolated browser regression check, inject `tests/mask-worker-fixture.js` before modules by setting `MOSAIC_BROWSER_INIT_SCRIPT=mask-worker-fixture.js`, then run `python tests/browser-runner.py mask-workflow-scenarios.js runMaskWorkflowChecks` against the local test server and test Chrome described in that runner. This uses fixture generation/segmentation and does not assess live image quality.
 
@@ -168,13 +168,13 @@ The left toolbar is organized as **Navigate** (Select and Pan), **Select** (Line
 
 Run `node --test tests/image-provider.test.cjs tests/mask-geometry.test.cjs` for the server request contract and `node --check <file.js>` for static JavaScript checks. The editor is a static application and has no bundling/build step. `tests/browser-scenarios.js` exercises browser canvas rendering, background generation, quality settings, mask alignment, and project round trips. Run a Node server with the `tests/mock-openai.cjs` preload (for example, `node --require ./tests/mock-openai.cjs local-server.js` when using the local server), load the scenario script into a fresh mozAI browser tab, then call `await runMosaicBrowserChecks()`. The preload replaces OpenAI responses with generated test images and avoids spending API credits. Live image quality requires an OpenAI API key.
 
-`tests/canvas-workspace-scenarios.js` covers markup, visible-image export, exact-mask clipboard layers, chat generation, result selection, project round trips, provider errors and stale responses. With the isolated mock server on port 8020 and test Chrome CDP on port 9227, run `python tests/browser-runner.py canvas-workspace-scenarios.js runCanvasWorkspaceChecks` and `python tests/browser-runner.py canvas-workspace-scenarios.js runCanvasWorkspaceFailureChecks`. Set `MOSAIC_WIDTH=390` and `MOSAIC_HEIGHT=844` for the mobile layout.
+`tests/canvas-workspace-scenarios.js` covers markup, visible-image export, exact-mask clipboard layers, full-image generation, result selection, project round trips, provider errors and stale responses. With the isolated mock server on port 8020 and test Chrome CDP on port 9227, run `python tests/browser-runner.py canvas-workspace-scenarios.js runCanvasWorkspaceChecks` and `python tests/browser-runner.py canvas-workspace-scenarios.js runCanvasWorkspaceFailureChecks`. Use `runMarkupEditingChecks` for click-to-place text, selection, bounding-box resizing and the compact full-image bar. Set `MOSAIC_WIDTH=390` and `MOSAIC_HEIGHT=844` for the mobile layout.
 
 ## Canvas controls
 
 Click the project name in the header to rename it. The name is preserved through generation and saved in `.moz` files.
 
-- **Line**, Rectangle, Oval, and **Wand** return to the pointer **Select** tool after completing a selection. Wand selects connected pixels with similar colors at the chosen tolerance.
+- **Line**, Rectangle, Oval, and **Wand** return to **Select** after completing a selection. Wand selects the prepared object color under the cursor, preserving holes and separate visible islands.
 - **Select** hover highlights the actual area and shows its selection name, including unsaved drafts. Outlines, guides, and points use SVG vectors with constant screen-width strokes, so zoom stays sharp. **Select** shows the actual outline and its points. For a draft, drag one point independently or drag inside to move the whole selection. For an applied/generated image, Select moves or skews the image and mask together. Choose **Edit** on its option to change only the mask. Undo restores each action; clicking outside deselects.
 - Scroll over the canvas to zoom around the pointer while using Select, Pan, or a selection tool. Click **Fit** in the header to restore the fitted view. There is no separate Zoom tool.
 - Drag the **AI Edit** popup by its header to reposition it. Its header also supports arrow keys.

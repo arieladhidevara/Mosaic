@@ -1,10 +1,17 @@
 # Object-aware editing
 
+The current selection workflow is documented in [Base object maps](object-maps.md).
+The Smart Select/SAM workflow below is historical. Its controls and model loaders
+are no longer mounted; legacy metadata remains readable in `.moz`.
+
 The existing Groups and Options remain the editing interface. Smart Select is
 an unchecked-by-default checkbox in regional prompt bars. Only checking it
 enables prompt-based intent and SAM masking; typing and Generate otherwise
 keep the manual selection. The prompt shows an indeterminate progress bar
 while finding/selecting the object, with the existing HUD labeled Smart Select.
+The saved AI connection is restored before analysis. The prompt shows the
+selected object, or explains a missing connection, unclear target, service error
+or quota limit. Retry repeats analysis without changing the prompt or drawn area.
 Unchecking restores the original shape and rejects pending results. The same
 setting is synchronized across the canvas prompt, area dialog and Group prompt.
 Rectangle, oval, polygon/freehand lasso, Wand and brush selections feed the same prompt analysis.
@@ -74,6 +81,7 @@ and the ZeroGPU service contract without requiring checkpoints. Browser suites:
 ```text
 python tests/browser-runner.py object-aware-scenarios.js runObjectAwareChecks
 python tests/browser-runner.py object-aware-scenarios.js runSmartSelectChecks
+python tests/browser-runner.py object-aware-scenarios.js runSmartSelectFailureChecks
 python tests/browser-runner.py object-aware-scenarios.js runLocalOpenCVRepairCheck
 python tests/browser-runner.py object-aware-scenarios.js runLocalMIGANRepairCheck
 ```

@@ -22,7 +22,7 @@ function decorate(){
     if(state.draftGroupId===g.id)section.classList.add('region-focused');
     const label=head.querySelector('.group-name');
     if(label)label.textContent=g.name;
-    (head.querySelector('.group-head-actions')||head).append(makeButton('✎','rename-group','Rename group'));
+    (head.querySelector('.group-head-actions')||head).append(makeButton('✎','rename-group','Rename object'));
     const details=document.createElement('div');details.className='group-details';
     const select=document.createElement('select');select.className='group-category';
     select.dataset.regionCategory=g.id;select.title='Set object category';select.setAttribute('aria-label','Object category');
@@ -30,7 +30,7 @@ function decorate(){
       const option=document.createElement('option');option.value=category;option.textContent=category==='Region'?'Uncategorized':category;
       option.selected=category===(g.category||'Region');select.append(option);
     }
-    details.append(select,makeButton('✦','identify','Identify object with AI'),makeButton('×','remove-group','Delete group and its options'));
+    details.append(select,makeButton('✦','identify','Identify object with AI'),makeButton('×','remove-group','Delete object and its options'));
     head.after(details);
     for(const row of section.querySelectorAll('.variant-row[data-patch]')){
       if(row.dataset.patch==='master')continue;
@@ -212,7 +212,7 @@ list.addEventListener('change',e=>{
   group.category=select.value;group.manualCategory=true;
   if(!group.manualName){
     const label=group.name.split(' · ').slice(1).join(' · ');
-    group.name=select.value+(label?' · '+label:'');
+    group.name=group.objectName||select.value+(label?' · '+label:'');
   }
   renderGroups();
 });
@@ -243,7 +243,7 @@ function onPointerMove(e){
   if(x>=0&&y>=0&&x<canvas.width&&y<canvas.height){
     const px=Math.floor(x),py=Math.floor(y);
     for(let i=state.groups.length-1;i>=0;i--){
-      const g=state.groups[i],mask=groupMask(g);
+      const g=state.groups[i];if(g.mergedInto||g.objectMapBatch)continue;const mask=groupMask(g);
       if(mask.getContext('2d',{willReadFrequently:true}).getImageData(px,py,1,1).data[3]>0){found=g;break}
     }
     // Unsubmitted selections have a hover area too, without creating a Group.

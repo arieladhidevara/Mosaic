@@ -119,7 +119,7 @@ window.runSmartSelectChecks=async function(){
   const core=window.MosaicCore,objects=window.MosaicObjects,{state}=core,$=id=>document.getElementById(id),checks=[];
   const assert=(v,message)=>{if(!v)throw Error(message)},pause=ms=>new Promise(r=>setTimeout(r,ms));
   const wait=async(fn,label)=>{for(let i=0;i<400;i++){if(fn())return;await pause(20)}throw Error('Timed out: '+label)};
-  await window.MosaicAccount.ready();$('apiKeyDialog').close();
+  await window.MosaicAccount.ready();document.querySelector('[data-enter-guest]').click();$('apiKeyDialog').close();
   const original={fetch:window.fetch,ready:window.MosaicAuth.isReady,ensure:window.MosaicAuth.ensure,request:window.MosaicAuth.request};
   let intentCalls=0,samCalls=0,edits=0,releaseIntent=null,releaseSAM=null,holdIntent=false,holdSAM=false,failSAM=false;
   const toggle=document.querySelector('#quickAreaPromptForm [data-smart-select]'),bar=document.querySelector('#quickAreaPromptForm [data-smart-select-progress]');
@@ -157,4 +157,80 @@ window.runSmartSelectChecks=async function(){
     core.showQuickPrompt(null,true);
     return {passed:checks.length,checks,intentCalls,samCalls};
   }finally{window.fetch=original.fetch;window.MosaicAuth.isReady=original.ready;window.MosaicAuth.ensure=original.ensure;window.MosaicAuth.request=original.request}
+};
+
+window.runSmartSelectFailureChecks=async function(){
+  const core=window.MosaicCore,objects=window.MosaicObjects,{state}=core;
+  const form=document.getElementById('quickAreaPromptForm'),input=document.getElementById('quickAreaPromptInput');
+  const toggle=form.querySelector('[data-smart-select]'),status=form.querySelector('[data-smart-select-status]'),bar=form.querySelector('[data-smart-select-progress]');
+  const assert=(value,message)=>{if(!value)throw Error(message)},pause=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+  const wait=async(predicate,label)=>{for(let i=0;i<500;i++){if(predicate())return;await pause(20)}throw Error('Timed out: '+label)};
+  const checks=[],saved={fetch:window.fetch,ready:window.MosaicAuth.isReady,restore:window.MosaicAuth.restore};
+  let connected=false,restoreResult=true,releaseRestore=null,holdRestore=false,failQuota=false,failIntent=false,unclear=false,invalidMask=false,intentCalls=0,samCalls=0,restoreCalls=0;
+  const enabled=value=>{toggle.checked=value;toggle.dispatchEvent(new Event('change',{bubbles:true}))};
+  const prompt=text=>{input.value=text;input.dispatchEvent(new Event('input',{bubbles:true}))};
+  let nextX=70;
+  const shape=()=>{const x=nextX+=10;core.selectTool('lasso');core.setMode('new');state.lasso=[{x,y:70},{x:x+180,y:70},{x:x+180,y:300},{x,y:300}];core.updateMaskWithLasso()};
+  await window.MosaicAccount.ready();document.querySelector('[data-enter-guest]').click();document.getElementById('apiKeyDialog').close();
+  assert(status,'Smart Select feedback is missing');
+  window.MosaicAuth.isReady=()=>connected;
+  window.MosaicAuth.restore=async()=>{restoreCalls++;if(holdRestore)await new Promise(resolve=>{releaseRestore=resolve});connected=restoreResult;return connected};
+  window.fetch=async(path,options)=>{
+    if(path==='/api/ai/object-intent'){
+      intentCalls++;if(failIntent)return Response.json({error:'Object inference unavailable.'},{status:502});
+      return Response.json({kind:unclear?'area':'object',label:'door',confidence:unclear?.4:.95,geometry:'appearance',behind:[]});
+    }
+    if(path==='/api/ai/sam3'){
+      samCalls++;if(failQuota)return Response.json({error:'SAM 3 quota or rate limit reached.',code:'SAM3_QUOTA'},{status:429});
+      const b=JSON.parse(options.body),mask=core.makeCanvas(b.width,b.height),x=mask.getContext('2d');
+      if(!invalidMask){x.fillStyle='#fff';x.fillRect(b.box[0]+20,b.box[1]+20,b.box[2]-b.box[0]-40,b.box[3]-b.box[1]-40)}
+      return Response.json({mask:mask.toDataURL('image/png')});
+    }
+    return saved.fetch(path,options);
+  };
+  const image=core.makeCanvas(640,400);image.getContext('2d').fillRect(0,0,640,400);core.setMaster(image,'Smart Select recovery fixture');
+  try{
+    shape();const manual=objects.maskKey(state.selectionMask);input.value='door';holdRestore=true;enabled(true);
+    await wait(()=>releaseRestore,'saved connection restore');
+    assert(!bar.hidden&&intentCalls===0,'Analysis did not wait for the saved connection');
+    holdRestore=false;releaseRestore();await wait(()=>!status.hidden&&status.textContent.includes('Selected: door'),'restored connection selection');
+    assert(restoreCalls===1&&samCalls===1&&objects.maskKey(state.selectionMask)!==manual,'Saved connection did not resume selection automatically');
+    checks.push('Checking Smart Select with an existing area and prompt waits for the saved AI connection, then selects automatically');
+
+    enabled(false);shape();const quotaMask=objects.maskKey(state.selectionMask);failQuota=true;input.value='door';enabled(true);
+    await wait(()=>!status.hidden&&status.textContent.includes('quota'),'quota feedback');
+    assert(bar.hidden&&objects.maskKey(state.selectionMask)===quotaMask,'Quota failure changed the drawn area or left progress running');
+    const beforeRetry=samCalls;failQuota=false;status.querySelector('[data-smart-select-retry]').click();
+    await wait(()=>!status.hidden&&status.textContent.includes('Selected: door'),'retry button');
+    assert(samCalls===beforeRetry+1&&input.value==='door','Retry did not repeat the same selection and prompt');
+    checks.push('Quota errors remain visible, preserve the drawn area, and Retry works without editing the prompt');
+
+    enabled(false);shape();connected=false;restoreResult=false;input.value='door';const beforeMissing=intentCalls;enabled(true);
+    await wait(()=>!status.hidden&&status.textContent.includes('Connect AI'),'missing connection feedback');
+    assert(intentCalls===beforeMissing&&bar.hidden&&!document.getElementById('apiKeyDialog').open,'Missing connection called inference, left progress running, or opened another key dialog');
+    checks.push('A missing AI connection is explained inline without silently skipping or reopening onboarding');
+
+    enabled(false);shape();connected=false;restoreResult=true;holdRestore=true;releaseRestore=null;input.value='door';enabled(true);
+    await wait(()=>releaseRestore,'cancelled connection restore');const beforeCancel=intentCalls;enabled(false);holdRestore=false;releaseRestore();await pause(100);
+    assert(intentCalls===beforeCancel&&status.hidden&&bar.hidden,'A cancelled connection restore started inference or showed stale feedback');
+    checks.push('Unchecking while the connection restores cancels inference and clears feedback');
+
+    shape();connected=true;failIntent=true;input.value='door';enabled(true);
+    await wait(()=>!status.hidden&&status.textContent.includes('Could not select'),'intent failure feedback');
+    assert(bar.hidden&&!status.querySelector('[data-smart-select-retry]').hidden,'Provider failure has no usable retry');
+    enabled(false);shape();failIntent=false;unclear=true;input.value='brighten this area';const beforeUnclear=samCalls;enabled(true);
+    await wait(()=>!status.hidden&&status.textContent.includes('No clear object'),'unclear target feedback');
+    assert(samCalls===beforeUnclear&&bar.hidden,'Unclear target still invoked segmentation');
+    checks.push('Provider failures and ambiguous prompts explain why the object was not selected');
+
+    enabled(false);shape();unclear=false;invalidMask=true;input.value='door';enabled(true);
+    await wait(()=>!status.hidden&&status.textContent.includes('Could not find that object'),'invalid mask feedback');
+    assert(bar.hidden,'Invalid mask left progress running');
+    enabled(false);shape();input.value='';const beforeEmpty=intentCalls;enabled(true);
+    await wait(()=>!status.hidden&&status.textContent.includes('Name the object'),'empty prompt feedback');
+    assert(intentCalls===beforeEmpty&&bar.hidden,'Empty prompt called inference');enabled(false);
+    assert(status.hidden,'Turning Smart Select off left old feedback visible');
+    checks.push('An unusable mask and an empty prompt show guidance; unchecking clears the message');
+    return {passed:checks.length,checks,intentCalls,samCalls,restoreCalls};
+  }finally{enabled(false);window.fetch=saved.fetch;window.MosaicAuth.isReady=saved.ready;window.MosaicAuth.restore=saved.restore}
 };

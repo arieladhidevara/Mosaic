@@ -30,6 +30,35 @@
 .smart-select-row input[type=checkbox]{appearance:auto;flex:none;width:13px;height:13px;min-width:0;margin:0;padding:0;accent-color:#b493f5;cursor:pointer}
 .smart-select-progress{position:relative;flex:1;min-width:28px;height:3px;overflow:hidden;border-radius:3px;background:#b493f525}
 .smart-select-progress[hidden]{display:none}
+.smart-select-status{display:flex;align-items:center;gap:8px;grid-column:1/-1;margin-top:4px;color:#b8acc9;font:10px/1.5 Inter,system-ui,sans-serif}
+.smart-select-status[hidden],.smart-select-status button[hidden]{display:none}
+.smart-select-status button{flex:none;padding:2px 5px;border:1px solid #b493f540;border-radius:4px;background:transparent;color:#d6c5ec;font:inherit;cursor:pointer}
+.smart-select-status button:focus-visible{outline:2px solid #b493f5;outline-offset:2px}
+.object-selection-controls{display:flex;flex-direction:column;align-items:flex-start;gap:5px;padding:5px 7px;font:10px/1.4 system-ui;color:#b8acc9}
+.object-map-selection-overlay{position:absolute;inset:0;width:100%;height:100%;z-index:3;pointer-events:none}
+.object-map-selection-overlay[hidden]{display:none}
+.object-category{margin-bottom:10px;border:1px solid #ffffff12;border-radius:7px;overflow:hidden}
+.object-category-head{display:flex;align-items:center;gap:7px;width:100%;padding:9px 8px;border:0;background:#ffffff04;color:#d7cee3;text-align:left;cursor:pointer;font:11px/1.4 system-ui}
+.object-category-head strong{flex:1;font-weight:600}.object-category-head>span:last-child{font-size:9px;color:#948a9f}
+.object-category-head:focus-visible{outline:2px solid #b493f5;outline-offset:-2px}.category-chevron{width:10px;color:#b493f5}
+.object-category-items{padding:0 5px 4px 10px;border-left:1px solid #b493f530;margin-left:9px}
+.object-category-items[hidden]{display:none}.object-category-items>.region-group{margin:6px 0 0}
+.object-collection-heading{display:flex;align-items:center;flex-wrap:wrap;gap:4px;padding-right:5px;background:#ffffff03}
+.object-collection-heading>.object-category-head{flex:1;min-width:100%;background:transparent}
+.collection-name{flex:1;min-width:0;margin:0 0 5px 22px;padding:4px 6px;border:1px solid transparent;border-radius:4px;background:transparent;color:#e8dff2;font:600 11px system-ui}
+.collection-name:focus{border-color:#b493f5}.remove-collection{margin-bottom:5px;border:0;background:transparent;color:#9a90a5;cursor:pointer}
+.empty-collection{display:block;padding:12px 6px;color:#948a9f;font:10px/1.5 system-ui}
+.object-collection-picker{width:100%;font:10px system-ui;color:#c8bed3;background:#1b1b24;border:1px solid #ffffff1c;border-radius:4px;padding:4px}
+.group-details:has(.object-collection-picker){flex-wrap:wrap}.group-details .object-collection-picker{flex-basis:100%}
+#autoGroupObjectsBtn{font:9px system-ui;width:auto;padding:5px;white-space:nowrap}
+.multi-object-actions{display:flex;align-items:center;flex-wrap:wrap;gap:6px;margin:8px 0;color:#b9a8cc;font:10px system-ui}
+.multi-object-actions[hidden]{display:none}.multi-object-actions button,.multi-object-actions select{padding:5px;border:1px solid #b493f542;border-radius:4px;background:#211c2b;color:#d9caeb;font:10px system-ui;max-width:150px;cursor:pointer}
+.object-selection-controls label{display:flex;align-items:center;gap:5px;margin:0;font:inherit;cursor:pointer}
+.object-selection-controls input{width:13px;height:13px;margin:0;accent-color:#b493f5}
+#objectMapStatus{font-size:9px;color:#92889f;overflow-wrap:anywhere}
+#objectMapRetry{font:10px system-ui;border:1px solid #ffffff25;background:transparent;color:#c9b5e5;border-radius:4px;padding:3px 5px}
+#objectMapRetry[hidden]{display:none}
+@media(max-width:730px){.object-selection-controls{flex-direction:row;align-items:center;flex-wrap:wrap;min-width:145px}#objectMapStatus{max-width:145px}}
 .smart-select-progress>span{position:absolute;inset:0 auto 0 0;width:40%;border-radius:inherit;background:#b493f5;animation:smart-select-scan 1.15s ease-in-out infinite}
 @keyframes smart-select-scan{from{transform:translateX(-100%)}to{transform:translateX(350%)}}
 @media(prefers-reduced-motion:reduce){.smart-select-progress>span{width:100%;animation:none;opacity:.65}}

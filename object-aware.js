@@ -21,6 +21,25 @@ function mountSmartSelect(form){
   const title=document.createElement('span');title.textContent='Smart Select';label.append(input,title);
   const progress=document.createElement('div');progress.className='smart-select-progress';progress.dataset.smartSelectProgress='';progress.hidden=true;progress.setAttribute('role','progressbar');progress.setAttribute('aria-label','Smart Select');progress.append(document.createElement('span'));
   row.append(label,progress);form.insertBefore(row,form.querySelector('.prompt-footer,.dialog-actions,[type="submit"]'));
+  const status=document.createElement('div');status.className='smart-select-status';status.dataset.smartSelectStatus='';status.hidden=true;status.setAttribute('role','status');status.setAttribute('aria-live','polite');
+  const detail=document.createElement('span');detail.dataset.smartSelectDetail='';
+  const retry=document.createElement('button');retry.type='button';retry.dataset.smartSelectRetry='';retry.textContent='Retry';retry.hidden=true;
+  retry.addEventListener('click',()=>{const prompt=form.querySelector('textarea,input[type="text"]');if(prompt)promptInput({target:prompt})});
+  status.append(detail,retry);row.after(status);
+}
+function clearSmartStatus(){document.querySelectorAll('[data-smart-select-status]').forEach(status=>{status.hidden=true})}
+function isCurrentSelection(context){return smartSelectEnabled&&context.mode===smartModeRevision&&context.revision===revision&&context.project===state.selectionGeneration&&context.owner===selection}
+function showSmartStatus(context,detail,retry=false){
+  if(!isCurrentSelection(context))return;
+  const status=(context.form||document.getElementById('quickAreaPromptForm'))?.querySelector('[data-smart-select-status]');if(!status)return;
+  status.querySelector('[data-smart-select-detail]').textContent=detail;status.querySelector('[data-smart-select-retry]').hidden=!retry;status.hidden=false;
+}
+function smartFailure(error){
+  if(error?.code==='SAM3_QUOTA'||error?.status===429)return 'Smart Select quota reached. Try again later or keep your drawn selection.';
+  if(error?.status===401)return 'Sign in again to use Smart Select.';
+  if(error?.code==='OPENAI_KEY_MISSING')return 'Connect AI in your profile to use Smart Select.';
+  if(error?.status===503||error?.status===504)return 'Object selection is temporarily unavailable. Try again later.';
+  return 'Could not select the object. Retry or adjust your area and prompt.';
 }
 function clearSmartProgress(){
   smartProgress=null;document.querySelectorAll('[data-smart-select-progress]').forEach(bar=>{bar.hidden=true;bar.closest('form')?.removeAttribute('aria-busy')});window.MosaicMaskProgress?.hide('smart-select');
@@ -35,14 +54,14 @@ function showSmartProgress(context,detail){
 function finishSmartProgress(context){if(smartProgress?.revision===context.revision&&smartProgress?.mode===context.mode)clearSmartProgress()}
 function smartSelectChanged(event){
   const input=event.target;if(!input.matches('[data-smart-select]'))return;
-  smartSelectEnabled=input.checked;smartModeRevision++;revision++;clearTimeout(timer);clearSmartProgress();restoreOriginal();
+  smartSelectEnabled=input.checked;smartModeRevision++;revision++;clearTimeout(timer);clearSmartProgress();clearSmartStatus();restoreOriginal();
   if(smartSelectEnabled&&selection){selection.manual=false;selection.manualIntent=null}
   document.querySelectorAll('[data-smart-select]').forEach(control=>{control.checked=smartSelectEnabled});
   if(smartSelectEnabled){const prompt=input.closest('form')?.querySelector('textarea,input[type="text"]');if(prompt)promptInput({target:prompt})}
 }
 function currentGroup(){return state.groups.find(g=>g.id===state.draftGroupId||g.patchIds.includes(state.selectionTargetPatchId))}
-function reset(){clearSmartProgress();clearTimeout(timer);clearTimeout(repairTimer);revision++;repairRevision++;selection=null;preview=null;cancelAnimationFrame(previewFrame);maskCache.clear();intentCache.clear();inflight.clear();failures.clear();if(worker){worker.terminate();worker=null}for(const job of jobs.values())job.reject(Error('Project changed'));jobs.clear()}
-function cancelSelection(){clearSmartProgress();revision++;clearTimeout(timer);cancelAnimationFrame(previewFrame);selection=null;preview=null}
+function reset(){clearSmartProgress();clearSmartStatus();clearTimeout(timer);clearTimeout(repairTimer);revision++;repairRevision++;selection=null;preview=null;cancelAnimationFrame(previewFrame);maskCache.clear();intentCache.clear();inflight.clear();failures.clear();if(worker){worker.terminate();worker=null}for(const job of jobs.values())job.reject(Error('Project changed'));jobs.clear()}
+function cancelSelection(){window.MosaicObjectMap?.cancelSelection();clearSmartProgress();clearSmartStatus();revision++;clearTimeout(timer);cancelAnimationFrame(previewFrame);selection=null;preview=null}
 function selectionChanged(){
   if(applying)return;
   const mask=state.selectionMask;
@@ -50,7 +69,7 @@ function selectionChanged(){
   const hash=signature(data(mask));
   if(selection?.hash===hash&&selection.project===state.selectionGeneration&&selection.target===state.selectionTargetPatchId)return;
   const corrected=Boolean(preview&&selection?.project===state.selectionGeneration),manualIntent=corrected?preview.intent:null;
-  revision++;clearTimeout(timer);clearSmartProgress();preview=null;
+  revision++;clearTimeout(timer);clearSmartProgress();clearSmartStatus();preview=null;
   selection={hash,project:state.selectionGeneration,target:state.selectionTargetPatchId,mask:copy(mask),paths:window.MozMaskGeometry.copyPaths(state.selectionPaths),groupId:currentGroup()?.id||null,manual:corrected,manualIntent};
 }
 function freeze(){selectionChanged();if(!selection||!count(data(selection.mask)))return null;if(!preview)selection.paths=window.MozMaskGeometry.copyPaths(state.selectionPaths);return {...selection,groupId:currentGroup()?.id||selection.groupId}}
@@ -106,35 +125,47 @@ async function segment(frame,label,mask){
 }
 async function analyze(context,prompt,display=true){
   const fallback={mask:context.mask,paths:context.paths,intent:context.manualIntent||null,groupId:context.groupId};
-  if(!smartSelectEnabled||context.mode!==smartModeRevision||context.manual||!window.MosaicAuth?.isReady?.()||state.pendingSourceId||state.maskEditOnly||prompt.trim().length<2)return fallback;
-  showSmartProgress(context,'Finding object…');
-  const frame=frameContext(context.mask),known=objects();
-  const key=context.mode+':'+signature(new TextEncoder().encode(frame.image))+signature(data(context.mask))+JSON.stringify(known)+prompt.trim();
-  let promise=intentCache.get(key);
-  if(!promise){promise=(async()=>{
-    const intent=await window.MosaicAccount.request('/api/ai/object-intent',{method:'POST',body:{image:frame.intentImage,prompt,objects:known}});
-    if(!smartSelectEnabled||context.mode!==smartModeRevision||context.revision!==revision){intentCache.delete(key);return fallback}
-    if(intent.kind!=='object'||intent.confidence<.8||!intent.label)return fallback;
-    showSmartProgress(context,'Selecting object…');
-    // A selected existing object can reuse its mask only if the semantic label
-    // still matches. A new target noun must go back through SAM.
-    const existing=state.groups.find(g=>g.id===context.groupId),same=existing?.objectLabel?.toLowerCase()===intent.label.toLowerCase();
-    const mask=same&&!existing.objectMaskUncertain?copy(core.groupMask(existing)):await segment(frame,intent.label,context.mask);
-    if(!mask){intentCache.delete(key);return fallback}
-    return {mask,paths:core.maskPathsFromRaster(mask),intent,groupId:same?existing.id:core.matchingGroup(mask)?.id||(!existing?.patchIds.length?context.groupId:null)};
-  })().catch(()=>{intentCache.delete(key);return fallback});remember(intentCache,key,promise,64)}
-  const result=await promise;
-  finishSmartProgress(context);
-  if(!smartSelectEnabled||context.mode!==smartModeRevision)return fallback;
-  if(display&&result.intent)showMask(result.mask,context,result.intent);
-  return result;
+  if(!isCurrentSelection(context)||context.manual||state.pendingSourceId||state.maskEditOnly)return fallback;
+  if(prompt.trim().length<2){showSmartStatus(context,'Name the object in your prompt to select it.');return fallback}
+  try{
+    // Restore the saved connection before deciding it is missing. Readiness can
+    // still be pending when Smart Select is checked just after opening a project.
+    showSmartProgress(context,'Checking AI connection…');
+    if(!window.MosaicAuth?.isReady?.()&&!(await window.MosaicAuth?.restore?.())){
+      showSmartStatus(context,'Connect AI in your profile to use Smart Select.',true);return fallback;
+    }
+    if(!isCurrentSelection(context))return fallback;
+    showSmartProgress(context,'Finding object…');
+    const frame=frameContext(context.mask),known=objects();
+    const key=context.mode+':'+signature(new TextEncoder().encode(frame.image))+signature(data(context.mask))+JSON.stringify(known)+prompt.trim();
+    let promise=intentCache.get(key);
+    if(!promise){promise=(async()=>{
+      const intent=await window.MosaicAccount.request('/api/ai/object-intent',{method:'POST',body:{image:frame.intentImage,prompt,objects:known}});
+      if(!isCurrentSelection(context)){intentCache.delete(key);return fallback}
+      if(intent.kind!=='object'||intent.confidence<.8||!intent.label){intentCache.delete(key);return {...fallback,notice:'No clear object found. Name one object in your prompt.'}}
+      showSmartProgress(context,'Selecting object…');
+      // A selected existing object can reuse its mask only if the semantic label
+      // still matches. A new target noun must go back through SAM.
+      const existing=state.groups.find(g=>g.id===context.groupId),same=existing?.objectLabel?.toLowerCase()===intent.label.toLowerCase();
+      const mask=same&&!existing.objectMaskUncertain?copy(core.groupMask(existing)):await segment(frame,intent.label,context.mask);
+      if(!mask){intentCache.delete(key);return {...fallback,notice:'Could not find that object in this area. Adjust the area or prompt.',retry:true}}
+      return {mask,paths:core.maskPathsFromRaster(mask),intent,groupId:same?existing.id:core.matchingGroup(mask)?.id||(!existing?.patchIds.length?context.groupId:null)};
+    })().catch(error=>{intentCache.delete(key);return {...fallback,notice:smartFailure(error),retry:true}});remember(intentCache,key,promise,64)}
+    const result=await promise;
+    if(!isCurrentSelection(context))return fallback;
+    if(display&&result.intent)showMask(result.mask,context,result.intent);
+    if(result.notice)showSmartStatus(context,result.notice,result.retry);
+    else if(result.intent)showSmartStatus(context,'Selected: '+result.intent.label+'.');
+    return result;
+  }catch(error){showSmartStatus(context,smartFailure(error),true);return fallback}
+  finally{finishSmartProgress(context)}
 }
 function promptInput(event){
   const input=event.target;
   if(!['quickAreaPromptInput','areaPromptInput'].includes(input.id)&&!(input.type==='text'&&input.closest('.region-option-prompt')))return;
   if(!smartSelectEnabled)return;
   const context=freeze();if(!context)return;
-  revision++;clearTimeout(timer);clearSmartProgress();restoreOriginal();
+  revision++;clearTimeout(timer);clearSmartProgress();clearSmartStatus();restoreOriginal();
   context.owner=selection;context.revision=revision;context.mode=smartModeRevision;context.form=input.closest('form');
   const prompt=input.value;
   timer=setTimeout(()=>void analyze(context,prompt),config.debounceMs??650);
@@ -281,10 +312,8 @@ async function repairScene(version){
     }
   }
 }
-document.addEventListener('input',promptInput);
-document.addEventListener('change',smartSelectChanged);
-for(const id of ['quickAreaPromptForm','areaPromptForm'])mountSmartSelect(document.getElementById(id));
-new MutationObserver(()=>{document.querySelectorAll('.region-option-prompt').forEach(mountSmartSelect)}).observe(document.getElementById('groupList'),{childList:true,subtree:true});
+// Legacy object metadata and repair rendering remain readable in older .moz
+// files. Selection now comes exclusively from the saved Base color map.
 window.addEventListener('mosaic:projectloaded',()=>{reset();scheduleRepair()});
 window.MosaicObjects={reset,cancelSelection,selectionChanged,prepare,capture,generationMask,validateGenerated,generated,drawPreview,orderedGroups,drawBase,drawOriginal,drawOptionRepairs,drawComposition,invalidated,scheduleRepair,isSmartSelectEnabled:()=>smartSelectEnabled,maskKey:mask=>signature(data(mask)),
   // Useful for project codecs and deterministic integration scenarios.

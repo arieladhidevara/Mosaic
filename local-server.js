@@ -21,6 +21,7 @@ const apiRoutes = new Map([
   ['/api/ai/classify', require('./api/ai/classify')],
   ['/api/ai/sam3', require('./api/ai/sam3')],
   ['/api/ai/object-intent', require('./api/ai/object-intent')],
+  ['/api/ai/object-map', require('./api/ai/object-map')],
   ['/api/ai/option-name', require('./api/ai/option-name')],
 ]);
 
@@ -62,6 +63,12 @@ const publicFiles = new Set([
   'slimsam-mask-utils.mjs',
   'auto-regions.js',
   'object-aware.js',
+  'object-map.js',
+  'object-management.js',
+  'generated-image.mjs',
+  'object-map-utils.mjs',
+  'object-map-cleanup.mjs',
+  'object-map-geometry.mjs',
   'object-mask-utils.mjs',
   'object-repair-worker.js',
   'premium.js',

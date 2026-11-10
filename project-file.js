@@ -99,7 +99,7 @@ function projectState(){
     'selectionMask','selectionPoints','selectionPaths','selectionTargetPatchId','selectionMode','tool','pendingRevealOnly','serial',
     'draftGroupId','queuedGroupId','selectionGeneration','brushTargetId',
     'undo','redo','zoom','fitZoom','projectTitle','projectTitleManual','brushSize','brushIntensity','maskEditOnly',
-    'markups','chatMessages','chatResult'
+    'markups','chatMessages','chatResult','objectMap','objectMaps','autoObjectSelect','featherEnabled','collapsedCategories','objectCollections','objectSelectionParts'
   ];
   return Object.fromEntries(fields.map(name=>[name,state[name]]));
 }
@@ -208,6 +208,7 @@ async function loadProjectFile(file){
     window.MosaicObjects?.reset();
     window.MosaicWorkspace?.reset();
     Object.assign(state,saved);
+    state.objectCollections=Array.isArray(saved.objectCollections)?saved.objectCollections:[];state.objectSelectionParts=Array.isArray(saved.objectSelectionParts)?saved.objectSelectionParts:[];
     state.selectionPoints=Array.isArray(saved.selectionPoints)?saved.selectionPoints:[];
     state.selectionPaths=Array.isArray(saved.selectionPaths)?saved.selectionPaths:[];
     state.queue=restoredQueue;

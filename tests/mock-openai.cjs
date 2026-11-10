@@ -12,8 +12,25 @@ const png=Buffer.concat([Buffer.from('89504e470d0a1a0a','hex'),chunk('IHDR',head
 const realFetch=global.fetch;
 global.fetch=async(url,options)=>{
   if(!String(url).startsWith('https://api.openai.com/'))return realFetch(url,options);
+  let body;try{body=JSON.parse(options?.body||'{}')}catch{}
+  if(body?.text?.format?.name==='object_map_categories')return Response.json({output_text:JSON.stringify({objects:[{id:1,category:'Wall',label:'wall'},{id:2,category:'Door',label:'door'},{id:3,category:'Floor',label:'floor'},{id:4,category:'Door',label:'second door'}]})});
   if(String(url).endsWith('/images/edits')){
     await new Promise(resolve=>setTimeout(resolve,140));
+    if(body?.prompt?.includes('INSTANCE SEGMENTATION COLOR MAP')){
+      const {PALETTE}=await import('../object-map-utils.mjs');
+      const [w,h]=body.size.split('x').map(Number),head=Buffer.alloc(13);head.writeUInt32BE(w,0);head.writeUInt32BE(h,4);head[8]=8;head[9]=6;
+      const data=Buffer.alloc(h*(w*4+1));
+      for(let y=0;y<h;y++)for(let x=0;x<w;x++){
+        let id=x>w*.15&&x<w*.48&&y>h*.2&&y<h*.8?2:x>w*.58&&x<w*.9&&y>h*.25&&y<h*.75?3:1;
+        if(x>w*.25&&x<w*.3&&y>h*.4&&y<h*.5)id=0;
+        if(x>w*.5&&x<w*.55&&y>h*.3&&y<h*.6)id=2;
+        // A distant single-pixel color fleck must not join the left object.
+        if(x===Math.round(w*.95)&&y===Math.round(h*.12))id=2;
+        const i=y*(w*4+1)+1+x*4;data.set(id?PALETTE[id-1].rgb:[0,0,0],i);data[i+3]=255;
+      }
+      const map=Buffer.concat([Buffer.from('89504e470d0a1a0a','hex'),chunk('IHDR',head),chunk('IDAT',deflateSync(data)),chunk('IEND',Buffer.alloc(0))]);
+      return Response.json({data:[{b64_json:map.toString('base64')}]});
+    }
     return Response.json({data:[{b64_json:png.toString('base64')}]});
   }
   return Response.json({output_text:'Wall'});

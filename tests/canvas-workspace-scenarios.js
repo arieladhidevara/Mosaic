@@ -1,4 +1,73 @@
 /* Run with tests/browser-runner.py against tests/mock-openai.cjs only. */
+window.runMarkupEditingChecks=async function(){
+  const core=window.MosaicCore,workspace=window.MosaicWorkspace,{state,canvas,makeCanvas}=core,$=id=>document.getElementById(id),checks=[];
+  const assert=(value,message)=>{if(!value)throw Error(message)};
+  const at=(target,type,x,y)=>{const r=target.getBoundingClientRect();target.dispatchEvent(new PointerEvent(type,{bubbles:true,button:0,pointerId:55,pointerType:'mouse',clientX:r.left+x/canvas.width*r.width,clientY:r.top+y/canvas.height*r.height}))};
+  const drag=(target,a,b)=>{at(target,'pointerdown',...a);at(target,'pointermove',...b);at(target,'pointerup',...b)};
+  const key=(key,extra={})=>document.body.dispatchEvent(new KeyboardEvent('keydown',{bubbles:true,key,...extra}));
+  const typeText=text=>{const editor=$('markupTextEditor');editor.value=text;editor.dispatchEvent(new Event('input'));editor.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}))};
+  const originalCapture=Element.prototype.setPointerCapture;Element.prototype.setPointerCapture=()=>{};
+  try{
+    await window.MosaicAccount.ready();document.querySelector('[data-enter-guest]').click();for(const d of document.querySelectorAll('dialog[open]'))d.close();
+    const image=makeCanvas(800,500),ctx=image.getContext('2d');ctx.fillStyle='#242735';ctx.fillRect(0,0,800,500);core.setMaster(image,'Markup editing');
+    await new Promise(resolve=>requestAnimationFrame(resolve));core.updateZoomFit();
+    assert($('markupToolbar').hidden,'Markup toolbar should start hidden');
+    assert($('markupColor').value==='#b493f5','Default markup color is not purple');
+    $('markupModeButton').click();assert(!$('markupToolbar').hidden&&$('markupModeButton').getAttribute('aria-pressed')==='true','Markup mode did not open');
+    document.querySelector('[data-markup="text"]').click();const ink=$('markupCanvas');
+    at(ink,'pointerdown',80,70);at(ink,'pointerup',80,70);
+    const created=state.markups[0];
+    assert(created?.type==='text'&&Math.abs(created.points[0].x-80)<.01&&Math.abs(created.points[0].y-70)<.01,'Text did not appear at the clicked point');
+    assert(!$('markupTextEditor').hidden&&document.activeElement===$('markupTextEditor'),'Clicking Text did not open the on-canvas editor');
+    typeText('Purple note');assert(state.markups[0].text==='Purple note'&&state.markups[0].color==='#b493f5','On-canvas typing or default color failed');
+    checks.push('Markup tools stay hidden until Markup mode; Text appears and accepts typing at the clicked point in purple');
+
+    document.querySelector('[data-tool="select"]').click();assert($('markupToolbar').hidden,'Select did not close the markup toolbar');
+    const editorFont=created.fontSize,measure=ink.getContext('2d');measure.font=`600 ${editorFont}px system-ui, sans-serif`;
+    const textWidth=measure.measureText('Purple note').width,textHeight=editorFont*1.25;
+    drag(core.overlay,[85,75],[115,95]);
+    assert(Math.abs(state.markups[0].transform.x-30)<.05&&Math.abs(state.markups[0].transform.y-20)<.05,'Select could not move a text markup');
+    const corner=[110+textWidth,90+textHeight];
+    drag(core.overlay,corner,[corner[0]+textWidth*.5,corner[1]+textHeight*.5]);
+    assert(state.markups[0].transform.scaleX>1.45&&state.markups[0].transform.scaleY>1.45,'Bounding box did not enlarge text');
+    const larger=state.markups[0].transform,largeCorner=[110+textWidth*larger.scaleX,90+textHeight*larger.scaleY];
+    drag(core.overlay,largeCorner,[110+textWidth,90+textHeight]);
+    assert(state.markups[0].transform.scaleX<larger.scaleX&&state.markups[0].transform.scaleY<larger.scaleY,'Bounding box did not shrink text');
+    at(core.overlay,'dblclick',120,100);assert(!$('markupTextEditor').hidden,'Double-click did not edit existing text');typeText('Edited note');
+    assert(state.markups.length===1&&state.markups[0].text==='Edited note','Text editing created a duplicate');
+    key('z',{ctrlKey:true});assert(state.markups[0].text==='Purple note','Undo did not restore text');key('y',{ctrlKey:true});assert(state.markups[0].text==='Edited note','Redo did not restore text edit');
+    checks.push('Select moves text; bounding-box handles enlarge and shrink it; double-click edits text with undo/redo');
+
+    for(const [index,tool] of ['line','rect','ellipse','freehand','arrow'].entries()){
+      $('markupModeButton').click();document.querySelector(`[data-markup="${tool}"]`).click();$('markupText').value='';
+      const x=60+index*130,y=250;drag(ink,[x,y],[x+80,y+70]);const itemIndex=state.markups.length-1,item=state.markups[itemIndex];
+      assert(item.type===tool,'Could not create '+tool);document.querySelector('[data-tool="select"]').click();
+      drag(core.overlay,[x+40,y+35],[x+55,y+45]);assert(Math.abs(state.markups[itemIndex].transform.x-15)<.05,tool+' cannot move with Select');
+      const padding=item.width/2,corner=[x+80+padding+15,y+70+padding+10];
+      drag(core.overlay,corner,[corner[0]+24,corner[1]+20]);
+      assert(state.markups[itemIndex].transform.scaleX>1.1&&state.markups[itemIndex].transform.scaleY>1.1,tool+' cannot resize with its bounding box');
+    }
+    checks.push('Select moves and resizes line, box, oval, freehand and arrow markups');
+
+    const last=state.markups.at(-1),before=JSON.stringify(last),history=state.undo.length;
+    at(core.overlay,'pointerdown',last.points[0].x+45,last.points[0].y+40);at(core.overlay,'pointermove',last.points[0].x+65,last.points[0].y+55);at(core.overlay,'pointercancel',last.points[0].x+65,last.points[0].y+55);
+    assert(JSON.stringify(state.markups.at(-1))===before&&state.undo.length===history,'Cancelled transform changed markup or history');
+    key('Delete');assert(state.markups.length===5,'Delete did not remove selected markup');key('z',{ctrlKey:true});assert(state.markups.length===6,'Undo did not restore deleted markup');
+    const exported=workspace.visibleImage(),plain=workspace.visibleImage({annotations:false});assert(exported.toDataURL()!==plain.toDataURL(),'Transformed markup is missing from export');
+    checks.push('Cancelled transforms preserve markup; Delete and Undo work; export includes transformed annotations');
+
+    const bar=$('compositionChat'),row=$('compositionChatForm').querySelector('.chat-prompt-row'),bounds=bar.getBoundingClientRect();
+    assert(bar.closest('.workspace-dock')&&bar.textContent.includes('AI Edit Full Image')&&!$('chatToggle')&&!$('chatMessages'),'Full-image editor is not the compact bottom bar');
+    assert(row.querySelector('textarea')&&row.querySelector('.region-reference-button')&&row.querySelector('[type=submit]'),'Full-image bar is missing prompt, + or Generate');
+    assert(bounds.left>=0&&bounds.right<=innerWidth&&bounds.bottom<=innerHeight&&row.getBoundingClientRect().height<90,'Full-image bar overflows the viewport');
+    const label=bar.querySelector('.full-image-label').getBoundingClientRect();
+    assert(label.width>0&&label.left>=core.overlay.closest('#viewport').getBoundingClientRect().left,'Full-image label is hidden under the tool rail');
+    assert(!document.activeElement.closest('input,textarea'),'Text edit left a hidden input focused');
+    checks.push('AI Edit Full Image has one prompt row, reference + and Generate, and fits the viewport');
+    return {passed:checks.length,checks,viewport:{width:innerWidth,height:innerHeight}};
+  }finally{Element.prototype.setPointerCapture=originalCapture}
+};
+
 window.runCanvasWorkspaceChecks=async function(){
   const core=window.MosaicCore,workspace=window.MosaicWorkspace,{state,canvas,overlay,makeCanvas}=core;
   const $=id=>document.getElementById(id),checks=[],requests=[];
@@ -36,12 +105,16 @@ window.runCanvasWorkspaceChecks=async function(){
     for(const d of document.querySelectorAll('dialog[open]'))d.close();
     state.reference=frame('#334455');core.setMaster(frame('#224488'),'Collage workspace');
     await new Promise(r=>requestAnimationFrame(r));core.updateZoomFit();
-    assert($('markupToolbar')&&!$('markupToolbar').hidden,'Bottom toolbar missing');
+    assert($('markupToolbar')&&$('markupToolbar').hidden,'Markup tools should stay hidden until Markup mode');
+    $('markupModeButton').click();assert(!$('markupToolbar').hidden,'Markup mode did not reveal the tools');
     assert($('markupToolbar').getBoundingClientRect().top>canvas.getBoundingClientRect().top,'Markup toolbar must be below canvas');
     const ink=$('markupCanvas');
     for(const tool of ['line','rect','ellipse','freehand','text','arrow']){
       $('markupText').value='Warm walnut here';document.querySelector(`[data-markup="${tool}"]`).click();
-      drag(ink,[110,160],[240,240]);
+      if(tool==='text'){
+        at(ink,'pointerdown',110,160);at(ink,'pointerup',110,160);
+        $('markupTextEditor').value='Warm walnut here';$('markupTextEditor').dispatchEvent(new Event('input'));$('markupTextEditor').dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}));
+      }else drag(ink,[110,160],[240,240]);
       assert(state.markups.at(-1).type===tool,tool+' markup did not commit');
     }
     $('markupExit').click();assert(state.markups.length===6,'Markup count');
@@ -81,7 +154,7 @@ window.runCanvasWorkspaceChecks=async function(){
     checks.push('Pasted layer creation and transforms participate in undo/redo');
 
     core.resetSelection();core.selectTool('select');core.render();
-    $('chatToggle').click();$('compositionChatPrompt').value='Apply warm walnut material while keeping Base geometry';
+    $('compositionChatPrompt').value='Apply warm walnut material while keeping Base geometry';
     const refFile=await new Promise(r=>frame('#b58c58',256,256).toBlob(b=>r(new File([b],'walnut-reference.png',{type:'image/png'}))));
     const transfer=new DataTransfer();transfer.items.add(refFile);
     const refInput=$('compositionChatForm').querySelector('input[type=file]');refInput.files=transfer.files;refInput.dispatchEvent(new Event('change'));
@@ -139,10 +212,9 @@ window.runCanvasWorkspaceChecks=async function(){
     assert(core.exactMaskBoundingBox(state.selectionMask),'Freehand drag did not close into a selection');
     $('resultCancel').click();assert(!state.chatResult,'Cancel left a result active');
     checks.push('Freehand selection closes on pointer release; Cancel restores collage');
-    const resultRow=$('chatMessages').querySelector('.chat-result-thumbnail');resultRow.click();
-    assert(state.chatResult,'Chat history result did not reopen');
-    checks.push('Chat history reopens earlier results for another cutout');
-    selectRect();
+    assert(!$('chatToggle')&&!$('chatMessages'),'Full-image edit should only show the compact prompt bar');
+    assert($('compositionChat').closest('.workspace-dock')&&$('compositionChat').textContent.includes('AI Edit Full Image'),'Full-image edit bar is not in the bottom dock');
+    checks.push('AI Edit Full Image stays in the bottom dock with prompt, reference button and Generate');
     const panel=$('compositionChat').getBoundingClientRect();
     assert(panel.left>=0&&panel.right<=innerWidth&&panel.top>=0&&panel.bottom<=innerHeight,'Chat is outside the window');
     return {passed:checks.length,checks,requests:requests.length,viewport:{width:innerWidth,height:innerHeight}};
@@ -175,7 +247,7 @@ window.runCanvasWorkspaceFailureChecks=async function(){
     premium.restoreProjectState({...saved,root:{id:'archive-test',base:frame('#00ff00'),groups:[],patches:new Map(),sources:new Map(),parent:null},previewNode:'archive-test'});core.render();
     assert(pixel(workspace.visibleImage(),200,150)[1]===255,'Save snapshot omitted archive preview');
     premium.restoreProjectState(saved);core.render();checks.push('Save snapshot follows the currently displayed archive image');
-    $('chatToggle').click();$('compositionChatPrompt').value='Test generation failure';
+    $('compositionChatPrompt').value='Test generation failure';
     const before=canvas.toDataURL();
     window.fetch=async(url,options)=>String(url)==='/api/ai/harmonize'?Response.json({error:'Simulated provider failure'},{status:429}):nativeFetch(url,options);
     $('compositionChatForm').requestSubmit();await wait(()=>$('chatStatus').textContent.includes('Simulated provider failure'));
