@@ -16,6 +16,12 @@ test('local server serves every current frontend script and stylesheet',()=>{
     assert.ok(fs.statSync(path.join(root,file)).isFile(),file+' does not exist');
   }
 });
+test('local server allows deterministic scene clustering module imported by object manager',()=>{
+  const manager=fs.readFileSync(path.join(root,'object-management.js'),'utf8');
+  assert.match(manager,/from '\.\/object-clustering\.mjs'/);
+  assert.ok(files.has('object-clustering.mjs'),'Frontend import of object-clustering.mjs would return 404');
+});
+
 test('local server serves the browser model worker and its modules with JavaScript MIME',()=>{
   for(const file of ['slimsam-worker.mjs','slimsam-mask-utils.mjs','mask-cleanup.mjs','auto-regions.js','mask-progress.js','slimsam-wand.js']){
     assert.ok(files.has(file),'Local server returned 404 for '+file);
