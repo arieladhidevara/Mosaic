@@ -137,6 +137,19 @@ function partsOverlappingMask(mask){
   return parts;
 }
 
+// Line, Rectangle and Oval select all touched Object IDs as one temporary
+// generation area. They are not permanently merged into a single object.
+// After generation the existing independent masks receive separate Options.
+function selectShape(mask){
+  if(state.pendingSourceId||state.maskEditOnly)return null;
+  const parts=partsOverlappingMask(mask);
+  if(!parts.length)return null;
+  const combined=makeCanvas(canvas.width,canvas.height),ctx=combined.getContext('2d');
+  for(const part of parts)ctx.drawImage(part.mask,0,0);
+  picking=true;pickingIds=[];pickingMode='new';
+  operation={parts:[],picked:parts};
+  return combined;
+}
 function refineMask(mask,tool){
   // Add/subtract also snap the NEW drawn shape to current object masks.
   if(!['rect','ellipse','lasso','freehand'].includes(tool)||state.pendingSourceId||state.maskEditOnly)return mask;
@@ -253,7 +266,7 @@ function selectAt(point,options={}){
 function selectObject(object,{append=false}={}){const part=window.MosaicObjectManager.partForObject(object),mode=append&&state.objectSelectionParts?.length?'add':'new';operation={parts:snapshotSelection(),picked:[part]};picking=true;pickingMode=mode;state.selectionTargetPatchId=null;state.draftGroupId=null;state.selectedPatchId=null;state.maskEditOnly=false;core.setMode(mode);core.applyWandMask(part.mask);picking=false}
 function invalidateBase(){serial++;busy=false;pendingBase=state.master;attemptedBase=pendingBase;labels=null;state.objectMap=null;state.objectMapSelection=null;if(state.master)delete state.objectMaps?.[sourceKey(state.master)];leave();window.MosaicMaskProgress?.hide('objects');update('Image changed · prepare objects again',true)}
 function imageChanged(){if(state.objectMapLocked)return;if(state.master&&state.master!==heldImage&&state.master!==pendingBase)baseLoaded(state.master)}
-window.MosaicObjectMap={imageReady:baseLoaded,baseLoaded,prepareBase,refineMask,selectionCompleted,cancelSelection,partsForSelection,adoptSelection,snapshotSelection,selectObject,hasSelection:()=>Boolean(state.objectSelectionParts?.length),hydrate,invalidateBase,drawSelection,holdImage:image=>{heldImage=image}};
+window.MosaicObjectMap={imageReady:baseLoaded,baseLoaded,prepareBase,refineMask,selectShape,selectionCompleted,cancelSelection,partsForSelection,adoptSelection,snapshotSelection,selectObject,hasSelection:()=>Boolean(state.objectSelectionParts?.length),hydrate,invalidateBase,drawSelection,holdImage:image=>{heldImage=image}};
 // Preserve the canvas tool integration while removing model downloads and all
 // SAM calls. Wand hover/click are now lookups into the saved Base index map.
 window.MosaicSlimWand={onToolChange,hoverAt,selectAt,leave,reset:()=>{active=false;pendingClick=null;leave()},preload(){},imageChanged,imageKey:()=>state.objectMap?.sourceKey};
