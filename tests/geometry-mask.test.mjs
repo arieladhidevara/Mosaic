@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {calculateMaskDelta,registerBinaryMasks,measureBinaryMask} from '../geometry-mask.mjs';
+import {calculateMaskDelta,registerBinaryMasks,measureBinaryMask,segmentGeneratedMaterial,measureContourWarpCoverage} from '../geometry-mask.mjs';
 
 test('shape grows: expanded pixels are occlusions, not revealed background',()=>{
   const a=Uint8Array.from([0,1,1,0,0]);
@@ -54,4 +54,63 @@ test('mask registration rejects incompatible dimensions and empty suggestions',(
   const w=12,h=10,a=rect(w,h,2,2,6,5),empty=new Uint8Array(w*h);
   assert.equal(registerBinaryMasks(a,empty,w,h).approved,false);
   assert.throws(()=>registerBinaryMasks(a,new Uint8Array(2),w,h),TypeError);
+});
+
+
+function materialScene(width,height,oldMask,newMask,{textured=false,unchanged=false,editOutside=false}={}){
+  const before=new Uint8ClampedArray(width*height*4),after=new Uint8ClampedArray(width*height*4);
+  for(let p=0;p<width*height;p++){
+    const x=p%width,y=(p-x)/width;
+    const background=[25,35,50],oldColor=[226,229,232];
+    const wood=textured?(x%5<2?[97,58,31]:[151,100,59]):[137,88,48];
+    const old=oldMask[p]?oldColor:background;
+    const next=unchanged?old:newMask[p]?wood:
+      editOutside&&x>65&&x<80&&y>20&&y<58?[190,25,30]:background;
+    for(let c=0;c<3;c++){before[p*4+c]=old[c];after[p*4+c]=next[c];}
+    before[p*4+3]=after[p*4+3]=255;
+  }
+  return {before,after,target:oldMask,width,height};
+}
+test('Material Edit rebuilds Mask B from newly generated RGB, not from the old mask',()=>{
+  const w=110,h=80,a=rect(w,h,15,12,43,46),b=rect(w,h,18,13,43,46);
+  const beforeA=a.slice(),scene=materialScene(w,h,a,b);
+  const segmented=segmentGeneratedMaterial(scene);
+  assert.ok(segmented,'newly generated material should have a distinct silhouette');
+  assert.equal(segmented.method,'generated-rgb-segmentation');
+  assert.deepEqual(measureBinaryMask(segmented.mask,w,h),measureBinaryMask(b,w,h));
+  assert.deepEqual(a,beforeA,'Mask A must remain unchanged');
+  const fit=registerBinaryMasks(a,segmented.mask,w,h);
+  assert.equal(fit.approved,true);
+  assert.equal(fit.dx,-3);assert.equal(fit.dy,-1);
+  const warped=measureContourWarpCoverage(a,segmented.mask,w,h,fit);
+  assert.ok(warped.valid,'Mask B must geometrically map onto A');
+  assert.ok(warped.coverage>.98);
+});
+test('textured material and unrelated changes still produce a localized Mask B',()=>{
+  const w=110,h=80,a=rect(w,h,15,12,43,46),b=rect(w,h,18,13,43,46);
+  const segmented=segmentGeneratedMaterial(materialScene(w,h,a,b,{textured:true,editOutside:true}));
+  assert.ok(segmented);
+  assert.deepEqual(measureBinaryMask(segmented.mask,w,h),measureBinaryMask(b,w,h));
+});
+test('unchanged material produces no confident new Mask B, keeping the locked mask',()=>{
+  const w=110,h=80,a=rect(w,h,15,12,43,46);
+  const segmented=segmentGeneratedMaterial(materialScene(w,h,a,a,{unchanged:true}));
+  assert.equal(segmented,null);
+});
+test('registration follows different sloping perspective outlines without changing A',()=>{
+  const w=100,h=80,a=new Uint8Array(w*h),b=new Uint8Array(w*h);
+  for(let y=10;y<60;y++){
+    const t=(y-10)/49,l=10+Math.round(10*t),r=72-Math.round(9*t);
+    for(let x=l;x<r;x++)a[y*w+x]=1;
+  }
+  for(let y=13;y<63;y++){
+    const t=(y-13)/49,l=14+Math.round(11*t),r=74-Math.round(7*t);
+    for(let x=l;x<r;x++)b[y*w+x]=1;
+  }
+  const original=a.slice(),fit=registerBinaryMasks(a,b,w,h);
+  assert.equal(fit.approved,true);
+  const result=measureContourWarpCoverage(a,b,w,h,fit);
+  assert.equal(result.valid,true);
+  assert.ok(result.coverage>.96);
+  assert.deepEqual(a,original);
 });
