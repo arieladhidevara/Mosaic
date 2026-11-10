@@ -45,7 +45,15 @@ function sourceKey(base){
 function hydrate(){
   let map=state.objectMap;if(!map?.raster)return false;
   if(!Array.isArray(map.entries)||map.raster.width*map.raster.height>2500000||state.master&&map.sourceKey!==sourceKey(state.master)&&!state.objectMapLocked){state.objectMap=null;labels=null;return false}
-  if(map.version!==CLEANUP_VERSION){map=prepareInstanceMap(map,makeCanvas,window.MozMaskGeometry);state.objectMap=map;(state.objectMaps??={})[map.sourceKey]=map}
+  if(map.version!==CLEANUP_VERSION){
+    // Previously saved edited projects own stable Object IDs. Avoid silently
+    // reindexing those identities when the cleanup algorithm changes.
+    const hasEdits=map.version>=3&&state.groups.some(g=>g.objectMapKey===map.sourceKey&&g.patchIds?.length);
+    if(!hasEdits&&(map.colorRaster||map.version<3)){
+      map=prepareInstanceMap(map,makeCanvas,window.MozMaskGeometry);
+      state.objectMap=map;(state.objectMaps??={})[map.sourceKey]=map;
+    }
+  }
   mapWidth=map.raster.width;mapHeight=map.raster.height;labels=readInstanceLabels(map);
   migrateLegacyGroups(map);
   window.MosaicObjectManager.ensureObjects(map,maskForIds);core.renderGroups();
