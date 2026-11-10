@@ -542,11 +542,15 @@ async function generateRegion(patchId,regenerate=false){
       // changes, register/warp B to locked Mask A, and warp RGB with it.
       // If shape correspondence is weak, composite unwarped RGB through A.
       let aligned={image:placed,status:'locked-mask',aligned:false};
-      try{
-        aligned=alignGeneratedToLockedMask({
-          before:capture.collage,generated:placed,lockedMask:visibleMask,makeCanvas
-        });
-      }catch(error){console.warn('[mozAI:mask-registration]',error);}
+      // Compound selections are aligned individually after their SAM hint
+      // masks are matched to the ORIGINAL object IDs. Avoid double warping.
+      if(!existing.objectMapParts?.length){
+        try{
+          aligned=alignGeneratedToLockedMask({
+            before:capture.collage,generated:placed,lockedMask:visibleMask,makeCanvas
+          });
+        }catch(error){console.warn('[mozAI:mask-registration]',error);}
+      }
       if(state.patches.get(patchId)!==patch||state.selectionGeneration!==projectAtStart||existing.sourceId!==generationId){existing.generating=false;return}
       const currentMaskUnchanged=maskAtStart===window.MosaicObjects?.maskKey(existing.mask);
       // Preserve the complete unmasked RGB source for Reveal/Add.
