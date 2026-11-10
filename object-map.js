@@ -120,6 +120,9 @@ function partsOverlappingMask(mask){
   const sample=makeCanvas(w,h),sx=sample.getContext('2d',{willReadFrequently:true});
   sx.imageSmoothingEnabled=false;sx.drawImage(mask,0,0,w,h);
   const target=sx.getImageData(0,0,w,h).data,parts=[];
+  let selectedPixels=0;
+  for(let i=3;i<target.length;i+=4)if(target[i]>=128)selectedPixels++;
+  if(!selectedPixels)return parts;
   for(const group of state.groups){
     if(group.objectMapBatch||group.mergedInto||group.objectRemoved)continue;
     if(!group.objectMapObjectKey&&!group.mapPrepared&&!group.objectId)continue;
@@ -130,7 +133,10 @@ function partsOverlappingMask(mask){
     const pixels=ctx.getImageData(0,0,w,h).data;
     let both=0,all=0;
     for(let i=3;i<pixels.length;i+=4)if(pixels[i]>=128){all++;if(target[i]>=128)both++;}
-    if(both>=Math.max(2,Math.min(8,all*.015))&&both/Math.max(1,all)>=.12){
+    // A small drawn rectangle inside a huge wall still selects that wall.
+    // Reject mere 1-2 pixel grazing without requiring 12% of the whole object.
+    if(both>=Math.max(3,Math.min(10,Math.round(selectedPixels*.006)))&&
+      (both/Math.max(1,all)>=.012||both/selectedPixels>=.02)){
       parts.push(window.MosaicObjectManager.partForObject(group));
     }
   }
