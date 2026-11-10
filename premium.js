@@ -508,6 +508,7 @@ async function generateRegion(patchId,regenerate=false){
   }
   const submittedPatch={bbox:{...patch.bbox},corners:patch.corners?.map(point=>({...point}))||null};
   const maskAtStart=window.MosaicObjects?.maskKey(patch.mask);
+  const overlapChoices=new Map(state.groups.map(g=>[g.id,core.groupChoiceVersion(g)]));
   const generationId=patch.sourceId;
   const canvasSize={width:canvas.width,height:canvas.height};
   progress.update(14,'Queued for generation…');
@@ -560,6 +561,22 @@ async function generateRegion(patchId,regenerate=false){
         source.canvas=result;source.name='AI region '+patch.regionNumber;source.revealComplete=true;
       }
       if(existing.objectMapParts?.length){
+        // Created masks retain their object ID, but a generated image can
+        // intersect other prepared objects. Re-run SAM over the result and
+        // distribute verified intersections into independent Group options.
+        try{
+          const separated=await window.MosaicSceneVersions?.splitCreatedOverlap?.(
+            placed,existing.objectMapParts,{
+              choiceVersions:overlapChoices,
+              onStatus:status=>progress.update(94,status)
+            });
+          if(Array.isArray(separated)&&separated.length)existing.objectMapParts=separated;
+        }catch(error){
+          console.warn('[mozAI:create-overlap]',error?.message||error);
+          // Never lose a completed image because optional SAM is unavailable.
+        }
+        if(state.patches.get(patchId)!==patch||state.selectionGeneration!==projectAtStart||
+          existing.sourceId!==generationId){existing.generating=false;return;}
         const count=commitObjectMapParts(existing,result,capture.collage,requestOrder);
         renderGroups();render();progress.done('Edit saved for '+count+' '+(count===1?'object.':'objects.'));
         message('Generated image clipped to each original object mask.');toast('Saved edits for '+count+' '+(count===1?'object.':'objects.'));return;
