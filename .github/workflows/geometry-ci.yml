@@ -13,6 +13,9 @@ on:
       - 'scene-versioning.js'
       - 'api/ai/scene-intent.js'
       - 'object-map.js'
+      - 'object-management.js'
+      - 'object-clustering.mjs'
+      - 'tests/object-clustering.test.mjs'
       - 'object-map-utils.mjs'
       - 'canvas-workspace.js'
       - 'tests/scene-*'
@@ -37,6 +40,8 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: node --check object-create-cut.js
+      - run: node --check object-management.js
+      - run: node --check object-clustering.mjs
       - run: node --check mask-cut.mjs
       - run: node --check workspace-mobile.js
       - run: node --check scene-targeting.js
