@@ -167,3 +167,143 @@
   }
   html.moz-keyboard-open .toast{bottom:10px}
 }
+
+
+
+/* Mobile v2: the only active regions are Top / Canvas / Bottom.
+   Tool, group, prompt and setting UI never floats above the image. */
+@media(max-width:850px){
+  :root{--moz-mobile-panel-height:clamp(260px,35dvh,350px);--moz-mobile-top-height:calc(56px + env(safe-area-inset-top))}
+  html.moz-sheet-expanded{--moz-mobile-panel-height:min(56dvh,490px)}
+  html,body{width:100%;height:100%;overflow:hidden!important;overscroll-behavior:none}
+  #app{max-width:100%;overflow:hidden}
+  .topbar{height:var(--moz-mobile-top-height)!important;min-height:var(--moz-mobile-top-height)!important;max-height:var(--moz-mobile-top-height)!important;box-sizing:border-box;padding:env(safe-area-inset-top) 10px 0!important;flex-wrap:nowrap!important;gap:6px!important}
+  .topbar .header-start,.topbar .topbar-actions{height:56px!important;min-width:0!important;gap:4px!important}
+  .topbar .header-start{flex:1 1 0!important}
+  .topbar .topbar-actions{flex:0 0 auto!important}
+  .topbar .header-start .header-menu>summary,.topbar #apiKeyStatusBtn,.topbar #exportBtn,.topbar .header-profile>summary{height:44px!important;min-height:44px!important;box-sizing:border-box}
+  .topbar .header-start .header-menu>summary{font-size:12px!important;padding:0 7px!important}
+  .topbar #apiKeyStatusBtn{max-width:76px!important;font-size:11px!important}
+  .topbar #exportBtn{width:44px!important;min-width:44px!important}
+  .topbar .header-profile>summary{width:44px!important;min-width:44px!important}
+  .topbar .demo-credits-button{display:none!important}
+  .workspace,.workspace.inspector-collapsed{box-sizing:border-box;height:calc(var(--moz-mobile-screen-height,100dvh) - var(--moz-mobile-top-height))!important;min-height:0!important;width:100%!important;min-width:0!important;grid-template-columns:minmax(0,1fr)!important;grid-template-rows:minmax(0,1fr) minmax(0,var(--moz-mobile-panel-height))!important;overflow:hidden!important}
+  .workspace>.main-panel{grid-row:1!important;grid-column:1!important;display:flex!important;flex-direction:column!important;min-height:0!important;height:100%!important;min-width:0!important;overflow:hidden!important}
+  .main-panel>.canvas-header,.main-panel>.canvas-foot{display:none!important}
+  .workspace .canvas-viewport{flex:1 1 auto!important;min-height:0!important;min-width:0!important;max-height:none!important;width:100%!important;overflow:auto!important;padding:8px!important;overscroll-behavior:contain}
+  .workspace .canvas-wrap{flex:0 0 auto;max-width:none!important}
+  .workspace .workspace-dock{display:none!important}
+  #inspectorPanel,.right-sidebar,.right-sidebar.is-collapsed{grid-column:1!important;grid-row:2!important;width:100%!important;min-width:0!important;height:100%!important;max-height:100%!important;min-height:0!important;overflow:hidden!important;box-sizing:border-box;display:flex!important;flex-direction:column!important;border:0!important;border-top:1px solid #554668!important;border-radius:16px 16px 0 0;padding:0 0 env(safe-area-inset-bottom)!important;background:#1a1822!important;box-shadow:0 -3px 13px #0002}
+  #viewport>.quick-area-prompt,#viewport>#geometryReviewBar,.group-hover-hint,.mask-edit-controls{display:none!important}
+  #inspectorPanel>.inspector-bar,#inspectorPanel>#groupsPanel,#inspectorPanel>#advancedSettings,#inspectorPanel>.inspector-bottom,#mobileEditPane,#mobileToolPane,#mobileSettingsPane{display:none!important}
+  .mobile-bottom-tabs{display:grid!important;grid-template-columns:repeat(4,minmax(0,1fr)) 44px!important;height:57px!important;flex:0 0 57px!important;gap:3px!important;padding:6px 7px!important;margin:0!important;box-sizing:border-box;border:0;border-bottom:1px solid #ffffff14;background:#211d2a}
+  .mobile-bottom-tabs button{display:inline-flex!important;align-items:center;justify-content:center;flex-direction:column;gap:3px!important;min-width:0!important;min-height:44px!important;height:44px!important;box-sizing:border-box;padding:3px 1px!important;border-radius:9px;font:600 11px/1.15 system-ui!important;-webkit-tap-highlight-color:transparent;touch-action:manipulation}
+  .mobile-bottom-tabs button[aria-selected=true]{background:#78609939!important;border-color:#a688c16a!important;color:#eee0ff!important}
+  #mobileExpandPane{border-left:1px solid #ffffff16!important;font-size:21px!important;color:#ddd0ed!important}
+  #mobileToolPane,#mobileSettingsPane,#mobileEditPane,#inspectorPanel[data-mobile-tab=groups]>#groupsPanel{min-height:0!important;min-width:0!important;overflow-x:hidden!important;overflow-y:auto!important;flex:1 1 auto!important;overscroll-behavior:contain;-webkit-overflow-scrolling:touch}
+  #inspectorPanel[data-mobile-tab=tools]>#mobileToolPane,#inspectorPanel[data-mobile-tab=settings]>#mobileSettingsPane,#inspectorPanel[data-mobile-tab=ai]>#mobileEditPane{display:flex!important;flex-direction:column!important}
+  #inspectorPanel[data-mobile-tab=groups]>.inspector-bar{display:flex!important;flex:0 0 auto!important;min-height:49px!important;padding:6px 10px!important;gap:7px!important}
+  #inspectorPanel[data-mobile-tab=groups]>#groupsPanel{display:flex!important;flex-direction:column!important;overflow:hidden!important}
+  #inspectorPanel .inspector-bar .icon-btn,#inspectorPanel #autoCreateGroupsBtn{min-width:44px!important;min-height:44px!important;font-size:12px!important}
+  #inspectorPanel .inspector-bar #helpBtn,#inspectorPanel .inspector-bar #inspectorToggle{display:none!important}
+  #inspectorPanel #inspectorHeading{font-size:13px!important;flex:1;white-space:nowrap}
+  #inspectorPanel[data-mobile-tab=groups] .group-list{display:flex!important;flex-direction:row!important;align-items:stretch;overflow-x:auto!important;overflow-y:hidden!important;flex:1 1 auto!important;gap:10px!important;padding:5px 12px 10px!important;scroll-padding-left:12px;scroll-snap-type:x proximity}
+  #inspectorPanel .object-category{flex:0 0 min(86vw,370px)!important;width:min(86vw,370px)!important;min-width:0!important;max-height:100%!important;overflow-y:auto!important;border-radius:11px!important;scroll-snap-align:start}
+  #inspectorPanel .object-category-head,#inspectorPanel .group-head,#inspectorPanel .variant-row,#inspectorPanel .group-details{min-height:44px!important;box-sizing:border-box;font-size:12px!important}
+  #inspectorPanel .object-category-head{padding:10px!important}
+  #inspectorPanel .region-group{width:100%!important;min-width:0!important;max-width:none!important}
+  #inspectorPanel .group-options{max-height:220px!important;overflow-y:auto!important}
+  #inspectorPanel .variant-action,#inspectorPanel .group-head-actions button,#inspectorPanel .group-details button,#inspectorPanel .group-details select,#inspectorPanel .region-option-prompt button,#inspectorPanel .object-selection-controls button,#inspectorPanel .multi-object-actions button,#inspectorPanel .multi-object-actions select{min-height:44px!important;min-width:40px!important;box-sizing:border-box;font-size:12px!important}
+  #inspectorPanel .group-details select,#inspectorPanel .object-collection-picker{max-width:100%!important}
+  #mobileToolPane{gap:6px!important;padding:9px 10px 12px!important}
+  #mobileToolPane>.tool-row{display:flex!important;flex:0 0 57px!important;min-height:57px!important;height:57px!important;width:100%!important;max-width:100%!important;box-sizing:border-box;padding:5px 0!important;overflow-x:auto!important;overflow-y:hidden!important;background:transparent!important;gap:0!important;scrollbar-width:none}
+  #mobileToolPane>.tool-row::-webkit-scrollbar{display:none}
+  #mobileToolPane .toolbar-left{display:flex!important;flex:0 0 auto!important;min-width:max-content!important;gap:9px!important}
+  #mobileToolPane .toolbar-section{min-width:0!important;flex:0 0 auto!important}
+  #mobileToolPane .toolbar-section-title{display:none!important}
+  #mobileToolPane .toolset{display:flex!important;gap:5px!important;align-items:center!important}
+  #mobileToolPane .tool-row .tool{display:inline-flex!important;align-items:center;justify-content:center;gap:6px!important;min-height:44px!important;height:44px!important;min-width:52px!important;padding:0 12px!important;flex:0 0 auto!important;font-size:12px!important;border-radius:9px!important;touch-action:manipulation}
+  #mobileToolPane .tool-row .tool span{display:inline!important;font-size:12px!important;white-space:nowrap}
+  .mobile-tool-modes{display:flex;flex:0 0 auto;align-items:center;gap:10px;flex-wrap:wrap}
+  .mobile-tool-modes .selection-modes:not(.hidden){display:flex!important;flex:1 1 auto;min-width:0;gap:6px!important}
+  .mobile-tool-modes .selection-modes.hidden{display:none!important}
+  .mobile-tool-modes .selection-modes .mode{flex:1 1 0;min-height:44px!important;font-size:12px!important}
+  .mobile-tool-modes .brush-context{display:flex!important;flex-wrap:wrap!important;gap:7px!important;min-width:0!important}
+  .mobile-tool-modes .brush-size:not(.hidden){display:flex!important;align-items:center;min-height:44px;font-size:12px;gap:9px}
+  .mobile-tool-modes .brush-size input{min-width:110px;width:28vw;max-width:190px;height:30px}
+  .mobile-tool-actions{display:flex;flex:0 0 auto;gap:8px;align-items:center;min-height:49px}
+  .mobile-tool-actions>.toolbar-right{display:flex!important;align-items:center;justify-content:space-between;flex:1 1 auto!important;padding:0!important;margin:0!important;min-width:0!important;gap:7px!important;border:0!important}
+  .mobile-tool-actions .toolbar-history{display:flex!important;gap:5px!important;flex:0 0 auto!important}
+  .mobile-tool-actions .icon-btn{min-width:44px!important;height:44px!important;font-size:20px!important}
+  .mobile-tool-actions #regionGuidesBtn,.mobile-tool-actions #projectPromptToolbarBtn,.mobile-tool-actions #clearSelectionBtn,.mobile-tool-actions #resetTransformBtn{display:none!important}
+  .mobile-tool-actions .toolbar-actions,.mobile-tool-actions .toolbar-primary{display:flex!important;gap:7px!important;align-items:center;min-width:0!important}
+  .mobile-tool-actions #harmonizeBtn,.mobile-tool-actions #commitBtn{display:inline-flex!important;align-items:center;justify-content:center;height:44px!important;min-height:44px!important;padding:0 12px!important;white-space:nowrap;font-size:12px!important}
+  .mobile-tool-actions #commitBtn.hidden{display:none!important}
+  .mobile-view-actions{display:flex;align-items:center;gap:7px;flex:0 0 auto}
+  .mobile-view-actions:empty{display:none}
+  .mobile-view-actions #beforeBtn,.mobile-view-actions #zoomValue{display:inline-flex!important;min-height:44px!important;height:44px!important;padding:0 12px!important;font-size:12px!important;border:1px solid #ffffff22;border-radius:9px;background:#ffffff05;color:#e1d7ed}
+  #inspectorPanel[data-mobile-tab=ai]>#mobileEditPane{padding:11px 12px 13px!important;gap:9px!important}
+  .mobile-ai-choices{display:flex;gap:8px;flex:0 0 auto}
+  .mobile-ai-choices button{flex:1;min-width:0;height:44px;min-height:44px;border:1px solid #ffffff22;border-radius:9px;color:#b9aec7;background:#211c29;font:600 12px system-ui}
+  .mobile-ai-choices button[aria-pressed=true]{color:#f0e4fb;border-color:#a688c16a;background:#78609939}
+  #mobileEditPane .composition-chat{display:block!important;min-width:0!important;width:100%!important}
+  #mobileEditPane[data-ai-view=area] .composition-chat{display:none!important}
+  #mobileEditPane .composition-chat form{display:flex!important;flex-direction:column!important;gap:9px!important}
+  #mobileEditPane .composition-chat textarea{font-size:16px!important;min-height:65px!important;height:65px!important}
+  #mobileEditPane .chat-prompt-row{grid-template-columns:minmax(0,1fr) 44px auto!important;gap:6px!important}
+  #mobileEditPane .chat-prompt-row button,#mobileEditPane .prompt-add-reference{min-height:44px!important;min-width:44px!important}
+  #mobileEditPane #quickAreaPromptForm.hidden{display:none!important}
+  #mobileEditPane #quickAreaPromptForm,#mobileEditPane #quickAreaPromptForm.has-group-options{position:static!important;inset:auto!important;top:auto!important;right:auto!important;left:auto!important;bottom:auto!important;transform:none!important;z-index:auto!important;display:flex!important;flex-direction:column!important;box-sizing:border-box!important;flex:0 0 auto!important;min-width:0!important;width:100%!important;max-width:100%!important;min-height:0!important;max-height:none!important;margin:0!important;padding:10px!important;overflow:visible!important;box-shadow:none!important;border-radius:11px!important}
+  #mobileEditPane .quick-area-title{min-height:28px!important}
+  #mobileEditPane .quick-prompt-drag-handle{pointer-events:none!important;cursor:default!important}
+  #mobileEditPane .quick-area-prompt .prompt-input-row{grid-template-columns:minmax(0,1fr) 44px!important}
+  #mobileEditPane .quick-area-prompt textarea{font-size:16px!important;min-height:70px!important}
+  #mobileEditPane #quickAreaReferenceButton,#mobileEditPane #quickAreaDismiss,#mobileEditPane .quick-area-prompt .prompt-footer button{min-width:44px!important;min-height:44px!important}
+  #mobileEditPane .quick-group-options{position:static!important;width:100%!important;max-width:100%!important;flex:0 0 auto!important;max-height:none!important;display:flex!important;flex-direction:row!important;overflow-x:auto!important;overflow-y:hidden!important;gap:7px!important;padding:8px 0!important}
+  #mobileEditPane .quick-group-options button{min-height:44px!important;min-width:44px!important}
+  #mobileEditPane #geometryReviewBar{position:static!important;inset:auto!important;bottom:auto!important;left:auto!important;transform:none!important;z-index:auto!important;flex:0 0 auto!important;width:100%!important;max-width:100%!important;min-height:0!important;box-sizing:border-box!important;margin:0!important;box-shadow:none!important}
+  #mobileEditPane #geometryReviewBar[hidden]{display:none!important}
+  #mobileEditPane #geometryReviewBar button{min-height:44px!important;font-size:12px!important}
+  #mobileSettingsPane{padding:10px 12px 14px!important;gap:10px!important}
+  #mobileSettingsPane .sources-panel{display:flex!important;flex-direction:column!important;flex:0 0 auto!important;width:100%!important;height:auto!important;min-width:0!important;border:0!important;background:transparent!important}
+  #mobileSettingsPane .source-row{min-height:50px}
+  #mobileSettingsPane .source-row button,#mobileSettingsPane .upload-box,#mobileSettingsPane #generateMasterBtn,#mobileSettingsPane #editProjectPromptBtn{min-height:44px!important;font-size:12px!important}
+  #mobileSettingsPane #sourceEditorPanel:not(.hidden){display:block!important;flex:0 0 auto!important;width:100%!important;overflow:visible!important;padding:12px!important}
+  #mobileSettingsPane #sourceEditorPanel.hidden{display:none!important}
+  #mobileSettingsPane #sourceEditorPanel input{min-height:40px;font-size:16px}
+  #mobileSettingsPane #sourceEditorPanel button{min-height:44px!important}
+  #mobileSettingsPane #advancedSettings{display:block!important;flex:0 0 auto!important;max-height:none!important;min-height:0!important;margin:0!important;overflow:visible!important}
+  #mobileSettingsPane #advancedSettings select{font-size:16px;min-height:44px}
+  #mobileSettingsPane .inspector-bottom{display:flex!important;flex:0 0 auto!important;margin:0!important;padding:4px 0!important}
+  #mobileSettingsPane #harmonizeSidebarBtn{min-height:44px!important}
+  #mobileEditPane dialog.mobile-docked-dialog[open],#mobileSettingsPane dialog.mobile-docked-dialog[open]{display:block!important;position:static!important;inset:auto!important;transform:none!important;width:100%!important;max-width:100%!important;max-height:none!important;min-width:0!important;min-height:0!important;padding:12px!important;margin:0!important;box-sizing:border-box!important;overflow:visible!important;box-shadow:none!important;border:1px solid #ffffff25!important;border-radius:12px!important;background:#24202d!important;color:#eee7f5!important}
+  dialog.mobile-docked-dialog::backdrop{display:none!important}
+  dialog.mobile-docked-dialog button,dialog.mobile-docked-dialog input,dialog.mobile-docked-dialog select{min-height:44px!important;font-size:15px!important}
+  dialog.mobile-docked-dialog textarea{font-size:16px!important;min-height:90px!important}
+  dialog.mobile-docked-dialog .dialog-actions{display:flex;flex-wrap:wrap;gap:8px}
+  .mobile-status{flex:0 0 auto;max-height:72px;overflow:hidden}
+  .mobile-status .processing:not(.hidden){position:static!important;inset:auto!important;display:flex!important;flex-direction:row!important;gap:8px!important;min-height:36px;background:#1a1822!important;padding:5px 12px!important}
+  .mobile-status .processing.hidden,.mobile-status .toast.hidden{display:none!important}
+  .mobile-status .processing .spinner{width:18px!important;height:18px!important;flex:0 0 18px!important}
+  .mobile-status .processing small{display:none!important}
+  .mobile-status .toast:not(.hidden){position:static!important;transform:none!important;display:block!important;width:auto!important;max-width:none!important;border-radius:0!important;border:0!important;border-top:1px solid #ffffff18!important;padding:8px 12px!important;margin:0!important;box-shadow:none!important;font-size:12px!important;line-height:1.3!important;text-align:left!important}
+  html.moz-keyboard-open{--moz-mobile-panel-height:min(48dvh,265px)}
+  html.moz-keyboard-open.moz-sheet-expanded{--moz-mobile-panel-height:min(54dvh,280px)}
+  html.moz-keyboard-open #inspectorPanel{visibility:visible!important}
+  html.moz-keyboard-open .workspace{grid-template-rows:minmax(0,1fr) minmax(0,var(--moz-mobile-panel-height))!important}
+  html.moz-keyboard-open #mobileEditPane .quick-area-prompt{position:static!important;max-height:none!important}
+  #inspectorPanel button,#inspectorPanel summary,#inspectorPanel select{-webkit-tap-highlight-color:transparent;touch-action:manipulation}
+  #inspectorPanel :is(button,input,textarea,select,summary):focus-visible{outline:2px solid #c5a5f2;outline-offset:2px}
+}
+@media(max-width:380px){
+  .topbar .brand-name{display:none!important}
+  .topbar .header-start .header-menu>summary{padding:0 5px!important}
+  .mobile-bottom-tabs{padding-inline:4px!important;gap:2px!important}
+  .mobile-bottom-tabs button{font-size:10px!important}
+  .mobile-tool-actions #harmonizeBtn{padding-inline:7px!important;font-size:11px!important}
+  .mobile-tool-actions #commitBtn{padding-inline:8px!important}
+}
+@media(max-width:850px) and (max-height:680px){
+  :root{--moz-mobile-panel-height:230px}
+  html.moz-sheet-expanded{--moz-mobile-panel-height:min(60dvh,360px)}
+}
