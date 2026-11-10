@@ -49,7 +49,8 @@ function hydrate(){
   mapWidth=map.raster.width;mapHeight=map.raster.height;labels=readInstanceLabels(map);
   migrateLegacyGroups(map);
   window.MosaicObjectManager.ensureObjects(map,maskForIds);core.renderGroups();
-  update(map.labelsAvailable?'Objects ready':'Objects ready · categories unavailable');return true;
+  const needsReview=Array.isArray(map.qualityWarnings)&&map.qualityWarnings.length>0;
+  update(needsReview?'Objects ready · review map quality':map.labelsAvailable?'Objects ready':'Objects ready · categories unavailable');return true;
 }
 function baseLoaded(base){
   if(state.objectMapLocked&&state.objectMap?.raster){hydrate();return}
@@ -80,7 +81,7 @@ async function prepareBase(force=false){
     for(let i=0;i<decoded.labels.length;i++){pixels.data[i*4]=decoded.labels[i];pixels.data[i*4+3]=255}x.putImageData(pixels,0,0);
     if(ticket!==serial||state.master!==base)return;
     const legend=new Map((answer.legend||[]).map(entry=>[entry.id,entry]));
-    state.objectMap=prepareInstanceMap({sourceKey:sourceKey(base),raster:map,labelsAvailable:Boolean(answer.labelsAvailable),entries:decoded.ids.map(id=>{const item=legend.get(id);return {id,color:PALETTE[id-1].color,category:CATEGORIES.includes(item?.category)?item.category:'Other',group:item?.group||'',label:item?.label||'Object '+id}})},makeCanvas,window.MozMaskGeometry);
+    state.objectMap=prepareInstanceMap({sourceKey:sourceKey(base),raster:map,labelsAvailable:Boolean(answer.labelsAvailable),qualityWarnings:decoded.warnings,entries:decoded.ids.map(id=>{const item=legend.get(id);return {id,color:PALETTE[id-1].color,category:CATEGORIES.includes(item?.category)?item.category:'Other',group:item?.group||'',label:item?.label||'Object '+id}})},makeCanvas,window.MozMaskGeometry);
     (state.objectMaps??={})[state.objectMap.sourceKey]=state.objectMap;
     hydrate();
     if(pendingClick&&active){const pending=pendingClick;pendingClick=null;selectAt(pending.point,pending.options)}
