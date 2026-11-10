@@ -7,9 +7,16 @@ const core=window.MosaicCore,{state,canvas,makeCanvas}=core;
 let labels=null,mapWidth=0,mapHeight=0,serial=0,busy=false,pendingBase=null,attemptedBase=null,picking=false,pickingIds=[],pickingMode='new',pendingClick=null,active=false,hoverId=0,heldImage=null,operation=null;
 const controls=document.createElement('div');controls.className='object-selection-controls';
 controls.innerHTML='<span id="objectMapStatus" role="status">Preparing objects…</span><button id="objectMapRetry" type="button" hidden>Retry objects</button>';
-document.querySelector('[aria-label="Selection tools"]').append(controls);
+(document.querySelector('.selection-toolset')?.closest('.toolbar-section')||document.getElementById('tools'))?.append(controls);
 document.getElementById('autoCreateGroupsBtn')?.remove();
 const status=document.getElementById('objectMapStatus'),retry=document.getElementById('objectMapRetry');
+const groupsStatus=document.createElement('span');
+groupsStatus.id='objectMapGroupStatus';
+groupsStatus.className='object-map-group-status';
+groupsStatus.setAttribute('role','status');
+groupsStatus.setAttribute('aria-live','polite');
+groupsStatus.textContent='Objects not prepared';
+document.getElementById('inspectorHeading')?.after(groupsStatus);
 state.autoObjectSelect=true;state.featherEnabled=false;
 retry.addEventListener('click',()=>void prepareBase(true));
 const preview=makeCanvas(1,1);preview.className='slimsam-wand-preview';preview.setAttribute('aria-hidden','true');document.getElementById('canvasWrap').append(preview);
@@ -22,6 +29,8 @@ function drawSelection(){
 }
 function update(text,failed=false){
   status.textContent=text;
+  groupsStatus.textContent=text;
+  groupsStatus.classList.toggle('error',failed);
   status.classList.toggle('error',failed);
   retry.hidden=!failed;
   // The old SlimSAM status element is no longer present in index.html.
