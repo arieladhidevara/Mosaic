@@ -539,8 +539,9 @@ async function generateRegion(patchId,regenerate=false){
       if(state.patches.get(patchId)!==patch||state.selectionGeneration!==projectAtStart||existing.sourceId!==generationId){existing.generating=false;return}
       const currentMaskUnchanged=maskAtStart===window.MosaicObjects?.maskKey(existing.mask);
       const finalMask=currentMaskUnchanged?validated.mask:visibleMask;
-      placedContext.globalCompositeOperation='destination-in';
-      placedContext.drawImage(finalMask,0,0);
+      // Preserve the complete AI-rendered crop in the Option source.
+      // drawPatch clips it to the current mask; Add/Reveal can later expose
+      // pixels that were hidden by the original selection without regenerating.
       // Restore source coordinates before applying the option's existing warp.
       // A move/skew made while this request was queued remains in effect.
       const result=core.unwarpPatchSelection(placed,submittedPatch);
@@ -561,7 +562,7 @@ async function generateRegion(patchId,regenerate=false){
       if(existing.objectMapParts?.length){
         const count=commitObjectMapParts(existing,result,capture.collage,requestOrder);
         renderGroups();render();progress.done('Edit saved for '+count+' '+(count===1?'object.':'objects.'));
-        message('Generated image clipped to each original object mask.');toast('Saved edits for '+count+' '+(count===1?'object.':'objects.'));return;
+        message('Generated image saved as independent Options, with original object masks preserved.');toast('Saved edits for '+count+' '+(count===1?'object.':'objects.'));return;
       }
       window.MosaicObjects?.generated(existing,existing.mask,validated.valid&&currentMaskUnchanged);
       core.invalidateDisplayedMask(existing);
@@ -622,9 +623,9 @@ function commitObjectMapParts(batch,result,underlay,requestOrder){
     group.objectMapKey=part.mapKey;group.objectMapCategory=part.category;group.objectMapObjectKey=part.objectKey;group.objectMapInstanceId=part.instanceId;
     group.objectName=part.label.charAt(0).toUpperCase()+part.label.slice(1);
     if(!group.manualName)group.name=group.objectName;
-    const source=cloneCanvas(underlay),layer=cloneCanvas(result),lx=layer.getContext('2d');lx.globalCompositeOperation='destination-in';lx.drawImage(part.mask,0,0);
-    const sx=source.getContext('2d');sx.drawImage(layer,0,0);sx.globalCompositeOperation='destination-in';sx.drawImage(mask,0,0);
-    const sourceId=uid('object_source');state.sources.set(sourceId,{id:sourceId,name:group.objectName+' edit',canvas:source});
+    // Every object owns a separate mask/Option, while the generated image is
+    // shared read-only. Only the active mask controls the visible pixels.
+    const sourceId=uid('object_source');state.sources.set(sourceId,{id:sourceId,name:group.objectName+' edit',canvas:result});
     const {objectMapParts,aiProgress,...template}=batch;
     const patch={...template,id:uid('object_patch'),sourceId,mask,bbox:core.exactMaskBoundingBox(mask),maskPaths:core.maskPathsFromRaster(mask),maskPoints:[],groupId:group.id,
       objectMapKey:part.mapKey,objectMapCategory:part.category,objectMapObjectKey:part.objectKey,objectMapInstanceId:part.instanceId,objectLabel:part.label,generating:false,awaitingResult:false,hideUntilReady:false,
