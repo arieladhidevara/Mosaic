@@ -40,9 +40,12 @@ export function idsInShape(labels,width,height,alpha,targetWidth,targetHeight){
     const tx=Math.min(targetWidth-1,Math.floor((x+.5)*targetWidth/width)),ty=Math.min(targetHeight-1,Math.floor((y+.5)*targetHeight/height));
     if(alpha[(ty*targetWidth+tx)*4+3]>=128)intersections[id]++;
   }
-  // Objects predominantly inside the drawn shape are selected in full. A
-  // one-pixel touch must not accidentally select an entire wall or floor.
-  return Array.from(totals.keys()).filter(id=>id&&intersections[id]>0&&intersections[id]>=totals[id]*.5);
+  // Rectangle, oval and lasso automatically snap to intersecting instance masks.
+  // Use meaningful overlap instead of requiring 50% of the object's area;
+  // tiny accidental edge contacts must not select an entire wall.
+  const selected=alpha.reduce((sum,value,index)=>sum+(index%4===3&&value>=128?1:0),0);
+  const normalizedSelected=selected*width*height/Math.max(1,targetWidth*targetHeight);
+  return Array.from(totals.keys()).filter(id=>id&&intersections[id]>=Math.max(8,Math.min(totals[id]*.12,normalizedSelected*.16)));
 }
 export function labelAt(labels,width,height,x,y,targetWidth,targetHeight){
   if(x<0||y<0||x>=targetWidth||y>=targetHeight)return 0;
