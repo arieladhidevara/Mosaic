@@ -168,7 +168,9 @@ function reconcileParts(mask,parts){
   const w=mask.width,h=mask.height,target=mask.getContext('2d',{willReadFrequently:true}).getImageData(0,0,w,h).data,owner=new Uint16Array(w*h);
   const outputs=parts.map((part,index)=>{const bits=part.mask.getContext('2d',{willReadFrequently:true}).getImageData(0,0,w,h).data;for(let i=0;i<owner.length;i++)if(bits[i*4+3]>=128&&!owner[i])owner[i]=index+1;const frame=makeCanvas(w,h),ctx=frame.getContext('2d');return {...part,mask:frame,ctx,pixels:ctx.createImageData(w,h),box:core.exactMaskBoundingBox(part.mask),count:0}});
   for(let i=0;i<owner.length;i++)if(target[i*4+3]>=128){
-    let which=owner[i]-1;if(which<0){const x=i%w,y=(i-x)/w;let best=Infinity;outputs.forEach((part,index)=>{const b=part.box;if(!b)return;const distance=Math.max(0,b.x-x,x-b.x-b.w)**2+Math.max(0,b.y-y,y-b.y-b.h)**2;if(distance<best){best=distance;which=index}})}
+    // Never give unowned pixels to whichever object happens to be closest.
+    // A multi-object selection cannot silently merge neighboring masks.
+    const which=owner[i]-1;
     if(which>=0){outputs[which].pixels.data.fill(255,i*4,i*4+4);outputs[which].count++}
   }
   return outputs.filter(part=>part.count).map(({ctx,pixels,box,count,...part})=>{ctx.putImageData(pixels,0,0);return {...part,paths:core.maskPathsFromRaster(part.mask)}});
