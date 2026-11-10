@@ -28,7 +28,7 @@ function setMode(next){
     button.setAttribute('aria-pressed',String(active));
   }
   input.placeholder=mode==='shape'?'Describe the new object shape or size…':'Change material, finish or color…';
-  modeHint.textContent=mode==='shape'?'Full image render · SAM finds the new outline · camera protected':'Material edit · keep original object geometry';
+  modeHint.textContent=mode==='shape'?'Shape edit · SAM detects changed geometry':'Material edit · segment fresh Mask B → contour warp onto locked Mask A · original geometry preserved';
 }
 switcher.addEventListener('click',event=>{
   const button=event.target.closest('[data-geometry-mode]');
