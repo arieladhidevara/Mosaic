@@ -1,0 +1,37 @@
+name: Object map validation
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'object-map.js'
+      - 'object-map-utils.mjs'
+      - 'object-map-cleanup.mjs'
+      - 'object-map-geometry.mjs'
+      - 'lib/object-map-provider.js'
+      - 'tests/object-map.test.mjs'
+      - 'tests/object-map-cleanup.test.mjs'
+      - 'tests/object-map-provider.test.cjs'
+      - '.github/workflows/object-map-validation.yml'
+  pull_request:
+    paths:
+      - 'object-map.js'
+      - 'object-map-utils.mjs'
+      - 'object-map-cleanup.mjs'
+      - 'object-map-geometry.mjs'
+      - 'lib/object-map-provider.js'
+      - 'tests/object-map.test.mjs'
+      - 'tests/object-map-cleanup.test.mjs'
+      - 'tests/object-map-provider.test.cjs'
+      - '.github/workflows/object-map-validation.yml'
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm ci
+      - run: node --check object-map.js
+      - run: node --check object-map-utils.mjs
+      - run: node --test tests/object-map-cleanup.test.mjs tests/object-map.test.mjs tests/object-map-provider.test.cjs
