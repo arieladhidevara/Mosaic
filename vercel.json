@@ -25,5 +25,19 @@
         }
       ]
     }
+  ],
+  "rewrites": [
+    {
+      "source": "/api/ai/edit",
+      "destination": "/api/ai/generate?_mozai_mode=edit"
+    },
+    {
+      "source": "/api/ai/harmonize",
+      "destination": "/api/ai/generate?_mozai_mode=harmonize"
+    },
+    {
+      "source": "/api/ai/master",
+      "destination": "/api/ai/generate?_mozai_mode=master"
+    }
   ]
 }
