@@ -20,3 +20,8 @@
 .option-version-category{margin:7px 4px;border-radius:8px;border:1px solid #ffffff13;overflow:hidden}
 .option-version-heading{display:flex;align-items:center;justify-content:space-between;padding:7px 9px;background:#ffffff09;color:#cdbce2;font:700 10px Inter,system-ui,sans-serif}
 .option-version-category .variant-row{margin:3px}
+
+/* Object Map status stays visible in Groups, even if horizontal tools are scrolled. */
+.object-map-group-status{font:500 10px/1.35 system-ui,sans-serif;color:#ab9ac1;max-width:180px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.object-map-group-status.error{color:#e8a7a7}
+@media(max-width:850px){.object-map-group-status{max-width:110px;font-size:9px}}
