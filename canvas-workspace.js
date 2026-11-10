@@ -386,9 +386,9 @@ async function submitChat(event){
       version:version.category,matched:version.matched,total:version.objectCount});
     references.clear();$('compositionChatPrompt').value='';
     core.resetSelection();
-    $('chatStatus').textContent=version.category+' applied to full image · '+
-      version.objectCount+' object options · '+version.matched+' SAM 3 matches'+
-      (version.segmentationStatus==='fallback'?' (saved masks retained)':'')+'.';
+    $('chatStatus').textContent=version.category+' applied with '+
+      version.objectCount+' locked object masks · '+version.matched+
+      ' auto-aligned · no SAM 3';
     toast(version.category+' applied.');
   }catch(error){
     if(requestEpoch===epoch){
