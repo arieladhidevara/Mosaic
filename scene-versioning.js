@@ -96,6 +96,7 @@ async function apply(image,{type='ai-edit',prompt='',onStatus=()=>{},preserveEdi
       segmentationStatus:proposed?'sam3':'previous-mask-fallback',
       segmentationConfidence:proposed?.confidence||0,prompt});
     group.patchIds.push(patchId);
+    group.hasHarmonizedMaster=true;
     if(!preserveEditing||!state.selectionTargetPatchId)group.active=patchId;
     core.refreshGroupFootprint(group);
     records.push({groupId:group.id,patchId,matched:Boolean(proposed),confidence:proposed?.confidence||0});
