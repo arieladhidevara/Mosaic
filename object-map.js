@@ -121,7 +121,7 @@ function partsOverlappingMask(mask){
 }
 
 function refineMask(mask,tool){
-  if(state.objectSelectionParts?.length&&state.selectionMode!=='new'&&!state.maskEditOnly){operation={parts:snapshotSelection()};return mask}
+  // Add/subtract also snap the NEW drawn shape to current object masks.
   if(!['rect','ellipse','lasso','freehand'].includes(tool)||state.pendingSourceId||state.maskEditOnly)return mask;
   if(!labels){core.toast('Objects are not ready yet. Your drawn selection was kept.');return mask}
   const parts=partsOverlappingMask(mask);
