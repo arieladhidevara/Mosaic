@@ -50,12 +50,38 @@ function cleanSpeckles(input,w,h,passes){
   return source;
 }
 
+// Last-resort spatial quantization for image-model outputs that are visibly
+// textured instead of flat indexed colors. This is deliberately disabled on
+// normal maps so thin real objects and architectural openings stay intact.
+function stabilizeTiles(source,w,h,size){
+  const out=source.slice(),count=new Uint16Array(65);
+  for(let yy=0;yy<h;yy+=size)for(let xx=0;xx<w;xx+=size){
+    count.fill(0);let best=0,votes=0;
+    const ymax=Math.min(h,yy+size),xmax=Math.min(w,xx+size);
+    for(let y=yy;y<ymax;y++)for(let x=xx;x<xmax;x++){
+      const id=source[y*w+x];
+      if(!id)continue;
+      const n=++count[id];
+      if(n>votes){best=id;votes=n;}
+    }
+    if(!best)continue;
+    for(let y=yy;y<ymax;y++)for(let x=xx;x<xmax;x++)
+      if(source[y*w+x])out[y*w+x]=best;
+  }
+  return out;
+}
+
 export function splitColorInstances(colors,width,height,options={}){
   if(colors.length!==width*height||width*height>2500000||width<1||height<1)
     throw Error('Invalid object-map dimensions.');
   const total=colors.length;
   const instability=unstableRatio(colors,width,height);
-  const cleaned=instability>.19?cleanSpeckles(colors,width,height,instability>.32?3:2):colors;
+  let cleaned=instability>.19?cleanSpeckles(colors,width,height,instability>.32?3:2):colors;
+  // An image-generation failure can look like millions of unique tiny
+  // connected colors. Fall back to spatially stable IDs, not a retry error.
+  const afterDenoise=unstableRatio(cleaned,width,height);
+  if(afterDenoise>.45)
+    cleaned=stabilizeTiles(cleaned,width,height,afterDenoise>.65?6:4);
   const owners=new Uint32Array(total),queue=new Uint32Array(total),components=[];
   // Raster flood fill uses one shared queue. Only small parts store their
   // pixels; even hundreds of thousands of specks cannot exhaust heap memory.
