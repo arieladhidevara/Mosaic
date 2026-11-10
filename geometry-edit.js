@@ -258,7 +258,9 @@ function commit(){
   state.objectReconstruction.events.push(reconstructionEvent);
   accumulateRevealedPixels(reconstructionEvent,item.before,item.aligned);
   core.invalidateDisplayedMask(patch);
-  closeReview();renderGroups();render();core.selectGroupMask(group,{showOutline:false});
+  closeReview();renderGroups();render();
+  if(item.operation==='remove')core.resetSelection();
+  else core.selectGroupMask(group,{showOutline:false});
   toast('Edit applied. Previous options and newly revealed pixels are retained in the .moz project.');
 }
 $('geometryDiscard').addEventListener('click',()=>{closeReview();toast('Shape preview discarded.');});
