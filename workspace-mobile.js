@@ -258,3 +258,10 @@ updateVisibleHeight();
 window.MosaicMobile={activate,active:()=>current,isMobile:()=>mobile.matches,
   openTools:()=>activate('tools'),openGroups:()=>activate('groups'),
   openAI:()=>activate('ai'),expand:toggleExpand};
+
+// Selection modes are docked outside #tools on mobile, so retain their click behavior.
+selectionModes?.addEventListener('click',event=>{
+  if(!mobile.matches)return;
+  const button=event.target.closest('[data-mode]');
+  if(button)window.MosaicCore?.setMode?.(button.dataset.mode);
+});
