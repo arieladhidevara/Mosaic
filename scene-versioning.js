@@ -163,47 +163,63 @@ function subtractMask(mask,others){
 }
 async function splitCreatedOverlap(image,parts,{onStatus=()=>{},choiceVersions=new Map()}={}){
   if(!Array.isArray(parts)||!parts.length)return parts;
-  const manual=parts.find(part=>state.groups.some(g=>
+  let finalParts=parts.map(p=>({...p}));
+  const manual=finalParts.find(part=>state.groups.some(g=>
     g.createdLocally&&g.objectMapKey===part.mapKey&&g.objectMapObjectKey===part.objectKey&&
     !g.mergedInto&&!g.objectRemoved));
-  if(!manual)return parts;
-  const own=state.groups.find(g=>g.objectMapKey===manual.mapKey&&g.objectMapObjectKey===manual.objectKey);
-  const otherKeys=new Set(parts.filter(p=>p!==manual).map(p=>p.mapKey+':'+p.objectKey));
-  const candidates=state.groups.filter(g=>g!==own&&!g.objectMapBatch&&!g.mergedInto&&!g.objectRemoved&&
-    !otherKeys.has((g.objectMapKey||'manual')+':'+(g.objectMapObjectKey||g.id)))
-    .map(group=>({group,mask:core.groupMask(group)}))
-    .map(item=>({...item,overlap:overlapSample(manual.mask,item.mask)}))
-    .filter(item=>item.overlap>=5).sort((a,b)=>b.overlap-a.overlap).slice(0,8);
-  if(!candidates.length)return parts;
-  onStatus('SAM 3: resegmenting Created area across '+candidates.length+' overlapping objects…');
-  let segmented;
-  try{segmented=await segmentFullFrame(image,
-    [{group:own,mask:core.groupMask(own)},...candidates],onStatus);}
-  catch(error){
-    onStatus('Created area kept intact; segmentation unavailable.');
-    return parts;
+  if(manual){
+    const own=state.groups.find(g=>g.objectMapKey===manual.mapKey&&g.objectMapObjectKey===manual.objectKey);
+    const existingKeys=new Set(finalParts.map(p=>p.mapKey+':'+p.objectKey));
+    // Use the ORIGINAL independent Object IDs to split a temporary combined
+    // Create mask. These stable masks are seeds, not replaceable geometry.
+    const neighbors=state.groups.filter(g=>g!==own&&!g.objectMapBatch&&!g.mergedInto&&!g.objectRemoved&&
+      !existingKeys.has((g.objectMapKey||'manual')+':'+(g.objectMapObjectKey||g.id)))
+      .map(group=>({group,mask:core.groupMask(group)}))
+      .map(item=>({...item,overlap:overlapSample(manual.mask,item.mask)}))
+      .filter(item=>item.overlap>=4).sort((a,b)=>b.overlap-a.overlap).slice(0,24);
+    const allocated=[],split=[];
+    for(const {group,mask} of neighbors){
+      const stablePiece=intersectMask(manual.mask,mask);
+      // Avoid duplicated ownership where overlapping groups have depth order.
+      const piece=allocated.length?subtractMask(stablePiece,allocated):stablePiece;
+      if(!core.exactMaskBoundingBox(piece))continue;
+      const seed=window.MosaicObjectManager?.partForObject?.(group);
+      if(!seed)continue;
+      allocated.push(piece);
+      split.push({...seed,mask:piece,paths:core.maskPathsFromRaster(piece),
+        previousMask:clone(mask),choiceAtStart:choiceVersions.get(group.id)??core.groupChoiceVersion(group)});
+    }
+    const remaining=allocated.length?subtractMask(manual.mask,allocated):manual.mask;
+    finalParts=finalParts.filter(p=>p!==manual);
+    if(core.exactMaskBoundingBox(remaining))
+      finalParts.push({...manual,mask:remaining,paths:core.maskPathsFromRaster(remaining),
+        previousMask:null});
+    finalParts.push(...split);
+    if(split.length)onStatus('Selection separated into '+finalParts.length+' original object masks…');
   }
-  const assigned=[],extra=[];
-  for(const {group,mask} of candidates){
-    const proposal=segmented.masks.get(group.id);
-    if(!proposal)continue;
-    // Both existing object ownership AND the newly observed SAM silhouette
-    // must agree; merely touching an adjacent floor/wall is insufficient.
-    const portion=intersectMask(manual.mask,proposal.mask,mask);
-    if(overlapSample(portion,portion)<4)continue;
-    const part=window.MosaicObjectManager?.partForObject?.(group);
-    if(!part)continue;
-    assigned.push(portion);
-    extra.push({...part,mask:portion,paths:core.maskPathsFromRaster(portion),
-      previousMask:clone(mask),choiceAtStart:choiceVersions.get(group.id)??core.groupChoiceVersion(group)});
+  // Explicit compound selections are the ONLY appearance operation that
+  // resegments the generated result. Ordinary single-object AI Edit and
+  // Full Image AI Edit never call SAM 3. The SAM masks are candidates for
+  // RGB registration; they can NEVER replace the saved Object ID masks.
+  if(finalParts.length>1){
+    const seeds=finalParts.map(part=>{
+      const group=state.groups.find(g=>g.objectMapKey===part.mapKey&&g.objectMapObjectKey===part.objectKey);
+      return group?{group,mask:part.mask}:null;
+    }).filter(Boolean);
+    if(seeds.length>1){
+      try{
+        const segmentation=await segmentFullFrame(image,seeds,onStatus);
+        finalParts=finalParts.map(part=>{
+          const group=seeds.find(item=>item.group.objectMapKey===part.mapKey&&
+            item.group.objectMapObjectKey===part.objectKey)?.group;
+          const candidateMask=group&&segmentation.masks.get(group.id)?.mask;
+          return candidateMask?{...part,candidateMask,segmentationStatus:'sam3-candidate'}:part;
+        });
+      }catch(error){
+        onStatus('Kept original object IDs · optional resegmentation unavailable.');
+      }
+    }
   }
-  if(!extra.length)return parts;
-  const remaining=subtractMask(manual.mask,assigned);
-  const preserved=parts.filter(part=>part!==manual);
-  if(core.exactMaskBoundingBox(remaining))
-    preserved.unshift({...manual,mask:remaining,paths:core.maskPathsFromRaster(remaining),
-      previousMask:null});
-  onStatus('Resegmented '+extra.length+' overlapping object'+(extra.length===1?'':'s')+'.');
-  return preserved.concat(extra);
+  return finalParts;
 }
 window.MosaicSceneVersions={apply,segmentFullFrame,splitCreatedOverlap};
