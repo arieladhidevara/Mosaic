@@ -98,7 +98,8 @@ function projectState(){
     'sources','groups','patches','pendingSourceId','editingPatchId','selectedPatchId',
     'selectionMask','selectionPoints','selectionPaths','selectionTargetPatchId','selectionMode','tool','pendingRevealOnly','serial',
     'draftGroupId','queuedGroupId','selectionGeneration','brushTargetId',
-    'undo','redo','zoom','fitZoom','projectTitle','projectTitleManual','brushSize','brushIntensity','maskEditOnly'
+    'undo','redo','zoom','fitZoom','projectTitle','projectTitleManual','brushSize','brushIntensity','maskEditOnly',
+    'markups','chatMessages','chatResult'
   ];
   return Object.fromEntries(fields.map(name=>[name,state[name]]));
 }
@@ -205,6 +206,7 @@ async function loadProjectFile(file){
       throw Error('Invalid Master canvas.');
     if(!saved.master&&!saved.reference)throw Error('Project contains no images.');
     window.MosaicObjects?.reset();
+    window.MosaicWorkspace?.reset();
     Object.assign(state,saved);
     state.selectionPoints=Array.isArray(saved.selectionPoints)?saved.selectionPoints:[];
     state.selectionPaths=Array.isArray(saved.selectionPaths)?saved.selectionPaths:[];

@@ -16,7 +16,10 @@ Supabase membership checks. Signing in from the editor preserves its canvas.
 5. Click **Apply** to keep only the selected region of the uploaded image. **Enter** closes an unfinished Line; selection remains a draft until Apply. The unselected pixels are hidden non-destructively.
 6. Refine a patch later with **Edit**, **Brush**, or **Eraser**. Overlapping patches from the same region are automatically grouped as alternatives, with the newest active.
 7. Click **Compare** to open a draggable Base/latest divider. Base is on the left; the latest approved composition is on the right. Drag across the image, use the slider's arrow keys, then click Compare again or press Escape to close. Without a Base, the original Master is used.
-8. Click **Save image** to download the current approved composition as one PNG. A Base-only project can also be saved as an image. The image download contains no ZIP or prompt text.
+8. Use the bottom **Markup** toolbar to add arrows with text, standalone text, lines, boxes, ovals or freehand notes. Color and stroke size are adjustable; Undo/Redo also work on markup.
+9. Open **Image chat** at the lower right to generate from the latest visible collage and a prompt, with up to three material/style reference images. Base controls geometry and camera. Markup is supplied as a separate instruction image and is removed from the AI output. A result opens directly on the canvas with a slight dark tint: select with Rectangle, Oval or Line/freehand, then **Done** to keep only that area as an editable layer. **Use full image** keeps the entire result, **Cancel** returns to the collage, and chat thumbnails reopen earlier results. Hold **Space** or **R** to see the collage behind the result.
+10. **Ctrl/Cmd+C**, then **Ctrl/Cmd+V**, copies the exact pixels inside the current mask into a new layer with transparency. Drag the layer or its four corner handles to move or skew it.
+11. Click **Save image** to download the image currently shown in the canvas, including pending uploads, generated previews and user markup. Selection guides, handles and the temporary result-selection tint are excluded. A Base-only project can also be saved. **Save project** also preserves markup, chat history and any result awaiting selection.
 
 The prompt can also be copied directly from the interface. Manual image processing is local; AI edits and harmonization use same-origin serverless OpenAI API routes with the user's own OpenAI API key.
 
@@ -64,6 +67,7 @@ The GitHub repository `arieladhidevara/Mosaic` is connected to its Vercel deploy
 - `app.js`: masks, Groups, selection modes, canvas rendering and PNG downloads
 - `premium.js`: Premium AI edits, local crops, regeneration and Master history
 - `project-file.js`: portable lossless Save/Open project serialization
+- `canvas-workspace.js` / `canvas-workspace.css`: bottom markup toolbar, composition chat, result selection and clipboard layers
 - `regions.js`: Group controls, names, hover and drag/drop
 - `vercel.json`: static hosting config
 
@@ -89,7 +93,7 @@ limit BYOK generation when depleted. See [onboarding setup](docs/onboarding.md).
 
 Initial Master, AI Edit and Harmonize use `gpt-image-2.6-sunburst` through the Images Edit API. Initial Master always uses High quality and requests roughly 2K output independently of Base pixel count (2048px long edge, 1920px near-square). The generation preview starts at that working resolution, so selections made while generating stay aligned. Existing working canvases retain their dimensions to preserve layers and history. Extreme aspect ratios outside 1:3 to 3:1 retain automatic sizing. Image inputs use JPEG quality 94% within the payload budget; output uses JPEG quality 100%.
 
-API-generated images are not perfectly geometry-constrained; masking guarantees outside-region pixels are left untouched by regional edits, but a full-image Harmonize may still change geometry. Region guide overlays are local display aids and can be toggled off.
+For the first Master, Base is the sole geometry/camera authority; attached references supply material, texture, color and style only. These priorities are explicit in every provider prompt. API-generated images can still vary in geometry; masking guarantees outside-region pixels are left untouched by regional edits, while full-image generation remains generative. Region guide overlays are local display aids and can be toggled off.
 
 ### API key and security
 
@@ -163,6 +167,8 @@ The left toolbar is organized as **Navigate** (Select and Pan), **Select** (Line
 ## Validation
 
 Run `node --test tests/image-provider.test.cjs tests/mask-geometry.test.cjs` for the server request contract and `node --check <file.js>` for static JavaScript checks. The editor is a static application and has no bundling/build step. `tests/browser-scenarios.js` exercises browser canvas rendering, background generation, quality settings, mask alignment, and project round trips. Run a Node server with the `tests/mock-openai.cjs` preload (for example, `node --require ./tests/mock-openai.cjs local-server.js` when using the local server), load the scenario script into a fresh mozAI browser tab, then call `await runMosaicBrowserChecks()`. The preload replaces OpenAI responses with generated test images and avoids spending API credits. Live image quality requires an OpenAI API key.
+
+`tests/canvas-workspace-scenarios.js` covers markup, visible-image export, exact-mask clipboard layers, chat generation, result selection, project round trips, provider errors and stale responses. With the isolated mock server on port 8020 and test Chrome CDP on port 9227, run `python tests/browser-runner.py canvas-workspace-scenarios.js runCanvasWorkspaceChecks` and `python tests/browser-runner.py canvas-workspace-scenarios.js runCanvasWorkspaceFailureChecks`. Set `MOSAIC_WIDTH=390` and `MOSAIC_HEIGHT=844` for the mobile layout.
 
 ## Canvas controls
 

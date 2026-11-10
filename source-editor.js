@@ -272,4 +272,9 @@ window.addEventListener('keydown',e=>{
   else if(e.key==='Enter'&&!e.target.matches('input,textarea')){e.preventDefault();e.stopImmediatePropagation();apply()}
 },true);
 window.addEventListener('resize',()=>editing&&redraw());
-window.MosaicSourceEditor={open:start,openOption,cancel,apply,isEditing:()=>Boolean(editing)};
+function visibleImage(){
+  if(!editing)return null;
+  const out=makeCanvas(canvas.width,canvas.height),target=out.getContext('2d');target.drawImage(canvas,0,0);
+  drawTransformed(target,editing.image,editing.transform,editing.transform.opacity);return out;
+}
+window.MosaicSourceEditor={open:start,openOption,cancel,apply,visibleImage,isEditing:()=>Boolean(editing)};

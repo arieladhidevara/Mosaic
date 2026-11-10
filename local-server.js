@@ -33,6 +33,8 @@ const publicFiles = new Set([
   'auth.js',
   'key-vault.js',
   'workspace-ui.js',
+  'canvas-workspace.js',
+  'canvas-workspace.css',
   'workspace-ui.css',
   'account.js',
   'account.css',

@@ -373,7 +373,7 @@ function annotationNotes(targetId){
   if(target?.color&&!regions.includes(target))regions.push(target);
   return regions.map(p=>({color:p.color,prompt:p.prompt,active:p.id===targetId}));
 }
-function encodeRequest(prompt,patch=null,masterSource=null,extraReferences=[]){
+function encodeRequest(prompt,patch=null,masterSource=null,extraReferences=[],markupSource=null){
   const collage=masterSource||currentComposite();
   for(const maxSize of [1350,1120,900]){
     const scale=Math.min(1,maxSize/Math.max(canvas.width,canvas.height));
@@ -381,6 +381,7 @@ function encodeRequest(prompt,patch=null,masterSource=null,extraReferences=[]){
     const payload={collage:resizedFrame(collage,w,h),quality:patch?premium.settings.regionQuality:premium.settings.harmonizeQuality,
       projectPrompt:premium.projectPrompt,prompt,regions:annotationNotes(patch?.id),references:patch?.referenceImages||extraReferences};
     payload.base=resizedFrame(state.reference||premium.initialMaster||state.master,w,h);
+    if(markupSource)payload.markup=resizedFrame(markupSource,w,h);
     if(patch){
       payload.mask=transparentEditMask(patch.mask,w,h);
     }
@@ -1161,7 +1162,23 @@ function onPatchApplied() {
   // A committed patch stays selected so its four corner handles are immediately available.
   if(state.selectedPatchId){const group=state.groups.find(g=>g.active===state.selectedPatchId);if(group)core.selectGroupMask(group);else core.selectTool('select')}
 }
+async function generateComposition(prompt,files,source,markup=null){
+  const master=state.master,generation=state.selectionGeneration;
+  const size={width:canvas.width,height:canvas.height};
+  if(!master)throw Error('Upload an image first.');
+  if(!await window.MosaicAuth.ensure())throw Error('Sign in to generate.');
+  if(state.master!==master||state.selectionGeneration!==generation)throw Error('The project changed. Submit again.');
+  const references=await prepareReferenceImages(files);
+  if(state.master!==master||state.selectionGeneration!==generation)throw Error('The project changed. Submit again.');
+  const payload=encodeRequest(prompt,null,source,references,markup);
+  payload.mode='chat';
+  const result=await window.MosaicAuth.request('/api/ai/harmonize',payload);
+  const image=await fromGeneratedJPEG(result.image,size);
+  if(state.master!==master||state.selectionGeneration!==generation)throw Error('The project changed during generation. Your current work was kept.');
+  return image;
+}
 window.MosaicPremium = {
+  generateComposition,
   positionCanvasProgress,
   isMasterGenerating:()=>premium.masterJob?.generation===state.selectionGeneration,
   projectPrompt: () => premium.projectPrompt,

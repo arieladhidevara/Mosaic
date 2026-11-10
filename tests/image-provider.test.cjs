@@ -48,6 +48,24 @@ test('image generation request contract',async t=>{
     assert.deepEqual(sent.images,[{image_url:collage},{image_url:base},{image_url:base}]);
     assert.equal(sent.guide,undefined);assert.equal(sent.quality,'medium');
   });
+  await t.test('initial references supply materials and style while Base owns geometry',async()=>{
+    const reference=image(384,384);
+    await generate(request({references:[reference]}),false,'master');
+    assert.deepEqual(sent.images,[{image_url:base},{image_url:reference}]);
+    assert.match(sent.prompt,/Image 1 is the sole authority for geometry/);
+    assert.match(sent.prompt,/MATERIAL AND STYLE REFERENCES ONLY/);
+    assert.match(sent.prompt,/Base always wins/);
+  });
+  await t.test('composition chat sends latest collage, Base, markup and style references in order',async()=>{
+    const markup=image(256,256),reference=image(384,384);
+    await generate(request({mode:'chat',markup,references:[reference]}),false);
+    assert.deepEqual(sent.images,[{image_url:collage},{image_url:base},{image_url:markup},{image_url:reference}]);
+    assert.match(sent.prompt,/FULL COMPOSITION EDIT/);
+    assert.match(sent.prompt,/Image 3 is the current composition with user-drawn arrows/);
+    assert.match(sent.prompt,/remove every mark/);
+    assert.match(sent.prompt,/final 1 images are MATERIAL AND STYLE REFERENCES ONLY/);
+    assert.equal(sent.mask,undefined);
+  });
   await t.test('masked material edits retain object identity and the current scene context',async()=>{
     const context=image(1000,700),reference=image(384,384);
     await generate(request({context,targetObject:'Door',crop:{x:200,y:100,width:256,height:256,imageWidth:1000,imageHeight:700},references:[reference]}),true);

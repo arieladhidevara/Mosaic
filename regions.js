@@ -233,7 +233,7 @@ function clearHover(){
 }
 function onPointerMove(e){
   if(!state.master||state.busy||state.before||state.drawing||state.transformDrag||state.maskVertexDrag||state.maskMoveDrag||
-    state.panAnchor||window.MosaicSourceEditor?.isEditing()||state.tool!=='select'||state.selectionOverlayHidden||window.MosaicPremium?.isPreviewing()||e.pointerType==='touch'){
+    state.panAnchor||window.MosaicSourceEditor?.isEditing()||state.tool!=='select'||state.selectionOverlayHidden||window.MosaicPremium?.isPreviewing()||window.MosaicWorkspace?.isSelectingResult()||e.pointerType==='touch'){
     clearHover();return;
   }
   const rect=overlay.getBoundingClientRect(),v=viewport.getBoundingClientRect();
