@@ -4,6 +4,13 @@ on:
     branches: [feature/object-aware-shape-editing]
   pull_request:
     paths:
+      - 'scene-targeting.js'
+      - 'scene-versioning.js'
+      - 'api/ai/scene-intent.js'
+      - 'object-map.js'
+      - 'object-map-utils.mjs'
+      - 'canvas-workspace.js'
+      - 'tests/scene-*'
       - 'geometry-edit.js'
       - 'geometry-mask.mjs'
       - 'geometry-edit.css'
@@ -24,6 +31,9 @@ jobs:
           node-version: '22'
       - run: npm ci
       - run: npm test
+      - run: node --check scene-targeting.js
+      - run: node --check scene-versioning.js
+      - run: node --check canvas-workspace.js
       - run: node --check geometry-edit.js
       - run: node --check premium.js
       - run: node --check lib/image-provider.js
