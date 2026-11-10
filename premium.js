@@ -539,8 +539,9 @@ async function generateRegion(patchId,regenerate=false){
       if(state.patches.get(patchId)!==patch||state.selectionGeneration!==projectAtStart||existing.sourceId!==generationId){existing.generating=false;return}
       const currentMaskUnchanged=maskAtStart===window.MosaicObjects?.maskKey(existing.mask);
       const finalMask=currentMaskUnchanged?validated.mask:visibleMask;
-      placedContext.globalCompositeOperation='destination-in';
-      placedContext.drawImage(finalMask,0,0);
+      // Keep the full unmasked RGB source. The patch mask clips it at draw time.
+      // A destructive destination-in here erased the pixels needed by Reveal
+      // when a user expands an area after generation.
       // Restore source coordinates before applying the option's existing warp.
       // A move/skew made while this request was queued remains in effect.
       const result=core.unwarpPatchSelection(placed,submittedPatch);
@@ -552,11 +553,11 @@ async function generateRegion(patchId,regenerate=false){
       // Always fork on regeneration to preserve shared source images and older options.
       if(regenerate){
         const id=uid('ai_source');
-        state.sources.set(id,{id,name:'Regenerated '+existing.name,canvas:result});
+        state.sources.set(id,{id,name:'Regenerated '+existing.name,canvas:result,revealComplete:true});
         existing.sourceId=id;
       }else{
         const source=state.sources.get(existing.sourceId);
-        source.canvas=result;source.name='AI region '+patch.regionNumber;
+        source.canvas=result;source.name='AI region '+patch.regionNumber;source.revealComplete=true;
       }
       if(existing.objectMapParts?.length){
         const count=commitObjectMapParts(existing,result,capture.collage,requestOrder);
