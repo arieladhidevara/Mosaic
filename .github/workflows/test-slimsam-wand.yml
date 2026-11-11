@@ -13,6 +13,12 @@ on:
       - 'tests/slimsam-wand.test.mjs'
       - 'package.json'
       - 'local-server.js'
+      - 'design-copilot.js'
+      - 'design-copilot.css'
+      - 'admin-benchmark.js'
+      - 'lib/ai-chat-handler.js'
+      - 'lib/ai-benchmark-handler.js'
+      - 'lib/model-cost.js'
       - 'scripts/dev-server.js'
       - 'tests/local-assets.test.cjs'
       - '.github/workflows/test-slimsam-wand.yml'
@@ -51,6 +57,12 @@ jobs:
           node --check auto-regions.js
           node --check regions.js
           node --check mask-progress.js
+          node --check design-copilot.js
+          node --check admin-benchmark.js
+          node --check api/ai/generate.js
+          node --check lib/ai-chat-handler.js
+          node --check lib/ai-benchmark-handler.js
+          node --check lib/model-cost.js
       - name: Run mask, region, and local-server asset tests
         run: node --test tests/slimsam-wand.test.mjs tests/local-assets.test.cjs
       - name: Check frontend references and Color removal

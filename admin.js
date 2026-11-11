@@ -1,6 +1,6 @@
 const account=window.MosaicAccount,$=id=>document.getElementById(id);
 let view='overview',page=1,more=false,loading=0,detailId=null;
-const titles={overview:'Overview',users:'Users',invitations:'Invitations',generations:'BYOK usage',events:'Activity',user:'User projects',project:'Project usage'};
+const titles={overview:'Overview',users:'Users',invitations:'Invitations',generations:'BYOK usage',events:'Activity',benchmark:'Object ID Lab',user:'User projects',project:'Project usage'};
 function element(tag,text,className){const e=document.createElement(tag);if(text!==undefined)e.textContent=text;if(className)e.className=className;return e}
 function invitationForm(host){
   const form=element('form',undefined,'invite-form');
@@ -131,6 +131,11 @@ function showProject(host,data){
 async function load(){
   const version=++loading,content=$('adminContent');content.replaceChildren(element('p','Loading...'));$('adminError').textContent='';$('adminPages').hidden=true;
   try{
+    if(view==='benchmark'){
+      content.replaceChildren();$('adminTitle').textContent='Object ID Lab';
+      $('adminEnvironment').textContent='Admin-only image model benchmark · user-paid API calls';
+      window.MosaicBenchmark.render(content);more=false;return;
+    }
     const url='/api/admin?view='+(['overview','users'].includes(view)?'analytics':view)+'&page='+page+((view==='user'||view==='project')?'&id='+encodeURIComponent(detailId||''):'');
     const result=await account.request(url);if(version!==loading)return;
     content.replaceChildren();$('adminTitle').textContent=titles[view];$('adminEnvironment').textContent='Environment: '+result.environment;

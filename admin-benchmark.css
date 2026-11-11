@@ -1,0 +1,22 @@
+.benchmark-heading h2{margin:0 0 5px}
+.benchmark-heading p{font-size:12px;color:#a5aab7;line-height:1.55}
+.benchmark-controls{display:flex;flex-wrap:wrap;align-items:end;gap:15px;margin:17px 0;padding:15px;border:1px solid #363743;border-radius:12px;background:#20232b}
+.benchmark-controls>label{display:flex;flex-direction:column;gap:8px;font-size:12px;color:#cacbda}
+.benchmark-controls input[type=file]{max-width:260px}
+.benchmark-controls select{background:#171a20;color:#eee;border:1px solid #545463;border-radius:6px;padding:7px}
+.benchmark-models{border:0;display:flex;flex-wrap:wrap;gap:9px;max-width:520px;padding:0;color:#cacbda}
+.benchmark-models legend{font-size:12px;margin-bottom:7px}
+.benchmark-model-option,.benchmark-select{display:flex;gap:5px;align-items:center;font-size:11px}
+.benchmark-results{margin-top:24px}
+.benchmark-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+.benchmark-card{background:#20232b;border:1px solid #353746;border-radius:12px;padding:12px}
+.benchmark-card-head{display:flex;justify-content:space-between;align-items:start;gap:7px;margin-bottom:9px;flex-wrap:wrap}
+.benchmark-card img,.benchmark-compare-card img{width:100%;height:auto;object-fit:contain;background:#121418;border-radius:7px;display:block}
+.benchmark-card p{font-size:11px;color:#afb6c5;margin:7px 0}
+.benchmark-card .btn{margin-top:7px}
+.benchmark-card .benchmark-error{color:#f3a6a6}
+.benchmark-compare{margin-top:26px}
+.benchmark-compare-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:13px}
+.benchmark-compare-card{background:#20232b;border:1px solid #4e475b;border-radius:12px;padding:12px;display:flex;flex-direction:column;gap:9px}
+.benchmark-compare-card strong{font-size:12px}
+.benchmark-compare-card small{color:#aeb3bf}

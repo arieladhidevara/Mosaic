@@ -1305,6 +1305,7 @@ async function generateComposition(prompt,files,source,markup=null,options={}){
   if(state.master!==master||state.selectionGeneration!==generation)throw Error('The project changed. Submit again.');
   const payload=encodeRequest(prompt,null,source,references,markup);
   payload.mode='chat';
+  if(options?.quality&&['low','medium','high'].includes(options.quality))payload.quality=options.quality;
   if(['shape','remove'].includes(options?.editIntent))payload.editIntent=options.editIntent;
   if(options?.targetLabel)payload.targetObject=String(options.targetLabel).slice(0,80);
   const result=await window.MosaicAuth.request('/api/ai/harmonize',payload);
