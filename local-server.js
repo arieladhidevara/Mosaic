@@ -24,8 +24,8 @@ const apiRoutes = new Map([
   ['/api/ai/object-map', require('./api/ai/object-map')],
   ['/api/ai/option-name', require('./api/ai/option-name')],
   ['/api/ai/scene-intent', require('./api/ai/scene-intent')],
-   ['/api/ai/chat', require('./api/ai/chat')],
-   ['/api/ai/benchmark-object-map', require('./api/ai/benchmark-object-map')],
+   ['/api/ai/chat', require('./api/ai/generate')],
+   ['/api/ai/benchmark-object-map', require('./api/ai/generate')],
 ]);
 
 const publicFiles = new Set([
@@ -39,6 +39,8 @@ const publicFiles = new Set([
   'workspace-ui.js',
   'canvas-workspace.js',
   'canvas-workspace.css',
+  'design-copilot.js',
+  'design-copilot.css',
   'workspace-ui.css',
   'geometry-edit.css',
   'workspace-simplified.css',
@@ -56,6 +58,8 @@ const publicFiles = new Set([
   'admin.html',
   'admin.js',
   'admin.css',
+  'admin-benchmark.js',
+  'admin-benchmark.css',
   'app.js',
   'mask-geometry.js',
   'mask-feather.js',
