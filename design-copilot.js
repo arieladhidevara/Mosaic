@@ -5,12 +5,13 @@ const form=$('compositionChatForm'),chat=$('compositionChat'),prompt=$('composit
 if(!form||!chat)throw Error('Design Copilot requires AI Edit workspace.');
 const thread=document.createElement('div');thread.id='copilotThread';thread.className='copilot-thread';thread.setAttribute('role','log');thread.setAttribute('aria-label','Design assistant conversation');chat.insertBefore(thread,form);
 const context=document.createElement('div');context.className='copilot-context';context.hidden=true;chat.insertBefore(context,form);
-const controls=document.createElement('div');controls.className='copilot-controls';
-const hint=document.createElement('span');hint.style.cssText='font-size:10px;color:#8990a0';hint.textContent='Chat remembers Base · image edits billed separately';
-const searchLabel=document.createElement('label');searchLabel.className='copilot-search-toggle';
-const searchInput=document.createElement('input');searchInput.type='checkbox';searchInput.id='copilotSearchWeb';
-searchLabel.append(searchInput,document.createTextNode('Search web'));controls.append(hint,searchLabel);form.append(controls);
-prompt.placeholder='Ask about design, click an object, or request an edit…';send.textContent='Send ↗';
+prompt.placeholder='Ask mozAI…';send.textContent='↑';send.setAttribute('aria-label','Send message');
+const sidebar=$('inspectorPanel'),inspectorBar=sidebar?.querySelector('.inspector-bar');
+if(sidebar&&inspectorBar)inspectorBar.before(chat);
+const corner=document.createElement('div');corner.className='canvas-corner-actions';corner.setAttribute('aria-label','Canvas controls');
+$('viewport')?.append(corner);
+for(const id of ['beforeBtn','zoomValue']){const item=$(id);if(item)corner.append(item)}
+for(const tool of document.querySelectorAll('.tool-row .tool'))tool.dataset.tip=tool.querySelector('span')?.textContent.trim()||tool.getAttribute('aria-label')||tool.title||'Tool';
 const wrap=$('canvasWrap'),layer=makeCanvas(1,1);layer.id='copilotHighlightLayer';layer.className='copilot-canvas-highlights';wrap.append(layer);
 state.copilotSession??=null;
 let busy=false,highlighted=[],pointed=null,pointerStart=null;
@@ -174,7 +175,7 @@ async function submit(event){
   event.preventDefault();event.stopImmediatePropagation();if(busy)return;
   const message=prompt.value.trim();if(!message)return;
   if(!state.master){status.textContent='Upload a Base image first.';return}
-  busy=true;send.disabled=true;send.textContent='Thinking…';
+  busy=true;send.disabled=true;send.textContent='…';
   state.chatMessages.push({role:'user',text:message});prompt.value='';renderThread();status.textContent='Consulting on your design…';
   try{
     if(!await window.MosaicAuth.ensure())throw Error('Connect your OpenAI API key.');
@@ -186,7 +187,7 @@ async function submit(event){
       objects:objects(),selectedIds:selectionIds(),point:pointed?{x:pointed.x,y:pointed.y}:null,
       references:await referenceImages(),
       projectPrompt:premium.projectPrompt(),
-      searchWeb:searchInput.checked||/\b(search|find references|online|product links|source links)\b/i.test(message)||/cari (referensi|link|produk|website|internet)/i.test(message)
+      searchWeb:/\b(search|find references|online|product links|source links)\b/i.test(message)||/cari (referensi|link|produk|website|internet)/i.test(message)
     });
     const plan={action:answer.action,scope:answer.scope,targetIds:answer.targetIds||[],groupName:answer.groupName,editPrompt:answer.editPrompt,reason:answer.reason};
     state.copilotSession={responseId:answer.responseId,sceneToken:token};
@@ -200,7 +201,7 @@ async function submit(event){
     if(e.resetSession)state.copilotSession=null;
     state.chatMessages.push({role:'assistant',text:(e.message||'Consultation failed')+(e.resetSession?' Try sending the message again to re-establish the Base session.':'')});
     status.textContent=e.message||'Consultation failed';renderThread();
-  }finally{busy=false;send.disabled=false;send.textContent='Send ↗'}
+  }finally{busy=false;send.disabled=false;send.textContent='↑'}
 }
 form.addEventListener('submit',e=>void submit(e),true);
 const oldReset=window.MosaicWorkspace?.reset;

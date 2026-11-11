@@ -777,7 +777,7 @@ const optionThumbCache=new WeakMap();
 function cutoutThumbnail(image,mask){
   if(!image||!mask)return '';
   const b=maskBoundingBox(mask);if(!b)return '';
-  const width=52,height=42,pad=3,scale=Math.min((width-pad*2)/b.w,(height-pad*2)/b.h);
+  const width=96,height=76,pad=5,scale=Math.min((width-pad*2)/b.w,(height-pad*2)/b.h);
   const dw=b.w*scale,dh=b.h*scale,dx=(width-dw)/2,dy=(height-dh)/2;
   const thumb=makeCanvas(width,height),t=thumb.getContext('2d');
   t.imageSmoothingEnabled=true;t.imageSmoothingQuality='high';
@@ -815,6 +815,10 @@ function groupThumbnail(group){
   groupThumbCache.set(group,{image:state.master,mask:identity,url});
   return url;
 }
+const UNNAMED_OBJECTS='__mozai_unnamed_objects__';
+const objectLabel=g=>String(g.name||g.objectName||'').trim();
+const unnamedObject=g=>!objectLabel(g)||/^(?:unnamed(?: object)?|object\s*#?\d+|region\s*#?\d+|new object|untitled)(?:\s*\d+)?$/i.test(objectLabel(g));
+const sortObjectNames=(a,b)=>objectLabel(a).localeCompare(objectLabel(b),undefined,{numeric:true,sensitivity:'base'})||String(a.id).localeCompare(String(b.id));
 function renderGroups(){
   const list=$('groupList');
   // Async AI status/semantic naming refreshes the Groups panel while people
@@ -827,9 +831,14 @@ function renderGroups(){
     ?[liveFocus.selectionStart,liveFocus.selectionEnd]:null;
   if(liveForm)liveForm.remove();
   const visibleGroups=state.groups.filter(group=>!group.objectMapBatch&&!group.mergedInto);
-  const collections=state.objectCollections||[],categories=new Map(collections.map(c=>[c.id,[]]));
-  for(const group of visibleGroups){const key=collections.some(c=>c.id===group.collectionId)?group.collectionId:'';if(!categories.has(key))categories.set(key,[]);categories.get(key).push(group)}
-  $('groupCount').textContent=collections.length;updateSourceActions();
+  const collections=state.objectCollections||[];
+  const categories=new Map(collections.slice().sort((a,b)=>String(a.name||'').localeCompare(String(b.name||''),undefined,{numeric:true,sensitivity:'base'})).map(group=>[group.id,[]]));
+  for(const group of visibleGroups){
+    const key=unnamedObject(group)?UNNAMED_OBJECTS:categories.has(group.collectionId)?group.collectionId:'';
+    if(!categories.has(key))categories.set(key,[]);
+    categories.get(key).push(group);
+  }
+  $('groupCount').textContent=visibleGroups.length;updateSourceActions();
   $('pendingBanner').classList.toggle('hidden',!state.pendingSourceId);
   if(state.pendingSourceId){const source=state.sources.get(state.pendingSourceId);$('pendingName').textContent='● Editing: '+(source?.name||'New variation')}
   if(!visibleGroups.length&&!collections.length){
@@ -838,30 +847,31 @@ function renderGroups(){
   }
   const renderGroup=g=>{
     const readyIds=g.patchIds.filter(id=>state.patches.get(id)&&!state.patches.get(id).hideUntilReady);
-    const order=readyIds.slice().reverse().sort((a,b)=>Number(b===g.active)-Number(a===g.active)||Number(Boolean(state.patches.get(a)?.isOriginalMaster))-Number(Boolean(state.patches.get(b)?.isOriginalMaster)));
-    const optionRow=(pid)=>{
+    const order=readyIds.slice().reverse(); // latest first, oldest at the bottom
+    const expanded=state.expandedObjectId===g.id;
+    const optionRow=pid=>{
       const p=state.patches.get(pid);if(!p)return '';
-      const isMaster=p.isMasterVersion||p.isOriginalMaster;
+      const isMaster=p.isMasterVersion||p.isOriginalMaster,open=state.expandedOptionId===pid;
       const thumb=patchThumbnail(p);
-      return `<div class="variant-row ${g.active===pid?'selected':''} ${state.maskEditOnly&&state.selectionTargetPatchId===pid?'mask-editing':''}" data-action="choose" data-group="${g.id}" data-patch="${pid}" ${isMaster?'data-master-version="true"':''}><span class="variant-dot"></span>${thumb?`<img class="option-cutout" src="${thumb}" alt="" loading="lazy">`:''}<span class="variant-text">${escapeHTML(p.name)}</span><span class="option-actions" aria-label="Option actions"><button type="button" class="variant-action" title="Edit selection mask" data-action="edit-mask" data-group="${g.id}" data-patch="${pid}">Edit</button><button type="button" class="variant-action" title="Rename option" data-region-action="rename-option" data-group="${g.id}" data-patch="${pid}">Rename</button><button type="button" class="variant-action" title="Delete option" data-action="delete" data-group="${g.id}" data-patch="${pid}">Delete</button><button type="button" class="variant-action" title="Regenerate this option (Pro)" data-region-action="regen-option" data-group="${g.id}" data-patch="${pid}">${p.generating?'Generating…':'✦ Regen'}</button></span></div>`;
+      return `<div class="variant-row ${g.active===pid?'selected':''} ${open?'option-expanded':''} ${state.maskEditOnly&&state.selectionTargetPatchId===pid?'mask-editing':''}" data-action="choose" data-group="${g.id}" data-patch="${pid}" aria-expanded="${open}" ${isMaster?'data-master-version="true"':''}><span class="option-image">${thumb?`<img class="option-cutout" src="${thumb}" alt="" loading="lazy">`:'◻'}</span><span class="variant-text">${escapeHTML(p.name||'Untitled option')}</span><span class="variant-dot"></span><span class="option-actions ${open?'is-open':''}" aria-label="Option actions"><button type="button" class="variant-action" title="Edit selection mask" data-action="edit-mask" data-group="${g.id}" data-patch="${pid}">Edit</button><button type="button" class="variant-action" title="Rename option" data-region-action="rename-option" data-group="${g.id}" data-patch="${pid}">Rename</button><button type="button" class="variant-action" title="Delete option" data-action="delete" data-group="${g.id}" data-patch="${pid}">Delete</button><button type="button" class="variant-action" title="Regenerate this option" data-region-action="regen-option" data-group="${g.id}" data-patch="${pid}">${p.generating?'Generating…':'✦ Regen'}</button></span></div>`;
     };
-    const versionCategories=new Map();
-    for(const pid of order){
-      const patch=state.patches.get(pid);
-      const category=patch?.versionCategory||(patch?.isOriginalMaster?'Original':patch?.isMasterVersion?'Master versions':'Options');
-      if(!versionCategories.has(category))versionCategories.set(category,[]);
-      versionCategories.get(category).push(pid);
-    }
-    const optionCategories=[...versionCategories].map(([category,ids])=>
-      `<section class="option-version-category" data-version-category="${escapeHTML(category)}"><div class="option-version-heading"><span>${escapeHTML(category)}</span><span>${ids.length}</span></div>${ids.map(optionRow).join('')}</section>`).join('');
-    const originalRow=g.hasHarmonizedMaster||!readyIds.length?'':`<div class="variant-row ${g.active===null?'selected':''}" data-action="choose" data-group="${g.id}" data-patch="master"><span class="variant-dot"></span><span class="variant-text">Original Master</span></div>`;
+    const optionCategories=expanded?order.map(optionRow).join(''):'';
+    const originalRow=!expanded||g.hasHarmonizedMaster||!readyIds.length?'':`<div class="variant-row ${g.active===null?'selected':''}" data-action="choose" data-group="${g.id}" data-patch="master"><span class="option-image">◻</span><span class="variant-text">Original Master</span><span class="variant-dot"></span></div>`;
     const groupThumb=groupThumbnail(g);
-    return `<div class="region-group" data-group="${g.id}"><div class="group-head" data-action="focus" data-group="${g.id}"><span class="group-icon">${groupThumb?`<img class="group-cutout" src="${groupThumb}" alt="" loading="lazy">`:'▧'}</span><span class="group-heading-copy"><small>Object ${String(state.groups.indexOf(g)+1).padStart(2,'0')}</small><span class="group-name">${escapeHTML(g.name)}</span></span><span class="group-count">${readyIds.length}</span><span class="group-head-actions"><button type="button" class="variant-action group-add-option" data-region-action="add-option" title="Add an option to this region" aria-label="Add region option">＋</button></span></div><div class="group-options">${optionCategories}${originalRow}${readyIds.length?'':`<small class="group-pending-options">${g.patchIds.length?'Generating edit…':'Select an area and Generate to add an option'}</small>`}</div></div>`;
+    return `<div class="region-group ${expanded?'object-expanded':''}" data-group="${g.id}"><div class="group-head" data-action="focus" data-group="${g.id}" aria-expanded="${expanded}"><span class="group-icon">${groupThumb?`<img class="group-cutout" src="${groupThumb}" alt="" loading="lazy">`:'▧'}</span><span class="group-heading-copy"><span class="group-name">${escapeHTML(g.name||g.objectName||'Unnamed Object')}</span></span><span class="group-count">${readyIds.length||''}</span><span class="object-chevron" aria-hidden="true">${expanded?'⌄':'›'}</span><span class="group-head-actions"><button type="button" class="variant-action group-add-option" data-region-action="add-option" title="Add an option to this object" aria-label="Add option">＋</button></span></div><div class="group-options" ${expanded?'':'hidden'}>${optionCategories}${originalRow}${readyIds.length?'':`<small class="group-pending-options">${g.patchIds.length?'Generating edit…':'No options yet'}</small>`}</div></div>`;
   };
   const collapsed=new Set(state.collapsedCategories||[]);
-  list.innerHTML=[...categories].map(([id,groups])=>{
-    const collection=collections.find(c=>c.id===id),isCollapsed=collapsed.has(id),objects=groups.slice().sort((a,b)=>Number(b.id===state.focusedGroupId)-Number(a.id===state.focusedGroupId));
-    return `<section class="object-category" data-collection="${escapeHTML(id)}"><div class="object-collection-heading"><button type="button" class="object-category-head" data-action="toggle-category" data-category="${escapeHTML(id)}" aria-expanded="${!isCollapsed}"><span class="category-chevron" aria-hidden="true">${isCollapsed?'&#9656;':'&#9662;'}</span><strong>${collection?'Group':'Ungrouped objects'}</strong><span>${groups.length} ${groups.length===1?'object':'objects'}</span></button>${collection?`<input class="collection-name" aria-label="Group name" data-collection-name="${collection.id}" value="${escapeHTML(collection.name)}"><button type="button" class="remove-collection" data-remove-collection="${collection.id}" title="Remove group; keep its objects">&#215;</button>`:''}</div><div class="object-category-items" ${isCollapsed?'hidden':''}>${objects.map(renderGroup).join('')}${objects.length?'':'<small class="empty-collection">Add objects using their group menu or a multi-selection.</small>'}</div></section>`;
+  list.innerHTML=[...categories].sort((a,b)=>{
+    const rank=id=>id===UNNAMED_OBJECTS?2:id===''?1:0,delta=rank(a[0])-rank(b[0]);
+    if(delta)return delta;
+    const label=id=>collections.find(g=>g.id===id)?.name||'';
+    return label(a[0]).localeCompare(label(b[0]),undefined,{numeric:true,sensitivity:'base'});
+  }).map(([id,groups])=>{
+    const collection=collections.find(g=>g.id===id),isUnnamed=id===UNNAMED_OBJECTS;
+    const isCollapsed=isUnnamed?!state.expandedUnnamedObjects:collapsed.has(id);
+    const objects=groups.slice().sort(sortObjectNames);
+    const label=isUnnamed?'Unnamed Objects':collection?collection.name:'Ungrouped Objects';
+    return `<section class="object-category ${isUnnamed?'unnamed-category':''}" data-collection="${escapeHTML(id)}"><div class="object-collection-heading"><button type="button" class="object-category-head" data-action="toggle-category" data-category="${escapeHTML(id)}" aria-expanded="${!isCollapsed}"><span class="category-chevron" aria-hidden="true">${isCollapsed?'&#9656;':'&#9662;'}</span><strong>${escapeHTML(label)}</strong><span>${groups.length}</span></button>${collection?`<input class="collection-name" aria-label="Group name" data-collection-name="${collection.id}" value="${escapeHTML(collection.name)}"><button type="button" class="collection-rename" data-action="rename-collection" aria-label="Rename group" title="Rename group">✎</button><button type="button" class="remove-collection" data-remove-collection="${collection.id}" title="Remove group; keep its objects">&#215;</button>`:''}</div><div class="object-category-items" ${isCollapsed?'hidden':''}>${objects.map(renderGroup).join('')}${objects.length?'':'<small class="empty-collection">No objects</small>'}</div></section>`;
   }).join('');
   if(liveForm&&liveGroup){
     const section=[...list.querySelectorAll('.region-group[data-group]')]
@@ -880,7 +890,8 @@ function renderGroups(){
 }
 function editExisting(pid){if(state.pendingSourceId){toast('Apply or discard your new image before editing saved variants.');return}const patch=state.patches.get(pid);if(!patch)return;state.editingPatchId=pid;state.selectedPatchId=pid;resetSelection();state.selectionPoints=patchControlPoints(patch).map(({x,y})=>({x,y}));state.selectionMask.getContext('2d').drawImage(displayedPatchMask(patch),0,0);setMode('add');selectTool('lasso');updateSelectionOutline();updateApplyButton();message('Editing a saved mask. Refine it, then click Update mask to commit changes.')}
 function groupEvent(e){if(window.MosaicRegions?.handleGroupEvent(e))return;if(window.MosaicPremium?.handleGroupEvent(e))return;const target=e.target.closest('[data-action]');if(!target)return;const action=target.dataset.action,group=state.groups.find(g=>g.id===target.dataset.group),pid=target.dataset.patch;
-  if(action==='toggle-category'){const collapsed=new Set(state.collapsedCategories||[]);if(collapsed.has(target.dataset.category))collapsed.delete(target.dataset.category);else collapsed.add(target.dataset.category);state.collapsedCategories=[...collapsed];renderGroups();return}
+  if(action==='toggle-category'){if(target.dataset.category===UNNAMED_OBJECTS)state.expandedUnnamedObjects=!state.expandedUnnamedObjects;else{const collapsed=new Set(state.collapsedCategories||[]);if(collapsed.has(target.dataset.category))collapsed.delete(target.dataset.category);else collapsed.add(target.dataset.category);state.collapsedCategories=[...collapsed]}renderGroups();return}
+  if(action==='rename-collection'){const section=target.closest('.object-category');section?.classList.add('renaming');const input=section?.querySelector('.collection-name');input?.focus();input?.select();return}
   if(action==='focus'&&group){hideQuickPrompt();selectGroupMask(group);return}
   if(action==='edit-mask'&&group){hideQuickPrompt();selectGroupMask(group,{showOutline:true});state.maskEditOnly=true;state.selectionOverlayHidden=false;updateSelectionOutline();renderGroups();render();return}
   if(action==='edit-image'){window.MosaicSourceEditor?.openOption(pid);return}
@@ -893,7 +904,9 @@ function groupEvent(e){if(window.MosaicRegions?.handleGroupEvent(e))return;if(wi
       group.active=pid;refreshGroupFootprint(group);
       appendGroupSelection(group);showQuickPrompt();renderGroups();render();return;
     }
-    chooseGroupOption(group,pid==='master'?null:pid);return;
+    state.expandedObjectId=group.id;
+    state.expandedOptionId=pid==='master'?null:state.expandedOptionId===pid?null:pid;
+    chooseGroupOption(group,pid==='master'?null:pid);renderGroups();return;
   }
   if(action==='delete'&&group){if(state.pendingSourceId){toast('Finish the new image before removing variants.');return}group.patchIds=group.patchIds.filter(x=>x!==pid);state.patches.delete(pid);if(group.active===pid)group.active=group.patchIds.at(-1)||null;if(state.editingPatchId===pid)state.editingPatchId=null;if(state.selectedPatchId===pid)state.selectedPatchId=null;if(!group.patchIds.length)state.groups=state.groups.filter(g=>g.id!==group.id);else refreshGroupFootprint(group);resetSelection();renderGroups();render();toast('Variant removed.')}}
 function selectTool(tool){if(window.MosaicSourceEditor?.isEditing())return;clearHover();clearDraft();hideQuickPrompt();state.tool=tool;if(state.pendingSourceId&&tool==='reveal'){state.pendingRevealOnly=true;render()}$('resetTransformBtn').classList.toggle('hidden',tool!=='transform'||!activeTransformPatch());

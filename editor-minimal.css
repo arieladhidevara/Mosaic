@@ -1,0 +1,100 @@
+/* Editor-first composition. Small tools, roomy thumbnails, minimal chat. */
+.workspace{--inspector-width:365px}
+.canvas-viewport{isolation:isolate}
+.canvas-corner-actions{position:absolute;left:13px;bottom:12px;z-index:22;display:flex;align-items:center;gap:4px;padding:4px;border:1px solid #ffffff20;border-radius:9px;background:#17171deb;box-shadow:0 4px 14px #0005}
+.canvas-corner-actions #beforeBtn,.canvas-corner-actions #zoomValue{height:28px;min-height:28px;border:0;border-radius:6px;background:transparent;color:#e6dfed;font:600 10px system-ui;padding:4px 8px!important;cursor:pointer}
+.canvas-corner-actions button:hover{background:#ffffff13!important}
+#inspectorPanel .composition-chat{display:flex;flex-direction:column;flex:0 0 clamp(210px,30dvh,335px);max-height:43dvh;min-height:0;margin:0;padding:8px 11px 10px;border-bottom:1px solid #ffffff17;background:#18191f;gap:0}
+#inspectorPanel .copilot-thread{flex:1;min-height:0;max-height:none;padding:5px 2px 9px;overflow:auto;scrollbar-width:thin;align-content:start;gap:8px}
+#inspectorPanel .copilot-message{font-size:12px;line-height:1.5;padding:9px 10px;border-radius:10px}
+#inspectorPanel .copilot-context,#inspectorPanel .copilot-controls,#inspectorPanel .full-image-label,#inspectorPanel .chat-status{display:none!important}
+#inspectorPanel .composition-chat form{flex:0 0 auto;display:flex;flex-direction:column;gap:5px;margin:0}
+#inspectorPanel .composition-chat .chat-prompt-row{display:grid;grid-template-columns:minmax(0,1fr) 29px 31px;gap:5px;padding:5px 6px;align-items:center;background:#111217;border:1px solid #ffffff24;border-radius:10px}
+#inspectorPanel .composition-chat textarea{width:100%;min-width:0;height:36px;min-height:36px;max-height:96px;resize:vertical;background:transparent!important;border:0!important;box-shadow:none!important;outline:0!important;padding:6px;color:#f1ecf5;font:12px/1.6 system-ui}
+#inspectorPanel .composition-chat textarea::placeholder{color:#888494}
+#inspectorPanel .composition-chat .region-reference-button{width:26px;height:26px;min-width:26px;padding:0}
+#inspectorPanel #chatGenerate{width:30px;height:30px;min-height:30px;min-width:30px;padding:0;border-radius:7px;display:grid;place-items:center;font-size:18px;line-height:1}
+#inspectorPanel .region-inline-previews:empty{display:none}
+#inspectorPanel .inspector-bar{flex:0 0 auto;padding:9px 12px 7px;min-height:40px;border-bottom:1px solid #ffffff10;font-size:10px;letter-spacing:.7px}
+#inspectorPanel #autoCreateGroupsBtn{font-size:0;width:27px;min-width:27px;height:27px;min-height:27px;padding:0;display:grid;place-items:center}
+#inspectorPanel #autoCreateGroupsBtn::before{content:'✦';font-size:14px}
+#inspectorPanel #groupsPanel{display:flex;flex-direction:column;flex:1 1 auto;min-height:0;overflow:hidden}
+#inspectorPanel #groupList{flex:1;min-height:0;overflow:auto;padding:9px 11px 16px}
+#inspectorPanel .object-category{margin:0 0 10px;border:0;border-radius:9px;background:transparent}
+#inspectorPanel .object-collection-heading{display:flex;align-items:center;gap:4px;position:relative;padding:0;border:1px solid #ffffff13;border-radius:8px;background:#ffffff06;min-height:34px}
+#inspectorPanel .object-category-head{flex:1;min-width:0;padding:9px 10px;background:transparent;font-size:11px}
+#inspectorPanel .object-category-head strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#inspectorPanel .object-category-head>span:last-child{margin-left:auto}
+#inspectorPanel .object-category-items{padding:5px 0 2px 8px;margin:0 0 0 10px;border-left:1px solid #a59cb529}
+#inspectorPanel .object-category-items[hidden]{display:none!important}
+#inspectorPanel .unnamed-category{margin-top:14px;border-top:1px solid #ffffff0b;padding-top:10px}
+#inspectorPanel .unnamed-category .object-category-head strong{color:#a59dad}
+#inspectorPanel .collection-name{display:none!important}
+#inspectorPanel .object-category.renaming .collection-name{display:block!important;position:absolute;z-index:3;left:23px;right:57px;top:2px;width:calc(100% - 80px);min-width:0;margin:0;padding:5px 6px;background:#22202a;border:1px solid #a990d4;border-radius:5px;color:#fff}
+#inspectorPanel .collection-rename,#inspectorPanel .remove-collection{flex:0 0 auto;margin:0;padding:4px;opacity:.6;background:transparent;border:0;color:#bbb4c8;font-size:11px;cursor:pointer}
+#inspectorPanel .collection-rename:hover,#inspectorPanel .remove-collection:hover{opacity:1}
+#inspectorPanel .remove-collection{margin-right:6px}
+#inspectorPanel .region-group{margin:4px 0 7px;border:1px solid #ffffff12;border-radius:10px;background:#202027;overflow:hidden}
+#inspectorPanel .region-group.object-expanded{border-color:#9475c458;background:#24222d}
+#inspectorPanel .group-head{min-height:70px;padding:8px;display:flex;align-items:center;gap:10px}
+#inspectorPanel .group-icon,#inspectorPanel .group-icon:has(.group-cutout){width:60px;height:60px;min-width:60px;padding:0;border-radius:7px;overflow:hidden;background:#08090c;display:grid;place-items:center}
+#inspectorPanel .group-cutout{width:60px;height:60px;object-fit:contain;border:0;background:#08090c;border-radius:7px}
+#inspectorPanel .group-heading-copy{flex:1;min-width:0}
+#inspectorPanel .group-heading-copy .group-name{font:600 12px/1.4 system-ui;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#inspectorPanel .group-heading-copy small{display:none}
+#inspectorPanel .group-count{font-size:10px;color:#978da8}
+#inspectorPanel .object-chevron{color:#ada3bb;font-size:17px;flex:none}
+#inspectorPanel .group-head-actions{display:none;gap:3px}
+#inspectorPanel .region-group.object-expanded .group-head-actions{display:flex}
+#inspectorPanel .group-head-actions button{font-size:13px}
+#inspectorPanel .region-group:not(.object-expanded) .group-details,#inspectorPanel .region-group:not(.object-expanded) .group-options,#inspectorPanel .group-options[hidden]{display:none!important}
+#inspectorPanel .group-details{display:flex;align-items:center;flex-wrap:wrap;gap:5px;padding:5px 8px;border-top:1px solid #ffffff0a}
+#inspectorPanel .group-details .group-category{flex:1;min-width:0;font-size:10px}
+#inspectorPanel .group-details .object-collection-picker{flex-basis:100%}
+#inspectorPanel .group-options{display:flex;flex-direction:column;gap:5px;padding:6px 7px 9px;border-top:1px solid #ffffff10;background:#16161d}
+#inspectorPanel .variant-row{display:flex;flex-wrap:wrap;align-items:center;gap:9px;padding:7px;min-height:84px;border:1px solid #ffffff12;border-radius:9px;background:#22232a;cursor:pointer}
+#inspectorPanel .variant-row.selected{border-color:#b29ada75;background:#2a2836}
+#inspectorPanel .option-image{width:90px;height:72px;min-width:90px;display:grid;place-items:center;background:#050608;border-radius:7px;overflow:hidden;color:#85818f}
+#inspectorPanel .option-cutout{width:90px;height:72px;object-fit:contain;border:0;background:#050608;border-radius:7px}
+#inspectorPanel .variant-text{flex:1;min-width:0;font-size:12px;color:#ede8f3;white-space:normal;line-height:1.35}
+#inspectorPanel .variant-dot{margin-left:auto}
+#inspectorPanel .option-actions{display:none!important}
+#inspectorPanel .option-actions.is-open{display:flex!important;flex:1 0 100%;width:100%;align-items:center;justify-content:flex-end;flex-wrap:wrap;gap:7px;margin-top:4px;padding-top:9px;border-top:1px solid #ffffff15}
+#inspectorPanel .option-actions .variant-action{font:500 10px/1.2 system-ui;border:1px solid #ffffff24;border-radius:5px;color:#c9bddd;padding:6px 8px;min-width:35px;cursor:pointer}
+#inspectorPanel .option-actions .variant-action:hover{background:#ffffff0f;color:#fff}
+#inspectorPanel .group-pending-options{padding:8px;color:#8b8494;font-size:10px}
+#inspectorPanel .left-footer{display:none!important}
+@media(min-width:851px){
+ .topbar{height:52px;padding:0 16px}
+ .workspace{height:calc(100dvh - 52px)!important;grid-template-columns:minmax(0,1fr) var(--inspector-width,365px)!important}
+ .main-panel>.canvas-header{height:39px;min-height:39px;padding:0 13px}
+ .main-panel>.canvas-header .canvas-actions{display:none!important}
+ .main-panel>.tool-row{display:flex!important;flex-direction:row!important;align-items:center!important;height:55px!important;min-height:55px!important;max-height:55px!important;padding:3px 10px!important;gap:10px!important;overflow:visible!important;white-space:nowrap}
+ .tool-row .toolbar-left{display:flex!important;flex-direction:row!important;flex:1 1 auto!important;align-items:center!important;overflow:visible!important;gap:7px!important}
+ .tool-row .toolbar-section{display:flex!important;position:relative;flex-direction:column!important;align-items:center!important;justify-content:center!important;gap:2px!important;padding:0 8px!important;border:0!important;min-width:0!important}
+ .tool-row .toolbar-section+.toolbar-section{border-left:1px solid #ffffff16!important}
+ .tool-row .toolbar-section-title{display:block!important;position:static!important;order:2!important;padding:0!important;margin:0!important;font:500 8px/1.15 system-ui!important;letter-spacing:.3px!important;text-transform:none!important;color:#96909f!important}
+ .tool-row .toolbar-section>.toolset{display:flex!important;flex-direction:row!important;align-items:center!important;order:1!important;gap:3px!important;width:auto!important;padding:0!important;margin:0!important}
+ .tool-row .tool{position:relative!important;display:grid!important;place-items:center!important;width:30px!important;min-width:30px!important;height:29px!important;min-height:29px!important;padding:0!important;margin:0!important;font-size:16px!important;border-radius:6px!important}
+ .tool-row .tool span{display:none!important}
+ .tool-row .tool::after{content:attr(data-tip);position:absolute;z-index:220;top:calc(100% + 12px);left:50%;transform:translateX(-50%) translateY(-4px);pointer-events:none;opacity:0;padding:6px 9px;white-space:nowrap;border:1px solid #ffffff22;border-radius:6px;background:#292631;box-shadow:0 5px 14px #0008;color:#fff;font:500 11px/1 system-ui;transition:opacity .12s,transform .12s}
+ .tool-row .tool:hover::after,.tool-row .tool:focus-visible::after{opacity:1;transform:translateX(-50%) translateY(0)}
+ .tool-row .toolbar-right{display:flex!important;flex-direction:row!important;align-items:center!important;gap:7px!important;flex:0 0 auto!important;border-left:1px solid #ffffff15!important;padding-left:10px!important}
+ .tool-row .toolbar-right .toolbar-section.toolbar-actions{display:flex!important;flex-direction:row!important;align-items:center!important;gap:5px!important;padding:0!important}
+ .tool-row .toolbar-right .toolbar-history{display:flex!important;flex-direction:row!important;align-items:center!important;gap:2px!important}
+ .tool-row .toolbar-right .icon-btn{width:28px!important;height:29px!important}
+ .tool-row .toolbar-primary{display:flex!important;flex-direction:row!important;align-items:center!important;width:auto!important;padding:0!important;gap:5px!important}
+ .tool-row .toolbar-primary .btn{width:auto!important;min-height:30px!important;height:30px!important;padding:4px 9px!important;font-size:10px!important}
+ .tool-row #clearSelectionBtn,.tool-row #projectPromptToolbarBtn,.tool-row #resetTransformBtn{display:none!important}
+ .tool-row .brush-context{position:absolute;top:100%;left:0;background:#24212a;border-radius:6px;z-index:80}
+ .tool-row .selection-modes:not(.hidden){position:absolute!important;z-index:95;top:calc(100% + 5px);left:0;display:flex!important;flex-direction:row!important;gap:3px!important;width:auto!important;padding:4px!important;background:#24212b;border:1px solid #ffffff1a;border-radius:7px;box-shadow:0 4px 15px #0007}
+ .tool-row .selection-modes .mode{width:auto!important;padding:5px 7px!important;white-space:nowrap;font-size:10px!important}
+ .tool-row .wand-context{position:absolute;top:100%;left:0;z-index:90;background:#211f28}
+}
+@media(max-width:850px){
+ .canvas-corner-actions{left:7px;bottom:7px;padding:2px}
+ .canvas-corner-actions #beforeBtn,.canvas-corner-actions #zoomValue{height:26px;padding:3px 6px!important;font-size:10px}
+ #mobileEditPane .composition-chat{height:100%;max-height:none!important;flex:1 1 auto!important;background:transparent;border:0!important;padding:0!important}
+ #mobileEditPane .copilot-thread{max-height:none!important}
+ #inspectorPanel[data-mobile-tab="ai"] #mobileEditPane .composition-chat{display:flex!important}
+}

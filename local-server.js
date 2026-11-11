@@ -45,6 +45,7 @@ const publicFiles = new Set([
   'geometry-edit.css',
   'workspace-simplified.css',
   'workspace-mobile.css',
+  'editor-minimal.css',
   'account.js',
   'account.css',
   'landing.css',

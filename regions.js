@@ -160,9 +160,11 @@ function handleGroupEvent(e){
   }
   if(e.target.closest('.group-head')){
     const append=e.ctrlKey||e.metaKey;
+    if(!append){state.expandedObjectId=state.expandedObjectId===group.id?null:group.id;state.expandedOptionId=null}
     core.hideQuickPrompt();
     selectGroupMask(group,{append,showOutline:append});
     if(append)core.showQuickPrompt();
+    renderGroups();
     return true;
   }
   return false;
@@ -221,8 +223,10 @@ list.addEventListener('keydown',e=>{
     e.preventDefault();const group=state.groups.find(g=>g.id===e.target.dataset.group);
     if(group){
       const append=e.ctrlKey||e.metaKey;
+      if(!append){state.expandedObjectId=state.expandedObjectId===group.id?null:group.id;state.expandedOptionId=null}
       selectGroupMask(group,{append,showOutline:append});
       if(append)core.showQuickPrompt();
+      renderGroups();
     }
   }
 });
