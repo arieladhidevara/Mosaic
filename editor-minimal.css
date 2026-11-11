@@ -98,3 +98,220 @@
  #mobileEditPane .copilot-thread{max-height:none!important}
  #inspectorPanel[data-mobile-tab="ai"] #mobileEditPane .composition-chat{display:flex!important}
 }
+
+/* v2 layout repair: three actual columns. The original legacy CSS turns #tools
+   into a 138px absolutely-positioned left rail; undo every rail side effect. */
+@media (min-width:851px){
+  .workspace,.workspace.inspector-collapsed{
+    display:grid!important;
+    grid-template-columns:clamp(255px,18vw,330px) minmax(0,1fr) clamp(292px,20vw,350px)!important;
+    grid-template-rows:minmax(0,1fr)!important;
+    min-width:0!important;
+    overflow:hidden!important;
+    height:calc(100dvh - 52px)!important
+  }
+  .workspace > #inspectorPanel,
+  .workspace > .right-sidebar,
+  .workspace > .right-sidebar.is-collapsed{
+    grid-column:1!important;grid-row:1!important;
+    position:relative!important;display:flex!important;
+    flex-direction:column!important;min-height:0!important;
+    min-width:0!important;width:100%!important;
+    height:100%!important;max-height:none!important;
+    overflow:hidden!important;
+    border-left:0!important;border-right:1px solid #ffffff17!important;
+    border-top:0!important;border-radius:0!important;
+    background:#191a20!important;
+    align-items:stretch!important
+  }
+  .workspace > .main-panel{
+    grid-column:2!important;grid-row:1!important;
+    position:relative!important;min-width:0!important;
+    min-height:0!important;width:100%!important;
+    overflow:hidden!important
+  }
+  .workspace > #chatPanel{
+    grid-column:3!important;grid-row:1!important;
+    display:flex!important;flex-direction:column!important;
+    align-items:stretch!important;justify-content:flex-end!important;
+    min-height:0!important;min-width:0!important;
+    height:100%!important;overflow:hidden!important;
+    background:#17181e;border-left:1px solid #ffffff17
+  }
+  .workspace > #inspectorPanel #inspectorResizeHandle,
+  .workspace > #inspectorPanel #inspectorToggle{display:none!important}
+  .workspace > #inspectorPanel .inspector-bar{
+    display:flex!important;flex-direction:row!important;
+    align-items:center!important;justify-content:space-between!important;
+    width:100%!important;height:auto!important;
+    min-height:43px!important
+  }
+  .workspace > #inspectorPanel .inspector-bar span{writing-mode:horizontal-tb!important;letter-spacing:.6px!important}
+  .workspace > #inspectorPanel #groupsPanel{
+    display:flex!important;flex:1 1 auto!important;
+    flex-direction:column!important;overflow:hidden!important;min-height:0!important
+  }
+  .workspace > .main-panel #tools{
+    position:relative!important;inset:auto!important;
+    top:auto!important;bottom:auto!important;left:auto!important;right:auto!important;
+    z-index:15!important;
+    order:0!important;display:flex!important;flex-direction:row!important;
+    align-items:center!important;justify-content:space-between!important;
+    flex:0 0 53px!important;
+    height:53px!important;min-height:53px!important;max-height:53px!important;
+    width:100%!important;min-width:0!important;max-width:100%!important;
+    margin:0!important;padding:5px 10px!important;
+    gap:10px!important;transform:none!important;
+    overflow-x:auto!important;overflow-y:hidden!important;
+    white-space:nowrap!important;
+    border:0!important;border-bottom:1px solid #ffffff18!important;
+    border-radius:0!important;background:#17191f!important;
+    scrollbar-width:thin;scrollbar-color:#555066 transparent
+  }
+  .workspace > .main-panel #tools .toolbar-left,
+  .workspace > .main-panel #tools .toolbar-right{
+    display:flex!important;flex-direction:row!important;
+    align-items:center!important;align-content:center!important;
+    flex-wrap:nowrap!important;
+    width:auto!important;max-width:none!important;min-width:0!important;
+    height:auto!important;min-height:0!important;
+    flex-shrink:0!important;align-self:center!important;
+    overflow:visible!important;border-bottom:0!important;
+    gap:8px!important;margin:0!important;padding:0!important;
+    position:static!important
+  }
+  .workspace > .main-panel #tools .toolbar-left{flex:0 0 auto!important}
+  .workspace > .main-panel #tools .toolbar-right{
+    flex:0 0 auto!important;margin-left:auto!important;
+    border-left:1px solid #ffffff18!important;padding-left:9px!important
+  }
+  .workspace > .main-panel #tools .toolbar-section{
+    display:flex!important;flex-direction:column!important;
+    align-items:center!important;justify-content:center!important;
+    flex:0 0 auto!important;flex-wrap:nowrap!important;
+    height:auto!important;width:auto!important;min-width:0!important;
+    padding:0 6px!important;margin:0!important;
+    gap:2px!important;border-bottom:0!important
+  }
+  .workspace > .main-panel #tools .toolbar-section + .toolbar-section{border-left:1px solid #ffffff18!important}
+  .workspace > .main-panel #tools .toolbar-section-title{
+    display:block!important;position:static!important;
+    order:2!important;width:auto!important;height:auto!important;
+    padding:0!important;margin:0!important;
+    font:500 9px/1 system-ui!important;text-transform:none!important;
+    letter-spacing:.1px!important;color:#9c96a7!important
+  }
+  .workspace > .main-panel #tools .toolbar-section .toolset,
+  .workspace > .main-panel #tools .toolbar-history,
+  .workspace > .main-panel #tools .toolbar-actions,
+  .workspace > .main-panel #tools .toolbar-primary{
+    position:static!important;order:1!important;
+    display:flex!important;flex-direction:row!important;
+    flex-wrap:nowrap!important;align-items:center!important;
+    justify-content:center!important;
+    width:auto!important;max-width:none!important;height:auto!important;
+    padding:0!important;margin:0!important;gap:3px!important;
+    border:0!important
+  }
+  .workspace > .main-panel #tools .tool,
+  .workspace > .main-panel #tools .selection-toolset .tool.active{
+    display:flex!important;align-items:center!important;justify-content:center!important;
+    width:30px!important;min-width:30px!important;max-width:30px!important;
+    height:30px!important;min-height:30px!important;max-height:30px!important;
+    padding:0!important;margin:0!important;gap:0!important;
+    border-radius:6px!important;font-size:16px!important;
+    flex:0 0 30px!important
+  }
+  .workspace > .main-panel #tools .tool span,
+  .workspace > .main-panel #tools .selection-toolset .tool.active span{display:none!important}
+  .workspace > .main-panel #tools .tool svg{display:block;width:18px;height:18px}
+  .workspace > .main-panel #tools .toolbar-right .icon-btn{
+    width:29px!important;height:30px!important;min-width:29px!important;flex:0 0 auto!important
+  }
+  .workspace > .main-panel #tools .toolbar-primary{
+    width:auto!important;flex:0 0 auto!important
+  }
+  .workspace > .main-panel #tools .toolbar-primary button{
+    display:inline-flex!important;align-items:center!important;justify-content:center!important;
+    width:auto!important;max-width:none!important;
+    min-height:30px!important;height:30px!important;white-space:nowrap!important
+  }
+  .workspace > .main-panel #tools .selection-modes,
+  .workspace > .main-panel #tools .brush-context,
+  .workspace > .main-panel #tools .wand-context{
+    position:absolute!important;top:100%!important;left:auto!important;
+    z-index:70!important;width:max-content!important;
+  }
+  .workspace > .main-panel>.canvas-viewport,
+  .workspace > .main-panel>.canvas-foot,
+  .workspace > .main-panel:has(.toolbar-section-title) .canvas-viewport,
+  .workspace > .main-panel:has(.toolbar-section-title) .canvas-foot{
+    margin-left:0!important;margin-right:0!important;
+    width:100%!important;min-width:0!important
+  }
+  .workspace > .main-panel>.canvas-viewport{flex:1 1 auto!important;min-height:0!important}
+  .workspace > .main-panel>.canvas-foot{flex:0 0 auto!important}
+  .workspace > #chatPanel .composition-chat{
+    display:flex!important;flex:1 1 auto!important;
+    flex-direction:column!important;align-items:stretch!important;
+    height:100%!important;min-height:0!important;max-height:none!important;
+    width:100%!important;
+    margin:0!important;padding:12px 12px 16px!important;
+    gap:0!important;border:0!important;background:transparent!important
+  }
+  .workspace > #chatPanel .copilot-thread{
+    display:flex!important;flex-direction:column!important;flex:1 1 auto!important;
+    justify-content:flex-start!important;align-content:stretch!important;
+    min-height:0!important;max-height:none!important;
+    overflow-y:auto!important;overflow-x:hidden!important;
+    padding:7px 3px 15px!important;gap:8px!important;scrollbar-width:thin
+  }
+  .workspace > #chatPanel .copilot-thread::before{
+    content:'';display:block;flex:0 0 auto;margin-top:auto
+  }
+  .workspace > #chatPanel .copilot-message{font:400 12px/1.55 system-ui;padding:9px 11px;border-radius:10px}
+  .workspace > #chatPanel .copilot-context,
+  .workspace > #chatPanel .copilot-controls,
+  .workspace > #chatPanel .full-image-label,
+  .workspace > #chatPanel .chat-status{display:none!important}
+  .workspace > #chatPanel .composition-chat form{
+    display:flex!important;flex:0 0 auto!important;flex-direction:column!important;
+    width:100%!important;min-width:0!important;
+    margin:0!important;padding:0!important;gap:6px!important
+  }
+  .workspace > #chatPanel .chat-prompt-row{
+    display:grid!important;grid-template-columns:minmax(0,1fr) 28px 32px!important;
+    align-items:center!important;gap:5px!important;padding:6px!important;
+    border:1px solid #ffffff24!important;border-radius:10px!important;
+    background:#0f1015!important
+  }
+  .workspace > #chatPanel .composition-chat textarea{
+    width:100%!important;min-width:0!important;height:38px!important;min-height:38px!important;
+    max-height:140px!important;padding:7px 6px!important;margin:0!important;
+    background:transparent!important;border:0!important;box-shadow:none!important;
+    outline:0!important;color:#e9e4ef!important;font:12px/1.5 system-ui!important
+  }
+  .workspace > #chatPanel #chatGenerate{
+    display:grid!important;place-items:center!important;
+    width:31px!important;height:31px!important;min-width:31px!important;
+    min-height:31px!important;padding:0!important;font-size:19px!important;
+    border-radius:7px!important
+  }
+  .workspace > #chatPanel .region-reference-button{width:27px!important;height:27px!important;padding:0!important}
+  .workspace > #chatPanel .region-inline-previews:empty{display:none!important}
+  .workspace > #chatPanel .copilot-thread:empty{min-height:0}
+}
+@media (min-width:851px) and (max-width:1150px){
+  .workspace,.workspace.inspector-collapsed{
+    grid-template-columns:250px minmax(0,1fr) 282px!important
+  }
+  .workspace > .main-panel #tools{gap:5px!important;padding-inline:6px!important}
+  .workspace > .main-panel #tools .toolbar-section{padding:0 3px!important}
+  .workspace > .main-panel #tools .toolbar-left,
+  .workspace > .main-panel #tools .toolbar-right{gap:4px!important}
+  .workspace > .main-panel #tools .toolbar-primary #harmonizeBtn{font-size:0!important;width:35px!important;padding:0!important}
+  .workspace > .main-panel #tools .toolbar-primary #harmonizeBtn::before{content:'✧';font-size:17px}
+}
+@media (max-width:850px){
+  #chatPanel{display:none!important}
+}

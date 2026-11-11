@@ -6,8 +6,8 @@ if(!form||!chat)throw Error('Design Copilot requires AI Edit workspace.');
 const thread=document.createElement('div');thread.id='copilotThread';thread.className='copilot-thread';thread.setAttribute('role','log');thread.setAttribute('aria-label','Design assistant conversation');chat.insertBefore(thread,form);
 const context=document.createElement('div');context.className='copilot-context';context.hidden=true;chat.insertBefore(context,form);
 prompt.placeholder='Ask mozAI…';send.textContent='↑';send.setAttribute('aria-label','Send message');
-const sidebar=$('inspectorPanel'),inspectorBar=sidebar?.querySelector('.inspector-bar');
-if(sidebar&&inspectorBar)inspectorBar.before(chat);
+const chatPanel=$('chatPanel');
+if(chatPanel)chatPanel.append(chat);
 const corner=document.createElement('div');corner.className='canvas-corner-actions';corner.setAttribute('aria-label','Canvas controls');
 $('viewport')?.append(corner);
 for(const id of ['beforeBtn','zoomValue']){const item=$(id);if(item)corner.append(item)}
