@@ -24,6 +24,8 @@ const apiRoutes = new Map([
   ['/api/ai/object-map', require('./api/ai/object-map')],
   ['/api/ai/option-name', require('./api/ai/option-name')],
   ['/api/ai/scene-intent', require('./api/ai/scene-intent')],
+   ['/api/ai/chat', require('./api/ai/chat')],
+   ['/api/ai/benchmark-object-map', require('./api/ai/benchmark-object-map')],
 ]);
 
 const publicFiles = new Set([
