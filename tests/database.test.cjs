@@ -11,6 +11,8 @@ test('Phase 2 migration and invitation security in PostgreSQL',async t=>{
   await pg.exec(migration);await pg.exec(migration);
   const analyticsMigration=await fs.readFile(path.resolve(__dirname,'../supabase/migrations/202611080002_mask_usage_analytics.sql'),'utf8');
   await pg.exec(analyticsMigration);await pg.exec(analyticsMigration);
+  const benchmarkMigration=await fs.readFile(path.resolve(__dirname,'../supabase/migrations/202611100001_benchmark_history.sql'),'utf8');
+  await pg.exec(benchmarkMigration);await pg.exec(benchmarkMigration);
   const ids={admin:randomUUID(),first:randomUUID(),second:randomUUID(),unconfirmed:randomUUID()};
   for(const [name,id] of Object.entries(ids))await pg.query('insert into auth.users values($1,$2,$3)',[id,name+'@example.com',name==='unconfirmed'?null:new Date()]);
   const scalar=async(sql,args=[])=>Object.values((await pg.query(sql,args)).rows[0])[0];
@@ -25,7 +27,7 @@ test('Phase 2 migration and invitation security in PostgreSQL',async t=>{
     assert.equal(await scalar('select role from public.mosaic_members where user_id=$1',[ids.admin]),'admin');
   });
   await t.test('tables have RLS and anonymous/authenticated roles cannot read data or redeem invitations',async()=>{
-    const tables=['mosaic_members','mosaic_invitations','mosaic_redemptions','mosaic_projects','mosaic_events','mosaic_generations'];
+    const tables=['mosaic_members','mosaic_invitations','mosaic_redemptions','mosaic_projects','mosaic_events','mosaic_generations','mosaic_benchmarks'];
     for(const table of tables){
       assert.equal(await scalar('select relrowsecurity from pg_class where relname=$1',[table]),true);
       for(const role of ['anon','authenticated'])assert.equal(await scalar('select has_table_privilege($1,$2,\'SELECT\')',[role,'public.'+table]),false);
@@ -73,6 +75,16 @@ test('Phase 2 migration and invitation security in PostgreSQL',async t=>{
     const overview=await scalar('select public.mosaic_admin_overview($1)',['production']);assert.equal(overview.exports,1);assert.equal(overview.projects,1);assert.equal(overview.total_tokens,null);
     const preview=await scalar('select public.mosaic_admin_overview($1)',['preview']);assert.equal(preview.exports,0);assert.equal(preview.projects,0);
     await assert.rejects(()=>pg.query('select public.mosaic_record_event($1,$2,$3,$4,$5)',[randomUUID(),ids.first,'production',project,'FAKE_EVENT']),/check constraint/);
+  });
+  await t.test('benchmark token metadata is private, scoped and excludes image bytes',async()=>{
+    const run=randomUUID();
+    await pg.query("insert into public.mosaic_benchmarks(id,user_id,environment,run_id,model,quality,width,height,duration_ms,input_tokens,image_input_tokens,text_input_tokens,output_tokens,total_tokens,estimated_cost_usd) values($1,$2,'production',$3,'gpt-image-2','high',1024,1024,30000,1200,1000,200,300,1500,0.009)",[randomUUID(),ids.admin,run]);
+    assert.equal(Number(await scalar('select count(*) from public.mosaic_benchmarks where run_id=$1',[run])),1);
+    for(const role of ['anon','authenticated']){
+      await pg.exec('set role '+role);
+      try{await assert.rejects(()=>pg.query('select * from public.mosaic_benchmarks'),/permission denied/)}
+      finally{await pg.exec('reset role')}
+    }
   });
   await t.test('tool and generation aggregates are private, scoped and preserve unknown costs',async()=>{
     const project=await scalar('select id from public.mosaic_projects where user_id=$1 limit 1',[ids.first]);

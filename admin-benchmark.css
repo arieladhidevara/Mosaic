@@ -20,3 +20,23 @@
 .benchmark-compare-card{background:#20232b;border:1px solid #4e475b;border-radius:12px;padding:12px;display:flex;flex-direction:column;gap:9px}
 .benchmark-compare-card strong{font-size:12px}
 .benchmark-compare-card small{color:#aeb3bf}
+/* Two-image interactive split view. The range input supports mouse, touch, and keyboard. */
+.benchmark-compare-controls{display:flex;flex-wrap:wrap;align-items:end;gap:12px;margin:12px 0}
+.benchmark-compare-controls label{display:flex;flex:1 1 200px;flex-direction:column;gap:6px;font-size:12px;color:#c6c8d4;min-width:0}
+.benchmark-compare-controls select{width:100%;min-width:0;padding:9px 10px;color:#eee;background:#171a20;border:1px solid #545463;border-radius:8px}
+.benchmark-slider-viewport{position:relative;width:100%;max-height:680px;overflow:hidden;isolation:isolate;background:#121418;border-radius:12px;border:1px solid #555160}
+.benchmark-slider-viewport img{position:absolute;inset:0;width:100%;height:100%;object-fit:fill;display:block;pointer-events:none;user-select:none}
+.benchmark-slider-top{clip-path:inset(0 0 0 var(--split,50%))}
+.benchmark-slider-divider{position:absolute;top:0;bottom:0;left:var(--split,50%);width:2px;transform:translateX(-50%);background:#fff;box-shadow:0 0 0 1px #292431,0 0 15px #0c0a12;pointer-events:none;z-index:2}
+.benchmark-slider-divider::after{content:'↔';position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);display:grid;place-items:center;width:39px;height:39px;border-radius:50%;background:#f8f7ff;color:#211d2b;font-size:23px;font-weight:bold;box-shadow:0 2px 12px #0008}
+.benchmark-slider-range{position:absolute;inset:0;width:100%;height:100%;margin:0;opacity:0;cursor:ew-resize;z-index:3}
+.benchmark-slider-range:focus-visible{opacity:.12;outline:3px solid #b59aff;outline-offset:-4px}
+.benchmark-slider-labels{display:flex;justify-content:space-between;gap:12px;align-items:center;margin:9px 0 14px;color:#d6d3dd;font-size:12px}
+.benchmark-slider-labels span:nth-child(2){font-variant-numeric:tabular-nums;color:#aea9c7}
+.benchmark-history{margin-top:32px}
+.benchmark-history-wrap{max-width:100%;overflow-x:auto;border:1px solid #3d3a47;border-radius:10px}
+.benchmark-history-wrap table{border-collapse:collapse;width:100%;white-space:nowrap;font-size:11px;color:#c6c7d1}
+.benchmark-history-wrap th,.benchmark-history-wrap td{padding:10px 12px;border-bottom:1px solid #33333e;text-align:left}
+.benchmark-history-wrap th{color:#eae8f3;background:#242531}
+.benchmark-history .benchmark-error{color:#f3a6a6;font-size:12px}
+@media(max-width:640px){.benchmark-compare-controls{flex-direction:column;align-items:stretch}.benchmark-slider-labels{font-size:10px}}
