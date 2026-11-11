@@ -227,5 +227,5 @@ export function splitColorInstances(colors,width,height,options={}){
       h:stats[i].maxY-stats[i].minY+1}
   })).filter(o=>o.area>0);
   return {labels,objects,stats:{initialComponents:components.length,
-    retainedObjects:objects.length,noiseRecovered:components.length>objects.length,instability}};
+    retainedObjects:objects.length,noiseRecovered:instability>.45||components.length>objects.length,instability}};
 }
