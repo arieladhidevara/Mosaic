@@ -96,6 +96,7 @@ function showQuickPrompt(point=state.lastCanvasPointer,keepText=false){
   form.style.maxWidth=Math.max(120,right-left)+'px';
   form.style.maxHeight=Math.max(120,bottom-top)+'px';
   form.classList.remove('hidden');
+  showSelectionHighlightForPrompt();
   const bounds=form.getBoundingClientRect(),w=bounds.width,h=bounds.height;
   // Keyboard completion and programmatic selection fall back to the actual
   // selection on canvas rather than an arbitrary corner of the viewport.
@@ -743,6 +744,12 @@ function drawVectorPaths(layer,paths,{color='#fff',fill='none',width=.95,dashed=
   layer.append(svgNode('path',attributes));
 }
 function updateSelectionOutline(){window.MosaicObjects?.selectionChanged();state.boundaryCanvas=!state.selectionOverlayHidden&&state.selectionMask&&maskBoundingBox(state.selectionMask)?state.selectionMask:null;drawOverlay()}
+// Keep the object selected while browsing Options; reveal its guides only on returning to a prompt.
+function showSelectionHighlightForPrompt(){
+  if(!state.selectionOverlayHidden||!state.master||!state.selectionMask||!maskBoundingBox(state.selectionMask)||state.before||window.MosaicPremium?.isPreviewing())return;
+  state.selectionOverlayHidden=false;
+  updateSelectionOutline();
+}
 function drawOverlay(){ox.clearRect(0,0,overlay.width,overlay.height);drawDraftPreview();window.MosaicPremium?.positionCanvasProgress?.();window.MosaicWorkspace?.drawOverlay();window.MosaicObjectMap?.drawSelection();
   const pointerRect=vectorLayer('pointerRectVectors');
   if(state.pointerBoxStart&&state.pointerBoxEnd){
@@ -757,9 +764,7 @@ function drawOverlay(){ox.clearRect(0,0,overlay.width,overlay.height);drawDraftP
   vectorLayer('regionGuideVectors');
   if(state.before||window.MosaicPremium?.isPreviewing()){maskAddButton.hidden=maskRemoveButton.hidden=true;clearHover();return}
   if(!window.MosaicWorkspace?.isSelectingResult())window.MosaicPremium?.drawRegionGuides();
-  if(state.selectionOverlayHidden&&state.selectionMask&&state.selectionPaths?.length)
-    drawVectorPaths(vectors,state.selectionPaths,{color:'#d6c8fb',width:.7,dashed:true});
-  else if(state.boundaryCanvas&&!window.MosaicObjects?.drawPreview(ox,vectors))drawVectorPaths(vectors,ensureSelectionPaths(),{fill:state.tool==='select'?'rgba(151,109,231,.22)':'none',dashed:true});
+  if(!state.selectionOverlayHidden&&state.boundaryCanvas&&!window.MosaicObjects?.drawPreview(ox,vectors))drawVectorPaths(vectors,ensureSelectionPaths(),{fill:state.tool==='select'?'rgba(151,109,231,.22)':'none',dashed:true});
   const chosen=state.tool==='transform' && !state.pendingSourceId && !state.editingPatchId && activeTransformPatch();
   if(chosen){
     drawVectorPaths(vectors,patchSelectionPaths(chosen),{dashed:true});
@@ -1721,6 +1726,12 @@ promptDragHandle.addEventListener('keydown',event=>{
   if(!direction)return;event.preventDefault();event.stopPropagation();
   const box=$('quickAreaPromptForm').getBoundingClientRect(),step=event.shiftKey?32:8;
   moveQuickPrompt(box.left+direction[0]*step,box.top+direction[1]*step);
+});
+// Both floating object prompts and the right-hand AI chat return to the same selected object.
+// pointerdown also handles clicking an input that has retained focus after an Option click.
+const isEditPromptTarget=target=>target?.matches?.('#quickAreaPromptInput, #compositionChatPrompt, .region-option-prompt input[type="text"], .region-option-prompt textarea');
+for(const type of ['focusin','pointerdown'])document.addEventListener(type,event=>{
+  if(isEditPromptTarget(event.target))showSelectionHighlightForPrompt();
 });
 $('quickAreaPromptInput').addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();$('quickAreaPromptForm').requestSubmit()}});
 $('quickAreaPromptForm').addEventListener('submit',e=>{
