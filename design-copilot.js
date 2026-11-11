@@ -6,7 +6,7 @@ if(!form||!chat)throw Error('Design Copilot requires AI Edit workspace.');
 const thread=document.createElement('div');thread.id='copilotThread';thread.className='copilot-thread';thread.setAttribute('role','log');thread.setAttribute('aria-label','Design assistant conversation');chat.insertBefore(thread,form);
 const context=document.createElement('div');context.className='copilot-context';context.hidden=true;chat.insertBefore(context,form);
 const controls=document.createElement('div');controls.className='copilot-controls';
-const hint=document.createElement('span');hint.style.cssText='font-size:10px;color:#8990a0';hint.textContent='Ask, point, select, or generate';
+const hint=document.createElement('span');hint.style.cssText='font-size:10px;color:#8990a0';hint.textContent='Chat remembers Base · image edits billed separately';
 const searchLabel=document.createElement('label');searchLabel.className='copilot-search-toggle';
 const searchInput=document.createElement('input');searchInput.type='checkbox';searchInput.id='copilotSearchWeb';
 searchLabel.append(searchInput,document.createTextNode('Search web'));controls.append(hint,searchLabel);form.append(controls);
@@ -98,6 +98,18 @@ $('overlayCanvas').addEventListener('pointerup',e=>{
   const g=objectAt(x,y);pointed={x:x/canvas.width,y:y/canvas.height,id:g?.id||null,label:g?.objectName||g?.name||'selected area'};contextUI();
 },true);
 function files(){return [...form.querySelectorAll('input.region-reference-input')].flatMap(i=>[...i.files])}
+async function referenceImages(){
+  const list=files().slice(0,3),images=[];
+  for(const file of list){
+    if(!/^image\/(png|jpeg|webp)$/.test(file.type)||file.size>10000000)throw Error('Reference must be JPG/PNG/WebP under 10 MB.');
+    const url=URL.createObjectURL(file),img=new Image();img.src=url;
+    try{await img.decode()}finally{URL.revokeObjectURL(url)}
+    let encoded=jpeg(img,720,.65);
+    if(encoded.length>850000)encoded=jpeg(img,520,.65);
+    images.push(encoded);
+  }
+  return images;
+}
 function addButton(text,action,m){
   const b=document.createElement('button');b.type='button';b.textContent=text;b.onclick=()=>void execute(action,m);return b;
 }
@@ -172,6 +184,7 @@ async function submit(event){
       base:first?jpeg(state.reference||state.rawBase||state.master):null,
       currentImage:!first&&session.sceneToken!==token?jpeg(core.composeApprovedCanvas(),800,.68):null,
       objects:objects(),selectedIds:selectionIds(),point:pointed?{x:pointed.x,y:pointed.y}:null,
+      references:await referenceImages(),
       projectPrompt:premium.projectPrompt(),
       searchWeb:searchInput.checked||/\b(search|find references|online|product links|source links)\b/i.test(message)||/cari (referensi|link|produk|website|internet)/i.test(message)
     });
