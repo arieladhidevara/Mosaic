@@ -27,3 +27,15 @@ test('legal pages and security headers are present',()=>{
   const vercel=JSON.parse(fs.readFileSync(path.join(root,'vercel.json'),'utf8'));
   assert.ok(vercel.headers.some(rule=>rule.headers.some(header=>header.key==='X-Frame-Options'&&header.value==='DENY')));
 });
+// Every registered admin benchmark request must pass the browser route gate and the server module must load.
+test('benchmark and scene chat API routes are allowed by the browser request guard',()=>{
+  const fs=require('node:fs'),path=require('node:path');
+  const code=fs.readFileSync(path.join(__dirname,'../account.js'),'utf8');
+  const routes=['benchmark-object-map','chat','scene-intent'];
+  const gate=code.match(/if\(!\/(\^\\\/api\\\/.*)\/\.test\(path\)\)/)?.[1]||'';
+  for(const route of routes)assert.ok(gate.includes(route),route+' must be allowed through the client API gate');
+});
+test('admin Object ID benchmark handler and cost module can load',()=>{
+  assert.equal(typeof require('../lib/ai-benchmark-handler'),'function');
+  assert.ok(require('../lib/model-cost').MODELS.length>=1);
+});
