@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {calculateMaskDelta,registerBinaryMasks,measureBinaryMask,segmentGeneratedMaterial,measureContourWarpCoverage} from '../geometry-mask.mjs';
+import {calculateMaskDelta,structuralLines,fitPerspectiveLines,projectPoint,estimatePerspective,perspectivePixels} from '../geometry-mask.mjs';
 
 test('shape grows: expanded pixels are occlusions, not revealed background',()=>{
   const a=Uint8Array.from([0,1,1,0,0]);
@@ -28,89 +28,88 @@ test('rejects unmatched image dimensions',()=>{
 });
 
 
+
 const rect=(width,height,x0,y0,w,h)=>{
   const mask=new Uint8Array(width*height);
   for(let y=y0;y<y0+h;y++)for(let x=x0;x<x0+w;x++)mask[y*width+x]=1;
   return mask;
 };
-test('generated mask B can register a small translation into the immutable original mask A',()=>{
-  const w=80,h=60,a=rect(w,h,12,10,35,28),b=rect(w,h,15,12,35,28);
-  const original=a.slice(),candidate=b.slice();
-  const fit=registerBinaryMasks(a,b,w,h);
-  assert.equal(fit.approved,true);
-  assert.equal(fit.dx,-3);assert.equal(fit.dy,-2);
-  assert.ok(fit.iou>.65);
-  assert.deepEqual(a,original);assert.deepEqual(b,candidate);
+const line=(p,q)=>{
+  const length=Math.hypot(q.x-p.x,q.y-p.y),nx=(q.y-p.y)/length,ny=(p.x-q.x)/length;
+  return {p,q,nx,ny,rho:nx*p.x+ny*p.y,length};
+};
+const box={x:20,y:20,w:200,h:160},frame={x:120,y:100,scale:200};
+const corners=[{x:30,y:30},{x:210,y:30},{x:210,y:170},{x:30,y:170}];
+const pairsFor=matrix=>corners.map((p,i)=>{
+  const q=corners[(i+1)%4];
+  return {target:line(p,q),source:line(projectPoint(matrix,p,frame),projectPoint(matrix,q,frame))};
 });
-test('appearance registration rejects large shape changes instead of distorting the original geometry',()=>{
-  const w=80,h=60,a=rect(w,h,12,10,35,28);
-  const replacement=rect(w,h,11,8,58,44);
-  const fit=registerBinaryMasks(a,replacement,w,h);
-  assert.equal(fit.approved,false);
-  assert.equal(fit.reason,'inconsistent-shapes');
-  assert.deepEqual(measureBinaryMask(a,w,h),{x:12,y:10,w:35,h:28,area:980});
-});
-test('mask registration rejects incompatible dimensions and empty suggestions',()=>{
-  const w=12,h=10,a=rect(w,h,2,2,6,5),empty=new Uint8Array(w*h);
-  assert.equal(registerBinaryMasks(a,empty,w,h).approved,false);
-  assert.throws(()=>registerBinaryMasks(a,new Uint8Array(2),w,h),TypeError);
-});
-
-
-function materialScene(width,height,oldMask,newMask,{textured=false,unchanged=false,editOutside=false}={}){
-  const before=new Uint8ClampedArray(width*height*4),after=new Uint8ClampedArray(width*height*4);
-  for(let p=0;p<width*height;p++){
-    const x=p%width,y=(p-x)/width;
-    const background=[25,35,50],oldColor=[226,229,232];
-    const wood=textured?(x%5<2?[97,58,31]:[151,100,59]):[137,88,48];
-    const old=oldMask[p]?oldColor:background;
-    const next=unchanged?old:newMask[p]?wood:
-      editOutside&&x>65&&x<80&&y>20&&y<58?[190,25,30]:background;
-    for(let c=0;c<3;c++){before[p*4+c]=old[c];after[p*4+c]=next[c];}
-    before[p*4+3]=after[p*4+3]=255;
+test('four structural edges yield one small projective correction',()=>{
+  const matrix=[1.012,.005,.008,-.003,.99,.005,.012,-.006,1],fit=fitPerspectiveLines(pairsFor(matrix),box);
+  assert.equal(fit.approved,true,fit.reason);
+  for(const p of [...corners,{x:120,y:100}]){
+    const actual=projectPoint(fit.matrix,p,fit.frame),expected=projectPoint(matrix,p,frame);
+    assert.ok(Math.hypot(actual.x-expected.x,actual.y-expected.y)<1e-5);
   }
-  return {before,after,target:oldMask,width,height};
+  const a=projectPoint(fit.matrix,{x:40,y:80},fit.frame),b=projectPoint(fit.matrix,{x:100,y:80},fit.frame),c=projectPoint(fit.matrix,{x:190,y:80},fit.frame);
+  assert.ok(Math.abs((b.x-a.x)*(c.y-a.y)-(b.y-a.y)*(c.x-a.x))<1e-5,'a straight texture line must remain straight');
+});
+test('large drift, stretching and inconsistent edges never trigger an automatic warp',()=>{
+  for(const matrix of [[1,0,.09,0,1,0,0,0,1],[1.18,0,0,0,1,0,0,0,1],[1,.12,0,0,1,0,0,0,1]]){
+    const fit=fitPerspectiveLines(pairsFor(matrix),box);assert.equal(fit.approved,false);assert.equal(fit.reason,'perspective-correction-too-large');
+  }
+  const pairs=pairsFor([1,0,.01,0,1,.01,0,0,1]);
+  pairs.push({target:line({x:90,y:30},{x:90,y:170}),source:line({x:86,y:30},{x:86,y:170})});
+  assert.equal(fitPerspectiveLines(pairs,box).approved,false,'conflicting planes should keep original RGB');
+});
+test('flat walls, too few edges, parallel edges and already aligned lines stay untouched',()=>{
+  assert.equal(fitPerspectiveLines(pairsFor([1,0,0,0,1,0,0,0,1]),box).reason,'structural-lines-already-aligned');
+  assert.equal(fitPerspectiveLines(pairsFor([1,0,.01,0,1,0,0,0,1]).slice(0,2),box).reason,'insufficient-structural-lines');
+  const parallel=[30,60,100,150].map(x=>({target:line({x,y:30},{x,y:170}),source:line({x:x+2,y:30},{x:x+2,y:170})}));
+  assert.equal(fitPerspectiveLines(parallel,box).approved,false);
+});
+function scene({shift=0,noise=false,wavy=false,flat=false}={}){
+  const width=240,height=200,mask=rect(width,height,30,30,180,140),before=new Uint8ClampedArray(width*height*4),after=before.slice();
+  for(let y=0;y<height;y++)for(let x=0;x<width;x++){
+    const inside=x>=30&&x<210&&y>=30&&y<170,offset=wavy?Math.round(Math.sin(y*.22)*9):shift;
+    const changed=x>=30+offset&&x<210+offset&&y>=30+shift&&y<170+shift;
+    const a=flat?180:inside?210:35,b=flat?125:changed?125+(noise?(x*13+y*7)%15:0):35;
+    const i=(y*width+x)*4;before.set([a,a,a,255],i);after.set([b,b,b,255],i);
+  }
+  return {before,after,mask,width,height};
 }
-test('Material Edit rebuilds Mask B from newly generated RGB, not from the old mask',()=>{
-  const w=110,h=80,a=rect(w,h,15,12,43,46),b=rect(w,h,18,13,43,46);
-  const beforeA=a.slice(),scene=materialScene(w,h,a,b);
-  const segmented=segmentGeneratedMaterial(scene);
-  assert.ok(segmented,'newly generated material should have a distinct silhouette');
-  assert.equal(segmented.method,'generated-rgb-segmentation');
-  assert.deepEqual(measureBinaryMask(segmented.mask,w,h),measureBinaryMask(b,w,h));
-  assert.deepEqual(a,beforeA,'Mask A must remain unchanged');
-  const fit=registerBinaryMasks(a,segmented.mask,w,h);
-  assert.equal(fit.approved,true);
-  assert.equal(fit.dx,-3);assert.equal(fit.dy,-1);
-  const warped=measureContourWarpCoverage(a,segmented.mask,w,h,fit);
-  assert.ok(warped.valid,'Mask B must geometrically map onto A');
-  assert.ok(warped.coverage>.98);
+test('image edges align a slightly shifted wall despite a new material and fine texture',()=>{
+  const input=scene({shift:2,noise:true}),original=input.mask.slice();
+  const fit=estimatePerspective(input);assert.equal(fit.approved,true,JSON.stringify(fit));
+  assert.ok(fit.matchedLines>=4);assert.ok(fit.displacement<5);
+  assert.deepEqual(input.mask,original);
 });
-test('textured material and unrelated changes still produce a localized Mask B',()=>{
-  const w=110,h=80,a=rect(w,h,15,12,43,46),b=rect(w,h,18,13,43,46);
-  const segmented=segmentGeneratedMaterial(materialScene(w,h,a,b,{textured:true,editOutside:true}));
-  assert.ok(segmented);
-  assert.deepEqual(measureBinaryMask(segmented.mask,w,h),measureBinaryMask(b,w,h));
-});
-test('unchanged material produces no confident new Mask B, keeping the locked mask',()=>{
-  const w=110,h=80,a=rect(w,h,15,12,43,46);
-  const segmented=segmentGeneratedMaterial(materialScene(w,h,a,a,{unchanged:true}));
-  assert.equal(segmented,null);
-});
-test('registration follows different sloping perspective outlines without changing A',()=>{
-  const w=100,h=80,a=new Uint8Array(w*h),b=new Uint8Array(w*h);
-  for(let y=10;y<60;y++){
-    const t=(y-10)/49,l=10+Math.round(10*t),r=72-Math.round(9*t);
-    for(let x=l;x<r;x++)a[y*w+x]=1;
+test('changing a silhouette or wall texture alone cannot pull the mask contour',()=>{
+  for(const input of [scene({flat:true,noise:true}),scene({noise:true}),scene({wavy:true})]){
+    const original=input.mask.slice(),fit=estimatePerspective(input);
+    assert.equal(fit.approved,false,JSON.stringify(fit));assert.deepEqual(input.mask,original);
   }
-  for(let y=13;y<63;y++){
-    const t=(y-13)/49,l=14+Math.round(11*t),r=74-Math.round(7*t);
-    for(let x=l;x<r;x++)b[y*w+x]=1;
+});
+test('mask holes and irregular boundaries are not alignment control points',()=>{
+  const input=scene({noise:true});
+  for(let y=70;y<130;y++)for(let x=80;x<125;x++)input.mask[y*input.width+x]=0;
+  for(let y=30;y<170;y++)for(let x=205-Math.round(Math.sin(y*.4)*4);x<210;x++)input.mask[y*input.width+x]=0;
+  assert.equal(estimatePerspective(input).approved,false);
+});
+test('projective sampling preserves outside pixels and exact old mask, with no new alpha holes',()=>{
+  const input=scene({shift:2}),fit=estimatePerspective(input);assert.ok(fit.approved);
+  const original=input.mask.slice(),image=input.after.slice();
+  const result=perspectivePixels(input.after,input.mask,input.width,input.height,fit);
+  assert.ok(result);
+  for(let i=0;i<input.mask.length;i++){
+    assert.equal(result[i*4+3],255);
+    if(!input.mask[i])assert.deepEqual(result.slice(i*4,i*4+4),image.slice(i*4,i*4+4));
   }
-  const original=a.slice(),fit=registerBinaryMasks(a,b,w,h);
-  assert.equal(fit.approved,true);
-  const result=measureContourWarpCoverage(a,b,w,h,fit);
-  assert.equal(result.valid,true);
-  assert.ok(result.coverage>.96);
-  assert.deepEqual(a,original);
+  assert.deepEqual(input.mask,original);assert.deepEqual(input.after,image);
+  const ix=(100*input.width+31)*4;assert.ok(result[ix]>110&&result[ix]<140,'wall edge returns to the original position');
+});
+test('correction requiring pixels outside the image is declined instead of stretching an edge',()=>{
+  const input=scene(),mask=new Uint8Array(input.width*input.height).fill(1);
+  const fit=fitPerspectiveLines(pairsFor([1,0,.01,0,1,0,0,0,1]),box);assert.ok(fit.approved);
+  assert.equal(perspectivePixels(input.after,mask,input.width,input.height,fit),null);
 });

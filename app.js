@@ -79,7 +79,7 @@ function upgradeBaseDraft(target){
   window.MosaicPremium?.onBaseContinue?.(state.master);updateSelectionOutline();updateZoomFit();render();return true;
 }
 function showProcessing(on){state.busy=on;$('processing').classList.toggle('hidden',!on)}
-function clearDraft(){state.lasso=[];state.hoverPoint=null;state.pointerStart=null;state.dragFreehand=false;state.shapeStart=null;state.shapeEnd=null;state.drawing=false}
+function clearDraft(){window.MosaicObjectCreateCut?.cancelCut?.();state.lasso=[];state.hoverPoint=null;state.pointerStart=null;state.dragFreehand=false;state.shapeStart=null;state.shapeEnd=null;state.drawing=false}
 function clearHover(){window.MosaicRegions?.clearHover()}
 function hideQuickPrompt(){document.getElementById('quickAreaPromptForm')?.classList.add('hidden')}
 function showQuickPrompt(point=state.lastCanvasPointer,keepText=false){
@@ -830,7 +830,8 @@ function renderGroups(){
   const caret=liveFocus&&typeof liveFocus.selectionStart==='number'
     ?[liveFocus.selectionStart,liveFocus.selectionEnd]:null;
   if(liveForm)liveForm.remove();
-  const visibleGroups=state.groups.filter(group=>!group.objectMapBatch&&!group.mergedInto);
+  window.MosaicObjectManager?.groupSimilarNames();
+  const visibleGroups=state.groups.filter(group=>!group.objectMapBatch&&!group.mergedInto&&!group.objectRemoved);
   const collections=state.objectCollections||[];
   const categories=new Map(collections.slice().sort((a,b)=>String(a.name||'').localeCompare(String(b.name||''),undefined,{numeric:true,sensitivity:'base'})).map(group=>[group.id,[]]));
   for(const group of visibleGroups){
@@ -927,7 +928,7 @@ function selectTool(tool){if(window.MosaicSourceEditor?.isEditing())return;clear
   overlay.style.cursor='';
   if(tool==='select'&&state.boundaryCanvas)ensureSelectionPaths();
   if(tool==='select')message('Select: tap an object, or drag a rectangle to select overlapping object masks.');
-  else if(tool==='cut')message('Cut: select an object first, then draw one line all the way through it.');
+  else if(tool==='cut')message('Cut: click to add points, double-click to finish. Hold and drag for freehand. Esc cancels.');
   else if(tool==='wand')message('Wand: click to select one prepared object. Ctrl/Cmd-click adds another object.');
   else if(tool==='lasso')message('Line: click each corner, then click the first point or press Enter to close.');
   else if(tool==='zoom')message('Zoom: click to zoom in. Shift-click to zoom out.');
@@ -1508,7 +1509,7 @@ function pointerDown(e){if(e.target.closest('form,button,input,textarea,select')
     return;
   }
   if(state.tool==='cut'){
-    const ok=window.MosaicObjectCreateCut?.beginCut?.(canvasPoint(e,false));
+    const ok=window.MosaicObjectCreateCut?.beginCut?.(canvasPoint(e,false),e.pointerId);
     if(ok){e.preventDefault();e.currentTarget.setPointerCapture(e.pointerId);}
     return;
   }
@@ -1561,7 +1562,7 @@ function pointerMove(e){
     window.MosaicSlimWand?.hoverAt?.(p);
     return;
   }
-  if(state.tool==='cut'){if(window.MosaicObjectCreateCut?.isCutting?.())window.MosaicObjectCreateCut.moveCut(canvasPoint(e,false));return;}
+  if(state.tool==='cut'){if(window.MosaicObjectCreateCut?.isCutting?.())window.MosaicObjectCreateCut.moveCut(canvasPoint(e,false),e.pointerId);return;}
   // A lasso can finish via Enter or clicking its starting point. Remember the
   // latest pointer *move*, not only pointerdown/up, for prompt anchoring.
   if(Number.isFinite(e.clientX)&&Number.isFinite(e.clientY))
@@ -1605,7 +1606,8 @@ function pointerUp(e){
     drawOverlay();return;
   }
   if(state.tool==='cut'){
-    if(window.MosaicObjectCreateCut?.isCutting?.()){window.MosaicObjectCreateCut.moveCut(canvasPoint(e,false));window.MosaicObjectCreateCut.endCut();}
+    window.MosaicObjectCreateCut?.releaseCut?.(canvasPoint(e,false),e.pointerId);
+    if(e.currentTarget.hasPointerCapture(e.pointerId))e.currentTarget.releasePointerCapture(e.pointerId);
     return;
   }
   if(state.maskVertexDrag){endMaskVertexDrag();return}if(state.maskMoveDrag){endSelectionMove();return}if(state.transformDrag){endTransform();return}if(state.tool==='transform'){if(state.transformDrag)endTransform();return}if(state.tool==='pan'){state.panAnchor=null;return}if(!state.drawing)return;
@@ -1641,6 +1643,9 @@ function pointerCancel(){if(state.pointerBoxStart){state.pointerBoxStart=null;st
     }
     state.drawing=false;state.lastPoint=null;state.pointerStart=null;state.shapeStart=null;state.shapeEnd=null;if(state.dragFreehand)state.lasso=[];state.dragFreehand=false;drawOverlay()}}
 function onKeys(e){if(e.key==='Escape'&&state.before){e.preventDefault();toggleComparison(false);return}if(e.target.matches('input,textarea,select,[contenteditable="true"]')||e.repeat&&e.key==='Enter')return;
+  if(state.tool==='cut'&&window.MosaicObjectCreateCut?.isCutting?.()&&['Escape','Enter'].includes(e.key)){
+    e.preventDefault();if(e.key==='Enter')window.MosaicObjectCreateCut.endCut();else{window.MosaicObjectCreateCut.cancelCut();message('Unfinished cut canceled.')}return;
+  }
   if(e.key==='Enter'){
     if(state.lasso.length>=3){e.preventDefault();updateMaskWithLasso();return}
     // Enter closes a draft shape; only clicking Apply commits an imported image.
@@ -1732,10 +1737,19 @@ $('tools').addEventListener('click',e=>{const tool=e.target.closest('[data-tool]
 $('brushSize').addEventListener('input',e=>{state.brushSize=Number(e.target.value);$('brushValue').textContent=e.target.value;refreshBrushCursor()});
 $('brushIntensity').addEventListener('input',e=>{state.brushIntensity=Number(e.target.value);$('brushIntensityValue').textContent=e.target.value+'%';refreshBrushCursor()});
 const projectNameInput=$('projectNameInput');
-$('projectName').addEventListener('click',()=>{projectNameInput.value=$('projectName').textContent;$('projectName').classList.add('hidden');projectNameInput.classList.remove('hidden');projectNameInput.focus();projectNameInput.select()});
-function finishProjectRename(save){if(projectNameInput.classList.contains('hidden'))return;if(save&&projectNameInput.value.trim())setProjectTitle(projectNameInput.value,true);projectNameInput.classList.add('hidden');$('projectName').classList.remove('hidden')}
-projectNameInput.addEventListener('blur',()=>finishProjectRename(true));
-projectNameInput.addEventListener('keydown',event=>{if(event.key==='Enter'||event.key==='Escape'){event.preventDefault();event.stopPropagation();finishProjectRename(event.key==='Enter')}});
+const projectMenu=$('projectMenu');
+projectMenu.addEventListener('toggle',()=>{
+  if(projectMenu.open)projectNameInput.value=$('projectName').textContent;
+});
+$('projectRenameForm').addEventListener('submit',event=>{
+  event.preventDefault();
+  if(!projectNameInput.value.trim())return;
+  setProjectTitle(projectNameInput.value,true);
+  projectMenu.open=false;projectMenu.querySelector('summary').focus();
+});
+projectNameInput.addEventListener('keydown',event=>{
+  if(event.key==='Escape'){event.preventDefault();event.stopPropagation();projectMenu.open=false;projectMenu.querySelector('summary').focus()}
+});
 
 $('commitBtn').addEventListener('click',applySelection);
 $('undoBtn').addEventListener('click',()=>historyStep(state.undo,state.redo));$('redoBtn').addEventListener('click',()=>historyStep(state.redo,state.undo));
@@ -1832,7 +1846,7 @@ compareSlider.addEventListener('pointermove',event=>{if(compareDrag===event.poin
 for(const type of ['pointerup','pointercancel'])compareSlider.addEventListener(type,event=>{if(compareDrag!==event.pointerId)return;compareDrag=null;if(compareSlider.hasPointerCapture(event.pointerId))compareSlider.releasePointerCapture(event.pointerId)});
 // Touch and mouse drawing both use Pointer Events.
 for(const type of ['pointerdown','pointermove','pointerup','pointercancel'])$('viewport').addEventListener(type,{pointerdown:pointerDown,pointermove:pointerMove,pointerup:pointerUp,pointercancel:pointerCancel}[type]);
-$('viewport').addEventListener('dblclick',e=>{if(state.tool==='lasso'&&state.lasso.length>=3){e.preventDefault();updateMaskWithLasso()}});
+$('viewport').addEventListener('dblclick',e=>{if(e.target.closest('form,button,input,textarea,select'))return;if(state.tool==='cut'){e.preventDefault();window.MosaicObjectCreateCut?.endCut?.();return}if(state.tool==='lasso'&&state.lasso.length>=3){e.preventDefault();updateMaskWithLasso()}});
 window.addEventListener('keydown',onKeys);window.addEventListener('resize',()=>{if(window.innerWidth>730&&!inspectorPanel.classList.contains('is-collapsed'))setInspectorWidth(inspectorPanel.getBoundingClientRect().width);if(state.master)updateZoomFit();const form=$('quickAreaPromptForm');if(!form.classList.contains('hidden')){const box=form.getBoundingClientRect();moveQuickPrompt(box.left,box.top)}});
 for(const id of ['copyPromptBtn','copyPromptSecondary'])$(id).addEventListener('click',async()=>{try{await navigator.clipboard.writeText(promptText());toast('Prompt copied.')}catch{toast('Clipboard unavailable. Select prompt from the panel.')}});
 const viewport=$('viewport');viewport.addEventListener('pointerleave',()=>{window.MosaicRegions?.clearHover();window.MosaicSlimWand?.leave?.()});viewport.addEventListener('dragover',e=>{e.preventDefault();viewport.classList.add('dropping')});viewport.addEventListener('dragleave',()=>viewport.classList.remove('dropping'));viewport.addEventListener('drop',async e=>{e.preventDefault();viewport.classList.remove('dropping');const files=[...e.dataTransfer.files].filter(f=>f.type.startsWith('image/'));if(!state.master){if(files[0])await importReference(files[0]);if(files.length>1)await importVariants(files.slice(1))}else await importVariants(files)});

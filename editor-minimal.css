@@ -7,8 +7,8 @@
 #inspectorPanel .composition-chat{display:flex;flex-direction:column;flex:0 0 clamp(210px,30dvh,335px);max-height:43dvh;min-height:0;margin:0;padding:8px 11px 10px;border-bottom:1px solid #ffffff17;background:#18191f;gap:0}
 #inspectorPanel .copilot-thread{flex:1;min-height:0;max-height:none;padding:5px 2px 9px;overflow:auto;scrollbar-width:thin;align-content:start;gap:8px}
 #inspectorPanel .copilot-message{font-size:12px;line-height:1.5;padding:9px 10px;border-radius:10px}
-#inspectorPanel .copilot-context,#inspectorPanel .copilot-controls,#inspectorPanel .full-image-label,#inspectorPanel .chat-status{display:none!important}
-#inspectorPanel .composition-chat form{flex:0 0 auto;display:flex;flex-direction:column;gap:5px;margin:0}
+#inspectorPanel .full-image-label{display:none!important}
+#inspectorPanel .composition-chat form{flex:0 0 auto;display:flex;flex-direction:column;align-items:stretch;width:100%;min-width:0;gap:5px;margin:0}
 #inspectorPanel .composition-chat .chat-prompt-row{display:grid;grid-template-columns:minmax(0,1fr) 29px 31px;gap:5px;padding:5px 6px;align-items:center;background:#111217;border:1px solid #ffffff24;border-radius:10px}
 #inspectorPanel .composition-chat textarea{width:100%;min-width:0;height:36px;min-height:36px;max-height:96px;resize:vertical;background:transparent!important;border:0!important;box-shadow:none!important;outline:0!important;padding:6px;color:#f1ecf5;font:12px/1.6 system-ui}
 #inspectorPanel .composition-chat textarea::placeholder{color:#888494}
@@ -64,254 +64,86 @@
 #inspectorPanel .option-actions .variant-action:hover{background:#ffffff0f;color:#fff}
 #inspectorPanel .group-pending-options{padding:8px;color:#8b8494;font-size:10px}
 #inspectorPanel .left-footer{display:none!important}
+
+/* Project identity belongs in the header menu. */
+#projectMenu{min-width:0}
+#projectMenu>summary{justify-content:flex-start;max-width:min(36vw,360px);gap:9px}
+#projectMenu #projectName{display:block;margin:0;padding:0;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#ede8f3;font:600 12px/1.4 system-ui}
+#projectMenu .header-menu-panel{width:310px;max-width:calc(100vw - 24px)}
+.project-rename-form{padding:8px 7px 12px;border-bottom:1px solid #ffffff14;margin-bottom:4px}
+.project-rename-form label{display:block;color:#a59cad;font:500 10px system-ui;margin-bottom:7px}
+.project-rename-form>div{display:flex;gap:6px}
+.project-rename-form input{flex:1;min-width:0;width:100%;border:1px solid #ffffff25;border-radius:6px;background:#14141b;color:#eee;padding:8px;font:12px system-ui}
+#projectRenameForm button{padding:7px 9px;border:1px solid #ffffff25;background:#ffffff08}
+.assistant-heading{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:43px;padding:10px 14px;border-bottom:1px solid #ffffff0d;flex:0 0 auto}
+.assistant-heading strong{font:600 12px system-ui;color:#e8e2ef}
+.assistant-heading>span{font:500 10px system-ui;color:#b7a4d2;border:1px solid #b397df30;border-radius:5px;padding:3px 6px}
+#chatPanel .composition-chat{display:flex;flex-direction:column;flex:1 1 auto;min-height:0;max-height:none;height:auto;margin:0;padding:9px 12px 12px;gap:0;border:0;background:transparent}
+#chatPanel .copilot-thread{flex:1;min-height:0;max-height:none;overflow:auto;padding:4px 0 10px;gap:9px}
+.copilot-empty{margin:auto 4px;color:#a69faf;font:12px/1.65 system-ui}
+.copilot-empty strong{display:block;color:#d7cedf;font-weight:500;margin-bottom:5px}
+#inspectorPanel .copilot-context{display:flex;padding:2px 0 7px;font:11px system-ui}
+#inspectorPanel .copilot-context[hidden]{display:none}
+#inspectorPanel .chat-status{display:block!important;min-height:0;margin:6px 2px 0;color:#a69caf;font:10px/1.4 system-ui;overflow-wrap:anywhere}
+#inspectorPanel .chat-status:empty{display:none!important}
+#inspectorPanel .copilot-controls{display:none}
+#inspectorPanel #inspectorToggle{display:none!important}
+#inspectorPanel .inspector-bar{gap:7px}
+#inspectorPanel #inspectorHeading{white-space:nowrap;flex:0 0 auto}
+#objectMapGroupStatus{min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font:10px system-ui;letter-spacing:0}
+#inspectorPanel #addRegionBtn{margin-left:auto;flex:0 0 auto}
+#tools .object-selection-controls{display:none!important}
 @media(min-width:851px){
- .topbar{height:52px;padding:0 16px}
- .workspace{height:calc(100dvh - 52px)!important;grid-template-columns:minmax(0,1fr) var(--inspector-width,365px)!important}
- .main-panel>.canvas-header{height:39px;min-height:39px;padding:0 13px}
- .main-panel>.canvas-header .canvas-actions{display:none!important}
- .main-panel>.tool-row{display:flex!important;flex-direction:row!important;align-items:center!important;height:55px!important;min-height:55px!important;max-height:55px!important;padding:3px 10px!important;gap:10px!important;overflow:visible!important;white-space:nowrap}
- .tool-row .toolbar-left{display:flex!important;flex-direction:row!important;flex:1 1 auto!important;align-items:center!important;overflow:visible!important;gap:7px!important}
- .tool-row .toolbar-section{display:flex!important;position:relative;flex-direction:column!important;align-items:center!important;justify-content:center!important;gap:2px!important;padding:0 8px!important;border:0!important;min-width:0!important}
- .tool-row .toolbar-section+.toolbar-section{border-left:1px solid #ffffff16!important}
- .tool-row .toolbar-section-title{display:block!important;position:static!important;order:2!important;padding:0!important;margin:0!important;font:500 8px/1.15 system-ui!important;letter-spacing:.3px!important;text-transform:none!important;color:#96909f!important}
- .tool-row .toolbar-section>.toolset{display:flex!important;flex-direction:row!important;align-items:center!important;order:1!important;gap:3px!important;width:auto!important;padding:0!important;margin:0!important}
- .tool-row .tool{position:relative!important;display:grid!important;place-items:center!important;width:30px!important;min-width:30px!important;height:29px!important;min-height:29px!important;padding:0!important;margin:0!important;font-size:16px!important;border-radius:6px!important}
- .tool-row .tool span{display:none!important}
- .tool-row .tool::after{content:attr(data-tip);position:absolute;z-index:220;top:calc(100% + 12px);left:50%;transform:translateX(-50%) translateY(-4px);pointer-events:none;opacity:0;padding:6px 9px;white-space:nowrap;border:1px solid #ffffff22;border-radius:6px;background:#292631;box-shadow:0 5px 14px #0008;color:#fff;font:500 11px/1 system-ui;transition:opacity .12s,transform .12s}
- .tool-row .tool:hover::after,.tool-row .tool:focus-visible::after{opacity:1;transform:translateX(-50%) translateY(0)}
- .tool-row .toolbar-right{display:flex!important;flex-direction:row!important;align-items:center!important;gap:7px!important;flex:0 0 auto!important;border-left:1px solid #ffffff15!important;padding-left:10px!important}
- .tool-row .toolbar-right .toolbar-section.toolbar-actions{display:flex!important;flex-direction:row!important;align-items:center!important;gap:5px!important;padding:0!important}
- .tool-row .toolbar-right .toolbar-history{display:flex!important;flex-direction:row!important;align-items:center!important;gap:2px!important}
- .tool-row .toolbar-right .icon-btn{width:28px!important;height:29px!important}
- .tool-row .toolbar-primary{display:flex!important;flex-direction:row!important;align-items:center!important;width:auto!important;padding:0!important;gap:5px!important}
- .tool-row .toolbar-primary .btn{width:auto!important;min-height:30px!important;height:30px!important;padding:4px 9px!important;font-size:10px!important}
- .tool-row #clearSelectionBtn,.tool-row #projectPromptToolbarBtn,.tool-row #resetTransformBtn{display:none!important}
- .tool-row .brush-context{position:absolute;top:100%;left:0;background:#24212a;border-radius:6px;z-index:80}
- .tool-row .selection-modes:not(.hidden){position:absolute!important;z-index:95;top:calc(100% + 5px);left:0;display:flex!important;flex-direction:row!important;gap:3px!important;width:auto!important;padding:4px!important;background:#24212b;border:1px solid #ffffff1a;border-radius:7px;box-shadow:0 4px 15px #0007}
- .tool-row .selection-modes .mode{width:auto!important;padding:5px 7px!important;white-space:nowrap;font-size:10px!important}
- .tool-row .wand-context{position:absolute;top:100%;left:0;z-index:90;background:#211f28}
+  .topbar{height:52px;min-height:52px;padding:0 16px}
+  .workspace,.workspace.inspector-collapsed{display:grid!important;grid-template-columns:minmax(0,1fr) var(--inspector-width,365px)!important;grid-template-rows:minmax(0,1fr)!important;height:calc(100dvh - 52px)!important;overflow:hidden!important;min-width:0}
+  .workspace>.main-panel{grid-column:1!important;grid-row:1!important;min-width:0!important;min-height:0!important;display:flex!important;flex-direction:column!important;overflow:hidden!important}
+  .workspace>#inspectorPanel,.workspace>#inspectorPanel.is-collapsed{grid-column:2!important;grid-row:1!important;position:relative!important;display:flex!important;flex-direction:column!important;width:100%!important;min-width:0!important;min-height:0!important;max-height:none!important;height:100%!important;overflow:hidden!important;border:0!important;border-left:1px solid #ffffff18!important;border-radius:0!important;background:#191a20!important}
+  #inspectorPanel>#chatPanel{display:flex!important;flex-direction:column;flex:0 0 48%;min-height:220px;min-width:0;overflow:hidden;border-bottom:1px solid #ffffff23;background:#18191f}
+  #inspectorPanel>#groupsPanel{flex:1 1 auto!important;min-height:0!important;overflow:hidden!important}
+  #inspectorPanel>#groupsPanel #groupList{flex:1;min-height:0;overflow:auto}
+  #inspectorPanel>.inspector-bar{display:flex!important;flex-direction:row!important;align-items:center;min-height:43px!important;padding:7px 12px!important}
+  #inspectorPanel>.inspector-bar span{writing-mode:horizontal-tb!important}
+  .main-panel>.canvas-header{display:none!important}
+  .workspace>.main-panel #tools{position:relative!important;inset:auto!important;order:0!important;display:flex!important;flex-direction:row!important;flex-wrap:wrap;align-items:center!important;justify-content:space-between!important;flex:0 0 auto!important;width:100%!important;min-width:0!important;max-width:100%!important;height:auto!important;min-height:57px!important;max-height:none!important;margin:0!important;padding:7px 12px!important;gap:8px!important;overflow:visible!important;transform:none!important;border:0!important;border-bottom:1px solid #ffffff14!important;border-radius:0!important;background:#17191f!important;z-index:20;box-sizing:border-box}
+  #tools .toolbar-left,#tools .toolbar-right{display:flex!important;flex-direction:row!important;align-items:center!important;flex-wrap:nowrap!important;position:static!important;width:auto!important;min-width:0!important;max-width:none!important;height:auto!important;padding:0!important;margin:0!important;gap:8px!important;overflow:visible!important;border:0!important;flex:0 0 auto!important}
+  #tools .toolbar-right{margin-left:auto!important;border-left:1px solid #ffffff14!important;padding-left:9px!important}
+  #tools .toolbar-section{display:flex!important;position:relative!important;flex-direction:column!important;align-items:center!important;justify-content:center!important;flex:0 0 auto!important;width:auto!important;min-width:0!important;padding:0 7px!important;margin:0!important;gap:3px!important;border:0!important}
+  #tools .toolbar-section+.toolbar-section{border-left:1px solid #ffffff14!important}
+  #tools .toolbar-section-title{display:block!important;position:static!important;order:2!important;width:auto!important;height:auto!important;margin:0!important;padding:0!important;font:500 9px/1 system-ui!important;text-transform:none!important;letter-spacing:.15px!important;color:#9c96a7}
+  #tools .toolset,#tools .toolbar-history,#tools .toolbar-primary,#tools .toolbar-actions{display:flex!important;flex-direction:row!important;align-items:center!important;justify-content:center!important;flex-wrap:nowrap!important;position:static!important;order:1!important;width:auto!important;max-width:none!important;height:auto!important;padding:0!important;margin:0!important;gap:4px!important;border:0!important}
+  #tools .tool,#tools .selection-toolset .tool.active{display:grid!important;place-items:center!important;position:relative!important;flex:0 0 31px!important;width:31px!important;min-width:31px!important;max-width:31px!important;height:30px!important;min-height:30px!important;max-height:30px!important;padding:0!important;margin:0!important;border-radius:6px!important;font-size:16px!important}
+  #tools .tool span{display:none!important}
+  #tools .tool::after{content:attr(data-tip);position:absolute;top:calc(100% + 16px);left:50%;transform:translateX(-50%);z-index:90;pointer-events:none;opacity:0;padding:6px 8px;border:1px solid #ffffff25;border-radius:6px;background:#292631;color:#fff;white-space:nowrap;font:11px system-ui}
+  #tools .tool:hover::after,#tools .tool:focus-visible::after{opacity:1}
+  #tools .toolbar-right .icon-btn{width:29px!important;min-width:29px!important;height:30px!important}
+  #tools .toolbar-primary button,#tools #simplifySelectionBtn{width:auto!important;height:30px!important;min-height:30px!important;padding:4px 9px!important;font-size:11px!important;white-space:nowrap}
+  #tools #clearSelectionBtn,#tools #projectPromptToolbarBtn{display:none!important}
+  #tools .brush-context,#tools .selection-modes:not(.hidden),#tools .wand-context:not(.hidden){position:absolute!important;top:calc(100% + 7px)!important;left:0!important;z-index:80!important;width:max-content!important;max-width:390px;padding:6px!important;background:#24212b;border:1px solid #ffffff20;border-radius:7px;box-shadow:0 4px 15px #0006}
+  #tools .selection-modes:not(.hidden){display:flex!important;flex-direction:row!important;gap:4px!important}
+  #tools .selection-modes .mode{width:auto!important;padding:5px 7px!important;font-size:11px}
+  .workspace>.main-panel>.canvas-viewport,.workspace>.main-panel>.canvas-foot{margin-left:0!important;margin-right:0!important;width:100%!important;min-width:0!important}
+  .workspace>.main-panel>.canvas-viewport{flex:1 1 auto!important;min-height:0!important}
 }
 @media(max-width:850px){
- .canvas-corner-actions{left:7px;bottom:7px;padding:2px}
- .canvas-corner-actions #beforeBtn,.canvas-corner-actions #zoomValue{height:26px;padding:3px 6px!important;font-size:10px}
- #mobileEditPane .composition-chat{height:100%;max-height:none!important;flex:1 1 auto!important;background:transparent;border:0!important;padding:0!important}
- #mobileEditPane .copilot-thread{max-height:none!important}
- #inspectorPanel[data-mobile-tab="ai"] #mobileEditPane .composition-chat{display:flex!important}
-}
-
-/* v2 layout repair: three actual columns. The original legacy CSS turns #tools
-   into a 138px absolutely-positioned left rail; undo every rail side effect. */
-@media (min-width:851px){
-  .workspace,.workspace.inspector-collapsed{
-    display:grid!important;
-    grid-template-columns:clamp(255px,18vw,330px) minmax(0,1fr) clamp(292px,20vw,350px)!important;
-    grid-template-rows:minmax(0,1fr)!important;
-    min-width:0!important;
-    overflow:hidden!important;
-    height:calc(100dvh - 52px)!important
-  }
-  .workspace > #inspectorPanel,
-  .workspace > .right-sidebar,
-  .workspace > .right-sidebar.is-collapsed{
-    grid-column:1!important;grid-row:1!important;
-    position:relative!important;display:flex!important;
-    flex-direction:column!important;min-height:0!important;
-    min-width:0!important;width:100%!important;
-    height:100%!important;max-height:none!important;
-    overflow:hidden!important;
-    border-left:0!important;border-right:1px solid #ffffff17!important;
-    border-top:0!important;border-radius:0!important;
-    background:#191a20!important;
-    align-items:stretch!important
-  }
-  .workspace > .main-panel{
-    grid-column:2!important;grid-row:1!important;
-    position:relative!important;min-width:0!important;
-    min-height:0!important;width:100%!important;
-    overflow:hidden!important
-  }
-  .workspace > #chatPanel{
-    grid-column:3!important;grid-row:1!important;
-    display:flex!important;flex-direction:column!important;
-    align-items:stretch!important;justify-content:flex-end!important;
-    min-height:0!important;min-width:0!important;
-    height:100%!important;overflow:hidden!important;
-    background:#17181e;border-left:1px solid #ffffff17
-  }
-  .workspace > #inspectorPanel #inspectorResizeHandle,
-  .workspace > #inspectorPanel #inspectorToggle{display:none!important}
-  .workspace > #inspectorPanel .inspector-bar{
-    display:flex!important;flex-direction:row!important;
-    align-items:center!important;justify-content:space-between!important;
-    width:100%!important;height:auto!important;
-    min-height:43px!important
-  }
-  .workspace > #inspectorPanel .inspector-bar span{writing-mode:horizontal-tb!important;letter-spacing:.6px!important}
-  .workspace > #inspectorPanel #groupsPanel{
-    display:flex!important;flex:1 1 auto!important;
-    flex-direction:column!important;overflow:hidden!important;min-height:0!important
-  }
-  .workspace > .main-panel #tools{
-    position:relative!important;inset:auto!important;
-    top:auto!important;bottom:auto!important;left:auto!important;right:auto!important;
-    z-index:15!important;
-    order:0!important;display:flex!important;flex-direction:row!important;
-    align-items:center!important;justify-content:space-between!important;
-    flex:0 0 53px!important;
-    height:53px!important;min-height:53px!important;max-height:53px!important;
-    width:100%!important;min-width:0!important;max-width:100%!important;
-    margin:0!important;padding:5px 10px!important;
-    gap:10px!important;transform:none!important;
-    overflow-x:auto!important;overflow-y:hidden!important;
-    white-space:nowrap!important;
-    border:0!important;border-bottom:1px solid #ffffff18!important;
-    border-radius:0!important;background:#17191f!important;
-    scrollbar-width:thin;scrollbar-color:#555066 transparent
-  }
-  .workspace > .main-panel #tools .toolbar-left,
-  .workspace > .main-panel #tools .toolbar-right{
-    display:flex!important;flex-direction:row!important;
-    align-items:center!important;align-content:center!important;
-    flex-wrap:nowrap!important;
-    width:auto!important;max-width:none!important;min-width:0!important;
-    height:auto!important;min-height:0!important;
-    flex-shrink:0!important;align-self:center!important;
-    overflow:visible!important;border-bottom:0!important;
-    gap:8px!important;margin:0!important;padding:0!important;
-    position:static!important
-  }
-  .workspace > .main-panel #tools .toolbar-left{flex:0 0 auto!important}
-  .workspace > .main-panel #tools .toolbar-right{
-    flex:0 0 auto!important;margin-left:auto!important;
-    border-left:1px solid #ffffff18!important;padding-left:9px!important
-  }
-  .workspace > .main-panel #tools .toolbar-section{
-    display:flex!important;flex-direction:column!important;
-    align-items:center!important;justify-content:center!important;
-    flex:0 0 auto!important;flex-wrap:nowrap!important;
-    height:auto!important;width:auto!important;min-width:0!important;
-    padding:0 6px!important;margin:0!important;
-    gap:2px!important;border-bottom:0!important
-  }
-  .workspace > .main-panel #tools .toolbar-section + .toolbar-section{border-left:1px solid #ffffff18!important}
-  .workspace > .main-panel #tools .toolbar-section-title{
-    display:block!important;position:static!important;
-    order:2!important;width:auto!important;height:auto!important;
-    padding:0!important;margin:0!important;
-    font:500 9px/1 system-ui!important;text-transform:none!important;
-    letter-spacing:.1px!important;color:#9c96a7!important
-  }
-  .workspace > .main-panel #tools .toolbar-section .toolset,
-  .workspace > .main-panel #tools .toolbar-history,
-  .workspace > .main-panel #tools .toolbar-actions,
-  .workspace > .main-panel #tools .toolbar-primary{
-    position:static!important;order:1!important;
-    display:flex!important;flex-direction:row!important;
-    flex-wrap:nowrap!important;align-items:center!important;
-    justify-content:center!important;
-    width:auto!important;max-width:none!important;height:auto!important;
-    padding:0!important;margin:0!important;gap:3px!important;
-    border:0!important
-  }
-  .workspace > .main-panel #tools .tool,
-  .workspace > .main-panel #tools .selection-toolset .tool.active{
-    display:flex!important;align-items:center!important;justify-content:center!important;
-    width:30px!important;min-width:30px!important;max-width:30px!important;
-    height:30px!important;min-height:30px!important;max-height:30px!important;
-    padding:0!important;margin:0!important;gap:0!important;
-    border-radius:6px!important;font-size:16px!important;
-    flex:0 0 30px!important
-  }
-  .workspace > .main-panel #tools .tool span,
-  .workspace > .main-panel #tools .selection-toolset .tool.active span{display:none!important}
-  .workspace > .main-panel #tools .tool svg{display:block;width:18px;height:18px}
-  .workspace > .main-panel #tools .toolbar-right .icon-btn{
-    width:29px!important;height:30px!important;min-width:29px!important;flex:0 0 auto!important
-  }
-  .workspace > .main-panel #tools .toolbar-primary{
-    width:auto!important;flex:0 0 auto!important
-  }
-  .workspace > .main-panel #tools .toolbar-primary button{
-    display:inline-flex!important;align-items:center!important;justify-content:center!important;
-    width:auto!important;max-width:none!important;
-    min-height:30px!important;height:30px!important;white-space:nowrap!important
-  }
-  .workspace > .main-panel #tools .selection-modes,
-  .workspace > .main-panel #tools .brush-context,
-  .workspace > .main-panel #tools .wand-context{
-    position:absolute!important;top:100%!important;left:auto!important;
-    z-index:70!important;width:max-content!important;
-  }
-  .workspace > .main-panel>.canvas-viewport,
-  .workspace > .main-panel>.canvas-foot,
-  .workspace > .main-panel:has(.toolbar-section-title) .canvas-viewport,
-  .workspace > .main-panel:has(.toolbar-section-title) .canvas-foot{
-    margin-left:0!important;margin-right:0!important;
-    width:100%!important;min-width:0!important
-  }
-  .workspace > .main-panel>.canvas-viewport{flex:1 1 auto!important;min-height:0!important}
-  .workspace > .main-panel>.canvas-foot{flex:0 0 auto!important}
-  .workspace > #chatPanel .composition-chat{
-    display:flex!important;flex:1 1 auto!important;
-    flex-direction:column!important;align-items:stretch!important;
-    height:100%!important;min-height:0!important;max-height:none!important;
-    width:100%!important;
-    margin:0!important;padding:12px 12px 16px!important;
-    gap:0!important;border:0!important;background:transparent!important
-  }
-  .workspace > #chatPanel .copilot-thread{
-    display:flex!important;flex-direction:column!important;flex:1 1 auto!important;
-    justify-content:flex-start!important;align-content:stretch!important;
-    min-height:0!important;max-height:none!important;
-    overflow-y:auto!important;overflow-x:hidden!important;
-    padding:7px 3px 15px!important;gap:8px!important;scrollbar-width:thin
-  }
-  .workspace > #chatPanel .copilot-thread::before{
-    content:'';display:block;flex:0 0 auto;margin-top:auto
-  }
-  .workspace > #chatPanel .copilot-message{font:400 12px/1.55 system-ui;padding:9px 11px;border-radius:10px}
-  .workspace > #chatPanel .copilot-context,
-  .workspace > #chatPanel .copilot-controls,
-  .workspace > #chatPanel .full-image-label,
-  .workspace > #chatPanel .chat-status{display:none!important}
-  .workspace > #chatPanel .composition-chat form{
-    display:flex!important;flex:0 0 auto!important;flex-direction:column!important;
-    width:100%!important;min-width:0!important;
-    margin:0!important;padding:0!important;gap:6px!important
-  }
-  .workspace > #chatPanel .chat-prompt-row{
-    display:grid!important;grid-template-columns:minmax(0,1fr) 28px 32px!important;
-    align-items:center!important;gap:5px!important;padding:6px!important;
-    border:1px solid #ffffff24!important;border-radius:10px!important;
-    background:#0f1015!important
-  }
-  .workspace > #chatPanel .composition-chat textarea{
-    width:100%!important;min-width:0!important;height:38px!important;min-height:38px!important;
-    max-height:140px!important;padding:7px 6px!important;margin:0!important;
-    background:transparent!important;border:0!important;box-shadow:none!important;
-    outline:0!important;color:#e9e4ef!important;font:12px/1.5 system-ui!important
-  }
-  .workspace > #chatPanel #chatGenerate{
-    display:grid!important;place-items:center!important;
-    width:31px!important;height:31px!important;min-width:31px!important;
-    min-height:31px!important;padding:0!important;font-size:19px!important;
-    border-radius:7px!important
-  }
-  .workspace > #chatPanel .region-reference-button{width:27px!important;height:27px!important;padding:0!important}
-  .workspace > #chatPanel .region-inline-previews:empty{display:none!important}
-  .workspace > #chatPanel .copilot-thread:empty{min-height:0}
-}
-@media (min-width:851px) and (max-width:1150px){
-  .workspace,.workspace.inspector-collapsed{
-    grid-template-columns:250px minmax(0,1fr) 282px!important
-  }
-  .workspace > .main-panel #tools{gap:5px!important;padding-inline:6px!important}
-  .workspace > .main-panel #tools .toolbar-section{padding:0 3px!important}
-  .workspace > .main-panel #tools .toolbar-left,
-  .workspace > .main-panel #tools .toolbar-right{gap:4px!important}
-  .workspace > .main-panel #tools .toolbar-primary #harmonizeBtn{font-size:0!important;width:35px!important;padding:0!important}
-  .workspace > .main-panel #tools .toolbar-primary #harmonizeBtn::before{content:'✧';font-size:17px}
-}
-@media (max-width:850px){
-  #chatPanel{display:none!important}
+  #projectMenu>summary{max-width:35vw}
+  .topbar .brand-name{display:none!important}
+  #inspectorPanel>#chatPanel{display:none!important}
+  .canvas-corner-actions{left:7px;bottom:7px;padding:2px}
+  #mobileEditPane .composition-chat{display:flex!important;flex-direction:column!important;flex:1 1 auto!important;min-height:0!important;max-height:none!important;height:100%;padding:0!important;border:0!important;background:transparent}
+  #mobileEditPane .copilot-thread{flex:1;min-height:0;max-height:none!important;overflow:auto}
+  .mobile-bottom-tabs{grid-template-columns:repeat(3,minmax(0,1fr)) 44px!important}
+  .workspace>.main-panel #tools{position:relative!important;inset:auto!important;display:flex!important;flex-direction:row!important;align-items:center!important;justify-content:flex-start!important;flex:0 0 auto!important;order:0!important;width:100%!important;max-width:100%!important;height:auto!important;min-height:58px!important;max-height:112px!important;margin:0!important;padding:6px 7px!important;gap:7px!important;overflow-x:auto!important;overflow-y:hidden!important;transform:none!important;border:0!important;border-bottom:1px solid #ffffff18!important;border-radius:0!important;background:#17191f!important;box-sizing:border-box;scrollbar-width:thin}
+  #tools .toolbar-left,#tools .toolbar-right,#tools .toolset,#tools .toolbar-history,#tools .toolbar-primary,#tools .toolbar-actions{display:flex!important;flex-direction:row!important;flex-wrap:nowrap!important;position:static!important;align-items:center!important;flex:0 0 auto!important;width:auto!important;max-width:none!important;margin:0!important;padding:0!important;gap:4px!important;border:0!important}
+  #tools .toolbar-section{display:flex!important;flex-direction:column!important;position:relative!important;flex:0 0 auto!important;align-items:center!important;justify-content:center!important;min-width:0!important;width:auto!important;margin:0!important;padding:0 4px!important;gap:3px!important;border:0!important}
+  #tools .toolbar-section-title{display:block!important;position:static!important;order:2!important;width:auto!important;height:auto!important;font:9px/1 system-ui!important;margin:0!important;padding:0!important}
+  #tools .toolset{order:1!important}
+  #tools .tool,#tools .selection-toolset .tool.active{display:grid!important;place-items:center!important;width:40px!important;min-width:40px!important;max-width:40px!important;height:40px!important;min-height:40px!important;padding:0!important;flex:0 0 40px!important;border-radius:7px!important;font-size:18px!important}
+  #tools .tool span{display:none!important}
+  #tools .toolbar-right .icon-btn{width:40px!important;min-width:40px!important;height:40px!important}
+  #tools .toolbar-primary button,#tools #simplifySelectionBtn{width:auto!important;height:40px!important;min-height:40px!important;padding:4px 9px!important;font:11px system-ui!important;white-space:nowrap}
+  #tools #clearSelectionBtn,#tools #projectPromptToolbarBtn{display:none!important}
+  #tools .selection-modes:not(.hidden),#tools .brush-context{position:static!important;inset:auto!important;display:flex!important;flex-direction:row!important;order:3!important;width:auto!important;gap:4px!important;margin:0!important;padding:0!important}
+  #tools .selection-modes .mode{width:auto!important;min-height:32px;padding:4px 6px!important;font-size:10px!important}
+  #tools .brush-context:has(>.hidden:only-child),#tools .wand-context{display:none!important}
+  #tools .brush-context .brush-size{min-width:155px;font-size:11px}
 }

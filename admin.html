@@ -1,7 +1,8 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="referrer" content="no-referrer"><title>mozAI Admin</title><link rel="icon" href="/assets/mosaic-logo.svg"><link rel="stylesheet" href="/styles.css"><link rel="stylesheet" href="/account.css"><link rel="stylesheet" href="/admin.css"><link rel="stylesheet" href="/admin-benchmark.css"></head>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="referrer" content="no-referrer"><title>mozAI Admin</title><link rel="icon" href="/assets/mosaic-logo.svg?v=2"><link rel="stylesheet" href="/styles.css"><link rel="stylesheet" href="/account.css"><link rel="stylesheet" href="/admin.css"><link rel="stylesheet" href="/admin-benchmark.css">  <link rel="stylesheet" href="/brand-theme.css" />
+</head>
 <body class="account-pending"><section id="accountGate" class="account-gate" aria-label="Account access"><p>Opening mozAI...</p></section>
-<div id="adminApp"><header class="admin-header"><a href="/" class="admin-brand">mozAI <span>Admin</span></a><div id="adminAccount"></div></header>
+<div id="adminApp"><header class="admin-header"><a href="/" class="admin-brand"><img src="/assets/mosaic-logo.svg?v=2" alt="" width="32" height="32">mozAI <span>Admin</span></a><div id="adminAccount"></div></header>
 <div class="admin-workspace"><nav id="adminNav" aria-label="Admin sections"><a class="btn btn-outline" href="/">Open editor</a><button data-view="overview" class="active">Overview</button><button data-view="users">Users</button><button data-view="invitations">Invitations</button><button data-view="generations">BYOK usage</button><button data-view="benchmark">Object ID Lab</button><button data-view="events">Activity</button></nav>
 <main><div class="admin-title"><div><h1 id="adminTitle">Overview</h1><p id="adminEnvironment"></p></div><button id="adminRefresh" class="btn btn-outline">Refresh</button></div>
 <p id="adminError" role="alert"></p><section id="adminContent" aria-live="polite">Loading your account...</section>

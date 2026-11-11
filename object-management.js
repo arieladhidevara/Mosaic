@@ -1,8 +1,9 @@
 import './app.js';
+import {groupSimilarObjects} from './object-grouping.mjs';
 const core=window.MosaicCore,{state,makeCanvas,canvas}=core;
 const clone=source=>{const out=makeCanvas(source.width,source.height);out.getContext('2d').drawImage(source,0,0);return out};
 const title=text=>String(text||'Object').replace(/^./,c=>c.toUpperCase());
-const objects=()=>state.groups.filter(g=>!g.objectMapBatch&&!g.mergedInto);
+const objects=()=>state.groups.filter(g=>!g.objectMapBatch&&!g.mergedInto&&!g.objectRemoved);
 state.objectCollections??=[];
 function createCollection(name){
   const collection={id:core.uid('collection'),name:String(name||'Group '+(state.objectCollections.length+1)).trim().slice(0,64)||'New group'};
@@ -10,7 +11,7 @@ function createCollection(name){
 }
 function moveObjects(ids,collectionId){
   if(collectionId&&!state.objectCollections.some(c=>c.id===collectionId))return;
-  for(const object of objects())if(ids.includes(object.id))object.collectionId=collectionId||null;
+  for(const object of objects())if(ids.includes(object.id)){object.collectionId=collectionId||null;object.autoGroupExcluded=!collectionId;}
   core.renderGroups();refreshActions();
 }
 function ensureObjects(map,maskForIds){
@@ -58,15 +59,15 @@ function mergeSelection(){
   window.MosaicObjectMap.adoptSelection([partForObject(object)]);core.updateSelectionOutline();core.renderGroups();core.render();refreshActions();
   core.toast('Merged into one object. Future Wand clicks select its combined mask.');
 }
-function autoGroup(){
-  const names=new Map(state.objectCollections.map(c=>[c.name.toLowerCase(),c]));
-  for(const object of objects()){
-    if(object.collectionId)continue;
-    const name=title(object.suggestedCollection||(object.category!=='Other'&&object.category!=='Region'?object.category:'Scene objects'));
-    let collection=names.get(name.toLowerCase());if(!collection){collection={id:core.uid('collection'),name};state.objectCollections.push(collection);names.set(name.toLowerCase(),collection)}object.collectionId=collection.id;
-  }
-  core.renderGroups();refreshActions();
+function groupSimilarNames(options){
+  return groupSimilarObjects(objects(),state.objectCollections,()=>core.uid('collection'),options);
 }
+function autoGroup(){
+  const count=groupSimilarNames({includeExcluded:true});
+  core.renderGroups();refreshActions();
+  core.toast(count?'Grouped '+count+' objects by similar names.':'Objects with matching names are already grouped.');
+}
+
 const form=document.getElementById('quickAreaPromptForm'),actions=document.createElement('div');actions.className='multi-object-actions';actions.id='multiObjectActions';actions.hidden=true;
 actions.innerHTML='<span id="selectedObjectCount"></span><button type="button" id="mergeObjectsBtn">Merge to object</button><select id="addObjectsToGroup" aria-label="Add selected objects to group"><option value="">Add to group…</option></select>';
 form.querySelector('.prompt-footer')?.before(actions);if(!actions.parentNode)form.append(actions);
@@ -90,10 +91,10 @@ function decorate(){
   }
   refreshActions();
 }
-const aiButton=document.createElement('button');aiButton.type='button';aiButton.id='autoGroupObjectsBtn';aiButton.className='icon-btn';aiButton.textContent='AI group';aiButton.title='Group objects by the scene suggestions';aiButton.addEventListener('click',autoGroup);document.getElementById('addRegionBtn').before(aiButton);
+const aiButton=document.createElement('button');aiButton.type='button';aiButton.id='autoGroupObjectsBtn';aiButton.className='icon-btn';aiButton.textContent='Group similar';aiButton.title='Group matching object names without merging their masks';aiButton.addEventListener('click',autoGroup);document.getElementById('addRegionBtn').before(aiButton);
 document.getElementById('groupList').addEventListener('click',e=>{
   const remove=e.target.closest('[data-remove-collection]');if(!remove)return;
-  const id=remove.dataset.removeCollection;state.objectCollections=state.objectCollections.filter(c=>c.id!==id);for(const object of state.groups)if(object.collectionId===id)object.collectionId=null;core.renderGroups();
+  const id=remove.dataset.removeCollection;state.objectCollections=state.objectCollections.filter(c=>c.id!==id);for(const object of state.groups)if(object.collectionId===id){object.collectionId=null;object.autoGroupExcluded=true;}core.renderGroups();
 });
 document.getElementById('groupList').addEventListener('change',e=>{const input=e.target.closest('[data-collection-name]');if(!input)return;const collection=state.objectCollections.find(c=>c.id===input.dataset.collectionName);if(collection){collection.name=input.value.trim().slice(0,64)||collection.name;core.renderGroups()}});
-window.MosaicObjectManager={objects,createCollection,moveObjects,ensureObjects,resolvePart,partForObject,mergeSelection,autoGroup,decorate,refreshActions};
+window.MosaicObjectManager={objects,createCollection,moveObjects,ensureObjects,resolvePart,partForObject,mergeSelection,autoGroup,groupSimilarNames,decorate,refreshActions};

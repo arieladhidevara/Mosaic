@@ -1,7 +1,7 @@
 /* Mosaic BYOK — masked AI editing and harmonization with an OpenAI API key. */
 import './generation-pool.js';
 import './object-aware.js';
-import {assertGeneratedImage} from './generated-image.mjs';
+import {assertGeneratedImage,assertGeneratedRegion} from './generated-image.mjs';
 import {alignGeneratedToLockedMask} from './geometry-mask.mjs';
 const core = window.MosaicCore;
 if (!core) throw new Error('Mosaic core must load before Premium');
@@ -435,7 +435,7 @@ function encodeRegionalCrop(patch){
       quality:premium.settings.regionQuality,
       projectPrompt:premium.projectPrompt,
       prompt:patch.prompt,
-      targetObject:patch.objectLabel||(group?.manualName?group.name:(group?.category&&group.category!=='Region'?group.category:'')),
+      targetObject:patch.objectMapParts?.map(part=>part.label).join(', ').slice(0,120)||patch.objectLabel||group?.objectName||group?.objectLabel||(group?.manualName?group.name:(group?.category&&group.category!=='Region'?group.category:'')),
       crop:{x:region.x,y:region.y,width:region.w,height:region.h,imageWidth:canvas.width,imageHeight:canvas.height},
       context:resizedFrame(collage,Math.max(128,Math.round(canvas.width*contextScale)),Math.max(128,Math.round(canvas.height*contextScale))),
       regions:annotationNotes(patch.id),
@@ -445,9 +445,19 @@ function encodeRegionalCrop(patch){
       const baseScale=Math.min(1,maxDimension/Math.max(base.width,base.height));
       payload.base=resizedFrame(base,Math.max(128,Math.round(base.width*baseScale)),Math.max(128,Math.round(base.height*baseScale)));
     }
-    if(JSON.stringify(payload).length<3550000)return {payload,region,visibleMask:visualMask,collage};
+    if(JSON.stringify(payload).length<3550000)return {payload,region,visibleMask:visualMask,collage,
+      contextImage:editContextPreview(collage,visualMask,region),
+      selectedObjects:patch.objectMapParts?.map(part=>part.label).slice(0,64)||[payload.targetObject].filter(Boolean)};
   }
   throw Error('Selection crop is too large. Try fewer reference images or a smaller Base.');
+}
+function editContextPreview(image,mask,region){
+  const scale=Math.min(1,640/Math.max(region.w,region.h)),w=Math.max(1,Math.round(region.w*scale)),h=Math.max(1,Math.round(region.h*scale));
+  const preview=makeCanvas(w,h),x=preview.getContext('2d'),tint=makeCanvas(w,h),t=tint.getContext('2d');
+  x.drawImage(image,region.x,region.y,region.w,region.h,0,0,w,h);
+  t.fillStyle='rgba(170,70,255,.30)';t.fillRect(0,0,w,h);t.globalCompositeOperation='destination-in';
+  t.drawImage(mask,region.x,region.y,region.w,region.h,0,0,w,h);x.drawImage(tint,0,0);
+  return preview.toDataURL('image/jpeg',.8);
 }
 async function fromGeneratedJPEG(encoded,targetSize=null){
   if(typeof encoded!=='string'||!encoded.length||encoded.length>24000000)throw Error('Invalid generated image response. Your previous image was preserved.');
@@ -520,6 +530,16 @@ async function generateRegion(patchId,regenerate=false){
       if(!await window.MosaicAuth.ensure())throw Error('OpenAI API key entry canceled.');
       const {payload,region,visibleMask}=capture;
       progress.highlight(visibleMask);
+      progress.update(24,'Understanding the selected object…');
+      try{
+        const context=await window.MosaicAuth.request('/api/ai/edit-context',{
+          image:capture.contextImage,prompt:payload.prompt,selectedObjects:capture.selectedObjects
+        });
+        if(context.confidence>=.8&&typeof context.targetObject==='string'&&context.targetObject.trim()){
+          payload.targetObject=context.targetObject.trim().slice(0,120);
+        }
+      }catch{progress.update(28,'Using the original prompt and selection…')}
+      if(state.patches.get(patchId)!==patch||state.selectionGeneration!==projectAtStart){patch.generating=false;progress.done('Project changed; edit skipped.');return}
       message('Generating only the selected area with nearby architectural context…');
       progress.update(30,'OpenAI is generating the selected area…');
       const answer=await window.MosaicAuth.request('/api/ai/edit',payload);
@@ -533,17 +553,18 @@ async function generateRegion(patchId,regenerate=false){
         if(existing)existing.generating=false;renderGroups();
         progress.done('Finished, but the project changed; current work was kept.');return;
       }
-      progress.update(92,'Segmenting new Mask B and fitting it to the locked original…');
+      const rawPlaced=makeCanvas(canvasSize.width,canvasSize.height);
+      rawPlaced.getContext('2d').drawImage(image,region.x,region.y,region.w,region.h);
+      const resultMasks=existing.objectMapParts?.map(part=>part.mask)||[visibleMask];
+      for(const mask of resultMasks)validateRegionalResult(rawPlaced,capture.collage,mask,payload.prompt,'provider-region',answer.generationId);
+      progress.update(92,'Checking key edges for gentle perspective alignment…');
       const placed=makeCanvas(canvasSize.width,canvasSize.height),placedContext=placed.getContext('2d');
       placedContext.drawImage(capture.collage,0,0);
       placedContext.drawImage(image,region.x,region.y,region.w,region.h);
-      // Material/appearance never calls SAM 3 and never replaces the initial
-      // object mask. Detect a provisional Mask B locally from generated RGB
-      // changes, register/warp B to locked Mask A, and warp RGB with it.
-      // If shape correspondence is weak, composite unwarped RGB through A.
+      // Only a small, single perspective correction from matching long image
+      // lines is allowed. No silhouette fitting or per-row contour stretch.
       let aligned={image:placed,status:'locked-mask',aligned:false};
-      // Compound selections are aligned individually after their SAM hint
-      // masks are matched to the ORIGINAL object IDs. Avoid double warping.
+      // Compound selections are aligned separately within their original IDs.
       if(!existing.objectMapParts?.length){
         try{
           aligned=alignGeneratedToLockedMask({
@@ -552,6 +573,7 @@ async function generateRegion(patchId,regenerate=false){
         }catch(error){console.warn('[mozAI:mask-registration]',error);}
       }
       if(state.patches.get(patchId)!==patch||state.selectionGeneration!==projectAtStart||existing.sourceId!==generationId){existing.generating=false;return}
+      if(!existing.objectMapParts?.length)validateRegionalResult(aligned.image,capture.collage,visibleMask,payload.prompt,'mask-alignment',answer.generationId);
       const currentMaskUnchanged=maskAtStart===window.MosaicObjects?.maskKey(existing.mask);
       // Preserve the complete unmasked RGB source for Reveal/Add.
       // Restore source coordinates before the existing option warp; this does
@@ -560,20 +582,10 @@ async function generateRegion(patchId,regenerate=false){
       existing.maskAlignmentStatus=aligned.status;
       existing.maskAlignmentSegmentation=aligned.segmentation||null;
       existing.maskAlignmentIoU=Number.isFinite(aligned.iou)?aligned.iou:null;
-      // Always fork on regeneration to preserve shared source images and older options.
-      if(regenerate){
-        const id=uid('ai_source');
-        state.sources.set(id,{id,name:'Regenerated '+existing.name,canvas:result,revealComplete:true});
-        existing.sourceId=id;
-      }else{
-        const source=state.sources.get(existing.sourceId);
-        source.canvas=result;source.name='AI region '+patch.regionNumber;source.revealComplete=true;
-      }
       if(existing.objectMapParts?.length){
         // A combined Line/Rectangle/Oval selection is one temporary generation.
         // After the image arrives, split it across every touched original ID.
-        // Only compound selections ask SAM for candidate masks, and all final
-        // masks remain the original user-approved geometry.
+        // All final masks remain the original user-approved geometry.
         try{
           const separated=await window.MosaicSceneVersions?.splitCreatedOverlap?.(
             placed,existing.objectMapParts,{
@@ -590,6 +602,15 @@ async function generateRegion(patchId,regenerate=false){
         const count=commitObjectMapParts(existing,result,capture.collage,requestOrder);
         renderGroups();render();progress.done('Edit saved for '+count+' '+(count===1?'object.':'objects.'));
         message('Generated image clipped to each original object mask.');toast('Saved edits for '+count+' '+(count===1?'object.':'objects.'));return;
+      }
+      // Commit only after all validation; failed regeneration keeps its source.
+      if(regenerate){
+        const id=uid('ai_source');
+        state.sources.set(id,{id,name:'Regenerated '+existing.name,canvas:result,revealComplete:true});
+        existing.sourceId=id;
+      }else{
+        const source=state.sources.get(existing.sourceId);
+        source.canvas=result;source.name='AI region '+patch.regionNumber;source.revealComplete=true;
       }
       window.MosaicObjects?.generated(existing,existing.mask,currentMaskUnchanged);
       core.invalidateDisplayedMask(existing);
@@ -611,10 +632,8 @@ async function generateRegion(patchId,regenerate=false){
       // the user is working with. Never steal focus or select another option.
       renderGroups();render();
       const alignmentMessage=aligned.aligned
-        ?' Fresh Mask B was contour-warped onto the locked original mask.'
-        :aligned.segmentation==='generated-rgb-segmentation'
-          ?' New Mask B was checked; the original mask remains locked.'
-          :' Original mask preserved; no confident new silhouette to warp.';
+        ?' Key edges aligned with a gentle perspective adjustment; original mask kept.'
+        :' Original mask kept; no perspective correction needed or confidently supported.';
       message((activateResult
         ?'Material edit applied to the existing Group and mask.'
         :'Material edit saved as an Option in the existing Group.')+alignmentMessage);
@@ -646,11 +665,25 @@ async function generateRegion(patchId,regenerate=false){
   };
   return regionalPool.run(run);
 }
+function validateRegionalResult(image,before,mask,prompt,stage,generationId=null){
+  try{return assertGeneratedRegion({image,before,mask,prompt,makeCanvas,bounds:core.exactMaskBoundingBox(mask)})}
+  catch(error){state.lastGenerationIssue={stage,generationId,code:error.code||'REGION_VALIDATION_FAILED',stats:error.imageStats||null};console.warn('[mozAI:image-result]',state.lastGenerationIssue);throw error}
+}
 function commitObjectMapParts(batch,result,underlay,requestOrder){
   const selectedBefore=state.selectedPatchId;
+  // Validate every object before writing any option, including small objects
+  // whose failed pixels would be hidden by the rest of a compound selection.
+  const alignments=batch.objectMapParts.map(part=>{
+    let aligned={image:result,aligned:false,status:'locked-mask'};
+    try{aligned=alignGeneratedToLockedMask({before:underlay,generated:result,
+      lockedMask:part.mask,makeCanvas})}
+    catch(error){console.warn('[mozAI:compound-mask-registration]',error)}
+    validateRegionalResult(aligned.image,underlay,part.mask,batch.prompt,'mask-alignment');
+    return aligned;
+  });
   // Keep one shared full-image source for all selected objects. Every Option
   // retains its independent mask, but we don't duplicate 2K/4K RGB per object.
-  // Only an object that needs a different mesh warp receives its own source.
+  // Only an object needing a perspective correction receives its own source.
   const combined=cloneCanvas(underlay),union=makeCanvas(canvas.width,canvas.height);
   const unionContext=union.getContext('2d');
   for(const part of batch.objectMapParts)unionContext.drawImage(part.mask,0,0);
@@ -661,22 +694,15 @@ function commitObjectMapParts(batch,result,underlay,requestOrder){
   const sharedSourceId=uid('object_batch_source');
   state.sources.set(sharedSourceId,{id:sharedSourceId,name:'Selected objects · generated',canvas:combined,
     revealComplete:true});
-  for(const part of batch.objectMapParts){
+  for(const [partIndex,part] of batch.objectMapParts.entries()){
     let group=state.groups.find(g=>g.objectMapKey===part.mapKey&&g.objectMapObjectKey===part.objectKey);
     const mask=cloneCanvas(part.mask);if(part.previousMask)mask.getContext('2d').drawImage(part.previousMask,0,0);
     if(!group)group=core.newGroup(mask,part.category);
     group.objectMapKey=part.mapKey;group.objectMapCategory=part.category;group.objectMapObjectKey=part.objectKey;group.objectMapInstanceId=part.instanceId;
     group.objectName=part.label.charAt(0).toUpperCase()+part.label.slice(1);
     if(!group.manualName)group.name=group.objectName;
-    // Fresh SAM silhouette B is only a correspondence hint: warp its RGB to
-    // the locked original silhouette A. We never write B into patch.mask.
-    let aligned={image:result,aligned:false,status:'locked-mask'};
-    try{
-      aligned=alignGeneratedToLockedMask({
-        before:underlay,generated:result,lockedMask:part.previousMask||part.mask,
-        candidateMask:part.candidateMask||null,makeCanvas
-      });
-    }catch(error){console.warn('[mozAI:compound-mask-registration]',error);}
+    // Alignment changes RGB only. Every Option keeps its original mask.
+    const aligned=alignments[partIndex];
     let sourceId=sharedSourceId;
     if(aligned.aligned&&aligned.image!==result){
       const source=cloneCanvas(combined),layer=cloneCanvas(aligned.image),lx=layer.getContext('2d');

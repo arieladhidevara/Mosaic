@@ -2,6 +2,7 @@
 // Returns a solid red image and never contacts OpenAI.
 if(process.env.NODE_ENV==='production'||require('../lib/dev-auth').hosted(process.env))throw Error('Test provider cannot run in production.');
 process.env.MOSAIC_DEV_DATA_NAMESPACE??='browser-tests';
+process.env.GEMINI_API_KEY='test-only-gemini-key';
 const {deflateSync}=require('node:zlib');
 function crc32(bytes){let crc=0xffffffff;for(const byte of bytes){crc^=byte;for(let i=0;i<8;i++)crc=(crc>>>1)^((crc&1)?0xedb88320:0)}return (crc^0xffffffff)>>>0}
 function chunk(type,data){const kind=Buffer.from(type),length=Buffer.alloc(4),crc=Buffer.alloc(4);length.writeUInt32BE(data.length);crc.writeUInt32BE(crc32(Buffer.concat([kind,data])));return Buffer.concat([length,kind,data,crc])}
@@ -11,8 +12,17 @@ for(let y=0;y<256;y++)for(let x=0;x<256;x++){const i=y*(256*4+1)+1+x*4;pixels[i]
 const png=Buffer.concat([Buffer.from('89504e470d0a1a0a','hex'),chunk('IHDR',header),chunk('IDAT',deflateSync(pixels)),chunk('IEND',Buffer.alloc(0))]);
 const realFetch=global.fetch;
 global.fetch=async(url,options)=>{
+  if(String(url).startsWith('https://generativelanguage.googleapis.com/')){
+    const body=JSON.parse(options.body),parts=body.contents.at(-1).parts;
+    const message=JSON.parse(parts[0].text).user_message;
+    if(message==='quota-test')return Response.json({error:{message:'Quota exceeded'}},{status:429});
+    const advice={reply:'Try a warm plaster finish and softer lighting.',action:'discuss',scope:'none',target_ids:[],group_name:'',edit_prompt:'',reason:'Material advice'};
+    if(message==='plan-test')Object.assign(advice,{action:'generate',scope:'full',edit_prompt:'Use warm plaster.'});
+    return Response.json({candidates:[{finishReason:'STOP',content:{parts:[{text:JSON.stringify(advice)}]}}],usageMetadata:{promptTokenCount:100,candidatesTokenCount:20,totalTokenCount:120}});
+  }
   if(!String(url).startsWith('https://api.openai.com/'))return realFetch(url,options);
   let body;try{body=JSON.parse(options?.body||'{}')}catch{}
+  if(body?.text?.format?.name==='edit_context')return Response.json({output_text:JSON.stringify({targetObject:'the selected table',confidence:.95})});
   if(body?.text?.format?.name==='object_map_categories')return Response.json({output_text:JSON.stringify({objects:[{id:1,category:'Wall',label:'wall'},{id:2,category:'Door',label:'door'},{id:3,category:'Floor',label:'floor'},{id:4,category:'Door',label:'second door'}]})});
   if(String(url).endsWith('/images/edits')){
     await new Promise(resolve=>setTimeout(resolve,140));

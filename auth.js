@@ -5,8 +5,8 @@ const dialog=$('apiKeyDialog'),form=$('apiKeyForm'),button=$('apiKeyStatusBtn');
 let connected=false,owner=null,checked=false,loading=null,epoch=0,validation=0,initialPromptFor=null;
 const validKey=value=>/^sk-[\w-]{15,300}$/.test(value);
 function updateButton(){
-  button.textContent=connected?'AI connected':'Connect AI';
-  button.title=connected?'Manage saved OpenAI API key':'Connect OpenAI API key';
+  button.textContent=connected?'Image AI ✓':'Image AI';
+  button.title=connected?'Manage OpenAI image-generation key':'Connect OpenAI for image generation';
   button.setAttribute('aria-label',button.title);
   button.classList.toggle('premium-active',connected);
   document.body.classList.toggle('premium-ready',connected);
@@ -72,7 +72,7 @@ async function ensure(){
   return false;
 }
 async function request(path,body={}){
-  if(!/^\/api\/ai\/(?:master|edit|harmonize|classify|option-name|object-map|chat|benchmark-object-map|object-intent|scene-intent|sam3)$/.test(path))throw Error('Unsupported AI request.');
+  if(!/^\/api\/ai\/(?:master|edit|edit-context|harmonize|classify|option-name|object-map|chat|benchmark-object-map|object-intent|scene-intent|sam3)$/.test(path))throw Error('Unsupported AI request.');
   if(!await ensure())throw Error('Connect your OpenAI API key in your profile.');
   // Only the verified account/session and image data are sent. No secret is in browser requests.
   const result=await window.MosaicAccount.request(path,{method:'POST',body:{...body,projectId:await window.MosaicAccount.projectId()}});

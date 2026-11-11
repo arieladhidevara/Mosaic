@@ -72,6 +72,8 @@ test('image generation request contract',async t=>{
     assert.deepEqual(sent.images,[{image_url:collage},{image_url:base},{image_url:context},{image_url:reference}]);
     assert.deepEqual(sent.mask,{image_url:mask});
     assert.match(sent.prompt,/selected object is described as: Door/);
+    assert.match(sent.prompt,/RESOLVED EDIT TARGET \(scene context\): Door/);
+    assert.match(sent.prompt,/transparent part of the input mask means EDIT HERE/);
     assert.match(sent.prompt,/preserve its leaf, frame, opening, handle/);
     assert.match(sent.prompt,/Image 3 is the FULL CURRENT COMPOSITION/);
     assert.match(sent.prompt,/x=200, y=100, width=256, height=256/);

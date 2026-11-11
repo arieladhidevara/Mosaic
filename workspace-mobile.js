@@ -117,11 +117,9 @@ function restoreDesktopNodes(){
     else parent.append(node);
   }
 }
-tabs.unshift('tools');
 nav.innerHTML=[
-  '<button type="button" data-mobile-tab="tools" aria-selected="false">✎ <span>Tools</span></button>',
   '<button type="button" data-mobile-tab="groups" aria-selected="false">▤ <span>Groups</span></button>',
-  '<button type="button" data-mobile-tab="ai" aria-selected="false">✧ <span>AI Edit</span></button>',
+  '<button type="button" data-mobile-tab="ai" aria-selected="false">✧ <span>Assistant</span></button>',
   '<button type="button" data-mobile-tab="settings" aria-selected="false">⚙ <span>Settings</span></button>',
   '<button type="button" id="mobileExpandPane" aria-label="Expand bottom panel" aria-pressed="false">⌃</button>'
 ].join('');
@@ -138,7 +136,7 @@ function toggleExpand(force){
 expandButton.addEventListener('click',()=>toggleExpand());
 const aiChoices=document.createElement('div');
 aiChoices.className='mobile-ai-choices';
-aiChoices.innerHTML='<button type="button" data-ai-view="area">Selected area</button><button type="button" data-ai-view="full">Full image</button>';
+aiChoices.innerHTML='<button type="button" data-ai-view="area">Selected area</button><button type="button" data-ai-view="full">Assistant</button>';
 editPane.prepend(aiChoices);
 let selectedAiView='full';
 function aiView(next,openArea=false){
@@ -169,12 +167,6 @@ function mountMobileNodes(){
     document.documentElement.classList.remove('moz-sheet-expanded');
     return;
   }
-  if(toolRow)mobileToolPane.prepend(toolRow);
-  if(rightControls)mobileToolActions.append(rightControls);
-  if(selectionModes)mobileToolModes.append(selectionModes);
-  if(brushContext)mobileToolModes.append(brushContext);
-  if(beforeButton)mobileViewActions.append(beforeButton);
-  if(fitButton)mobileViewActions.append(fitButton);
   if(areaForm)editPane.insertBefore(areaForm,chat);
   if(geometryReview)editPane.append(geometryReview);
   if(sources)mobileSettingsPane.append(sources);
@@ -186,7 +178,7 @@ function mountMobileNodes(){
 }
 mobile.addEventListener('change',mountMobileNodes);
 mountMobileNodes();
-activate('tools');
+activate('groups');
 aiView('full');
 const areaWatch=new MutationObserver(()=>{
   if(!mobile.matches)return;

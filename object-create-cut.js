@@ -60,31 +60,53 @@ path.id='cutStrokePreview';path.setAttribute('fill','none');path.setAttribute('s
 path.setAttribute('stroke-width','3');path.setAttribute('vector-effect','non-scaling-stroke');
 path.setAttribute('stroke-linecap','round');path.setAttribute('stroke-linejoin','round');
 path.setAttribute('stroke-dasharray','6 4');path.hidden=true;svg.append(path);
+const startPoint=document.createElementNS('http://www.w3.org/2000/svg','circle');
+startPoint.id='cutStartPoint';startPoint.setAttribute('fill','#d5adff');startPoint.style.display='none';svg.append(startPoint);
 let stroke=null;
 function selectedObject(){
   const g=state.groups.find(g=>g.id===state.draftGroupId&&!g.mergedInto&&!g.objectRemoved)||
     state.groups.find(g=>g.patchIds.includes(state.selectionTargetPatchId)&&!g.mergedInto&&!g.objectRemoved);
   return g&&core.exactMaskBoundingBox(core.groupMask(g))?g:null;
 }
-function beginCut(p){
+function beginCut(p,pointerId=0){
+  if(stroke?.down&&stroke.pointerId!==pointerId)return false;
   const group=selectedObject();
   if(!group){core.toast('Select an existing object with Pointer before using Cut.');return false;}
-  stroke={group,points:[p],generation:state.selectionGeneration,master:state.master};
+  if(stroke&&(stroke.group!==group||stroke.generation!==state.selectionGeneration||stroke.master!==state.master))stopCut();
+  if(!stroke)stroke={group,points:[p],generation:state.selectionGeneration,master:state.master};
+  stroke.down=p;stroke.pointerId=pointerId;stroke.dragging=false;stroke.hover=null;
   path.hidden=false;paintStroke();core.hideQuickPrompt();return true;
 }
 function paintStroke(){
   if(!stroke)return;
-  const pts=stroke.points;
+  const pts=stroke.hover?[...stroke.points,stroke.hover]:stroke.points;
+  startPoint.style.display='';startPoint.setAttribute('cx',pts[0].x);startPoint.setAttribute('cy',pts[0].y);
+  startPoint.setAttribute('r',3.5/Math.max(.1,state.zoom));
   path.setAttribute('d',pts.map((p,i)=>(i?'L':'M')+p.x.toFixed(1)+' '+p.y.toFixed(1)).join(' '));
 }
-function moveCut(p){
-  if(!stroke)return;
+function appendPoint(p){
   const prev=stroke.points.at(-1);
-  if(Math.hypot(prev.x-p.x,prev.y-p.y)>1.5/Math.max(.1,state.zoom)){
-    stroke.points.push(p);paintStroke();
-  }
+  if(Math.hypot(prev.x-p.x,prev.y-p.y)>.5/Math.max(.1,state.zoom))stroke.points.push(p);
 }
-function stopCut(){path.hidden=true;path.removeAttribute('d');stroke=null;}
+function moveCut(p,pointerId=0){
+  if(!stroke)return;
+  if(stroke.down){
+    if(stroke.pointerId!==pointerId)return;
+    if(!stroke.dragging&&Math.hypot(stroke.down.x-p.x,stroke.down.y-p.y)*state.zoom>4){
+      stroke.dragging=true;appendPoint(stroke.down);
+    }
+    if(stroke.dragging)appendPoint(p);
+  }
+  stroke.hover=p;paintStroke();
+}
+function releaseCut(p,pointerId=0){
+  if(!stroke?.down||stroke.pointerId!==pointerId)return;
+  moveCut(p,pointerId);appendPoint(p);
+  const dragging=stroke.dragging;
+  stroke.down=null;stroke.hover=null;stroke.dragging=false;
+  if(dragging)cut();else paintStroke();
+}
+function stopCut(){path.hidden=true;path.removeAttribute('d');startPoint.style.display='none';stroke=null;}
 function cut(){
   if(!stroke)return;
   const job=stroke;stopCut();
@@ -149,5 +171,5 @@ function cut(){
   core.showQuickPrompt();
   core.toast('Object split into 2 independent masks. Original options preserved.');
 }
-window.MosaicObjectCreateCut={create:registerForeground,beginCut,moveCut,endCut:cut,cancelCut:stopCut,isCutting:()=>Boolean(stroke)};
+window.MosaicObjectCreateCut={create:registerForeground,beginCut,moveCut,releaseCut,endCut:cut,cancelCut:stopCut,isCutting:()=>Boolean(stroke)};
 window.addEventListener('mosaic:projectloaded',stopCut);

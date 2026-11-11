@@ -5,7 +5,8 @@ const form=$('compositionChatForm'),chat=$('compositionChat'),prompt=$('composit
 if(!form||!chat)throw Error('Design Copilot requires AI Edit workspace.');
 const thread=document.createElement('div');thread.id='copilotThread';thread.className='copilot-thread';thread.setAttribute('role','log');thread.setAttribute('aria-label','Design assistant conversation');chat.insertBefore(thread,form);
 const context=document.createElement('div');context.className='copilot-context';context.hidden=true;chat.insertBefore(context,form);
-prompt.placeholder='Ask mozAI…';send.textContent='↑';send.setAttribute('aria-label','Send message');
+prompt.placeholder='Ask about your design…';send.textContent='↑';send.setAttribute('aria-label','Send message');
+prompt.maxLength=4000;
 const chatPanel=$('chatPanel');
 if(chatPanel)chatPanel.append(chat);
 const corner=document.createElement('div');corner.className='canvas-corner-actions';corner.setAttribute('aria-label','Canvas controls');
@@ -14,13 +15,8 @@ for(const id of ['beforeBtn','zoomValue']){const item=$(id);if(item)corner.appen
 for(const tool of document.querySelectorAll('.tool-row .tool'))tool.dataset.tip=tool.querySelector('span')?.textContent.trim()||tool.getAttribute('aria-label')||tool.title||'Tool';
 const wrap=$('canvasWrap'),layer=makeCanvas(1,1);layer.id='copilotHighlightLayer';layer.className='copilot-canvas-highlights';wrap.append(layer);
 state.copilotSession??=null;
-let busy=false,highlighted=[],pointed=null,pointerStart=null;
+let revision=0,busy=false,highlighted=[],pointed=null,pointerStart=null;
 const activeGroups=ids=>{const keys=new Set(ids||[]);return state.groups.filter(g=>keys.has(g.id)&&!g.mergedInto&&!g.objectMapBatch&&!g.objectRemoved)};
-function sceneVersion(){
-  return [state.master?.width||0,state.master?.height||0,
-    state.groups.map(g=>g.id+':'+(g.active||'')).join('|'),
-    state.sceneVersionCounters?.['ai-edit']||0,state.sceneVersionCounters?.harmonize||0].join(';');
-}
 function jpeg(source,maxEdge=940,quality=.77){
   if(!source)return null;
   const scale=Math.min(1,maxEdge/Math.max(source.width,source.height));
@@ -115,7 +111,9 @@ function addButton(text,action,m){
   const b=document.createElement('button');b.type='button';b.textContent=text;b.onclick=()=>void execute(action,m);return b;
 }
 function renderThread(){
+  if(!busy)send.textContent='↑';
   thread.replaceChildren();
+  if(!state.chatMessages?.length){const empty=document.createElement('div');empty.className='copilot-empty';const title=document.createElement('strong');title.textContent="Let's work on your design.";empty.append(title,document.createTextNode('Ask about materials, lighting, or a selected object.'));thread.append(empty)}
   for(const m of state.chatMessages||[]){
     if(!m||!['user','assistant'].includes(m.role))continue;
     const el=document.createElement('div');el.className='copilot-message '+m.role;
@@ -132,7 +130,7 @@ function renderThread(){
       const bar=document.createElement('div');bar.className='copilot-actions';
       if(m.plan.targetIds?.length){bar.append(addButton('Highlight','highlight',m),addButton('Select','select',m))}
       if(m.plan.targetIds?.length>1)bar.append(addButton('Group objects','group',m));
-      if(m.plan.editPrompt)bar.append(addButton('Small preview','preview',m),addButton('Generate','generate',m));
+      if(m.plan.editPrompt)bar.append(addButton('Preview · OpenAI','preview',m),addButton('Generate · OpenAI','generate',m));
       el.append(bar);
     }
     thread.append(el);
@@ -175,29 +173,28 @@ async function submit(event){
   event.preventDefault();event.stopImmediatePropagation();if(busy)return;
   const message=prompt.value.trim();if(!message)return;
   if(!state.master){status.textContent='Upload a Base image first.';return}
+  const requestRevision=revision,baseAtStart=state.master;
   busy=true;send.disabled=true;send.textContent='…';
   state.chatMessages.push({role:'user',text:message});prompt.value='';renderThread();status.textContent='Consulting on your design…';
   try{
-    if(!await window.MosaicAuth.ensure())throw Error('Connect your OpenAI API key.');
-    const session=state.copilotSession||{},token=sceneVersion(),first=!session.responseId;
-    const answer=await window.MosaicAuth.request('/api/ai/chat',{
-      message,previousResponseId:first?null:session.responseId,
-      base:first?jpeg(state.reference||state.rawBase||state.master):null,
-      currentImage:!first&&session.sceneToken!==token?jpeg(core.composeApprovedCanvas(),800,.68):null,
+    const answer=await window.MosaicAccount.request('/api/ai/chat',{method:'POST',body:{
+      message,history:state.chatMessages.slice(0,-1).filter(m=>['user','assistant'].includes(m.role)).slice(-12).map(m=>({role:m.role,text:String(m.text||'').slice(0,1800)})),
+      base:jpeg(state.reference||state.rawBase||state.master),
+      currentImage:jpeg(core.composeApprovedCanvas(),800,.68),
       objects:objects(),selectedIds:selectionIds(),point:pointed?{x:pointed.x,y:pointed.y}:null,
-      references:await referenceImages(),
-      projectPrompt:premium.projectPrompt(),
-      searchWeb:/\b(search|find references|online|product links|source links)\b/i.test(message)||/cari (referensi|link|produk|website|internet)/i.test(message)
-    });
+      references:await referenceImages(),projectPrompt:premium.projectPrompt()
+    }});
+    if(requestRevision!==revision||baseAtStart!==state.master)return;
     const plan={action:answer.action,scope:answer.scope,targetIds:answer.targetIds||[],groupName:answer.groupName,editPrompt:answer.editPrompt,reason:answer.reason};
-    state.copilotSession={responseId:answer.responseId,sceneToken:token};
+    state.copilotSession=null;
     const m={role:'assistant',text:answer.reply,plan,references:answer.references||[]};
     state.chatMessages.push(m);highlight(plan.targetIds);renderThread();
-    status.textContent=plan.targetIds.length?plan.targetIds.length+' objects highlighted':'Design advice ready';
+    status.textContent=plan.targetIds.length?plan.targetIds.length+' objects highlighted':'Gemini · design advice ready';
     if(plan.action==='select')select(plan.targetIds);
     if(plan.action==='group')group(plan.targetIds,plan.groupName);
-    if(plan.action==='generate'||plan.action==='preview')setTimeout(()=>void execute(plan.action,m),0);
+    // Image calls require the explicit Preview / Generate button below the advice.
   }catch(e){
+    if(requestRevision!==revision||baseAtStart!==state.master)return;
     if(e.resetSession)state.copilotSession=null;
     state.chatMessages.push({role:'assistant',text:(e.message||'Consultation failed')+(e.resetSession?' Try sending the message again to re-establish the Base session.':'')});
     status.textContent=e.message||'Consultation failed';renderThread();
@@ -206,9 +203,9 @@ async function submit(event){
 form.addEventListener('submit',e=>void submit(e),true);
 const oldReset=window.MosaicWorkspace?.reset;
 if(oldReset)window.MosaicWorkspace.reset=function(...args){
-  const v=oldReset(...args);state.copilotSession=null;pointed=null;highlight([]);contextUI();renderThread();return v;
+  revision++;const v=oldReset(...args);state.copilotSession=null;pointed=null;highlight([]);contextUI();renderThread();return v;
 };
-window.addEventListener('mosaic:projectloaded',()=>{renderThread();redraw();pointed=null;contextUI()});
+window.addEventListener('mosaic:projectloaded',()=>{revision++;state.copilotSession=null;renderThread();redraw();pointed=null;contextUI()});
 window.addEventListener('resize',redraw);
 window.MosaicDesignCopilot={highlight,select,group,redraw};
 renderThread();

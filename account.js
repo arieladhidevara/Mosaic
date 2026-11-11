@@ -15,7 +15,7 @@ const gate=$('accountGate');
 gate.hidden=true;
 gate.innerHTML=`<dialog id="accountDialog" class="account-dialog" aria-labelledby="accountHeading">
   <div class="account-card"><button id="accountClose" type="button" class="account-close" aria-label="Close sign in">&times;</button>
-  <div class="account-brand"><img src="/assets/mosaic-logo.svg" alt="" width="28" height="28">mozAI <span class="pro-badge">PRO</span></div>
+  <div class="account-brand"><img src="/assets/mosaic-logo.svg?v=2" alt="" width="28" height="28">mozAI <span class="pro-badge">PRO</span></div>
   <p class="account-eyebrow">YOUR NEXT CHAPTER</p><h1 id="accountHeading">Welcome back.</h1><p id="accountDescription">Sign in to unlock your AI workspace. Your composition stays right here.</p>
   <div id="invitationNotice" class="invitation-notice" hidden>Your invitation unlocks mozAI Pro &middot; 100 demo credits</div>
   <button id="accountGoogle" type="button" class="account-google"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="#4285f4" d="M21.6 12.23c0-.71-.06-1.39-.18-2.05H12v3.88h5.38a4.6 4.6 0 0 1-2 3.02v2.51h3.24c1.9-1.75 2.98-4.33 2.98-7.36Z"/><path fill="#34a853" d="M12 22c2.7 0 4.96-.9 6.62-2.41l-3.24-2.51c-.9.6-2.05.97-3.38.97-2.6 0-4.8-1.76-5.59-4.12H3.07v2.59A10 10 0 0 0 12 22Z"/><path fill="#fbbc05" d="M6.41 13.93a6 6 0 0 1 0-3.86V7.48H3.07a10 10 0 0 0 0 9.04l3.34-2.59Z"/><path fill="#ea4335" d="M12 5.95c1.47 0 2.79.51 3.82 1.51l2.87-2.87A9.6 9.6 0 0 0 12 2a10 10 0 0 0-8.93 5.48l3.34 2.59A5.99 5.99 0 0 1 12 5.95Z"/></svg>Continue with Google</button>
@@ -102,7 +102,7 @@ function applySession(result,{interactive=false}={}){
   window.dispatchEvent(new CustomEvent('mosaic:account',{detail:{user,interactive}}));
 }
 async function request(path,{method='GET',body}={},retry=true){
-  if(!/^\/api\/(?:session|activity|admin|credits|ai\/(?:master|edit|harmonize|chat|benchmark-object-map|classify|option-name|object-map|object-intent|scene-intent|sam3|connection))(?:\?|$)/.test(path))throw Error('Unsupported application request.');
+  if(!/^\/api\/(?:session|activity|admin|credits|ai\/(?:master|edit|edit-context|harmonize|chat|benchmark-object-map|classify|option-name|object-map|object-intent|scene-intent|sam3|connection))(?:\?|$)/.test(path))throw Error('Unsupported application request.');
   const headers={...(body?{'Content-Type':'application/json'}:{}),...(user?{'X-Mosaic-Account-Id':user.id}:{})};
   const response=await fetch(path,{method,credentials:'same-origin',cache:'no-store',headers,...(body?{body:JSON.stringify(body)}:{})});
   const result=await response.json().catch(()=>({error:'Unexpected server response. Please retry.'}));

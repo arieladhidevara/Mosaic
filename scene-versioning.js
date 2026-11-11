@@ -1,6 +1,6 @@
 /* Full-image results become named options on every persistent Object ID.
-   SAM 3 proposes fresh silhouettes; spatial matching keeps object identities stable.
-   Uncertain matches fall back to the prior visible masks (never silently inventing IDs). */
+   Appearance edits preserve masks and optionally align long image lines with
+   one limited perspective transform. SAM is reserved for geometry workflows. */
 import './app.js';
 import {alignGeneratedToLockedMask} from './geometry-mask.mjs';
 const core=window.MosaicCore,{state,canvas,makeCanvas,render,renderGroups}=core;
@@ -61,8 +61,7 @@ async function apply(image,{type='ai-edit',prompt='',onStatus=()=>{},preserveEdi
   const snapshots=groups.map(group=>({group,mask:originalMask(group),choice:group.active}));
   // The original Object Map is immutable during ordinary AI Edit and
   // Harmonize. No SAM 3 calls here: every Option keeps its original mask.
-  // A generated silhouette may guide pixel registration only, never mask ID.
-  onStatus('Aligning generated pixels to the original locked masks…');
+  onStatus('Checking key edges while keeping the original masks…');
   if(generation!==state.selectionGeneration||previous!==state.master)
     throw Error('The working project changed while the image was generated.');
   const kind=type==='harmonize'?'harmonize':'ai-edit';
@@ -86,9 +85,8 @@ async function apply(image,{type='ai-edit',prompt='',onStatus=()=>{},preserveEdi
         name:'Before full image',manualName:true,isOriginalMaster:true,versionCategory:'Original'});
       group.patchIds.unshift(oldId);
     }
-    // Register the newly generated RGB to A (the original locked mask).
-    // Mask B is measured from image differences locally; SAM is never run.
-    // No trustworthy correspondence => use unchanged RGB clipped to A.
+    // Apply at most one small perspective correction from long matching image
+    // lines. Uncertain correspondence leaves RGB and the original mask alone.
     let aligned={image:fullImage,aligned:false,status:'locked-mask'};
     try{
       // Complex scenes can have many objects. Reduce sampling resolution
@@ -131,9 +129,8 @@ async function apply(image,{type='ai-edit',prompt='',onStatus=()=>{},preserveEdi
     segmentationStatus:'locked-original'};
 }
 // A manually Created selection may cover parts of several independently selected
-// objects. On the generated RGB result, re-segment those intersections and store
-// independent options rather than flattening all pixels into the manual object.
-// SAM is optional: when it fails or cannot match an object, never reassign pixels.
+// objects. Split those intersections with the existing masks and keep separate
+// options on their original object identities.
 function overlapSample(a,b){
   const scale=Math.min(1,224/Math.max(canvas.width,canvas.height));
   const w=Math.max(1,Math.round(canvas.width*scale)),h=Math.max(1,Math.round(canvas.height*scale));
@@ -198,29 +195,8 @@ async function splitCreatedOverlap(image,parts,{onStatus=()=>{},choiceVersions=n
     finalParts.push(...split);
     if(split.length)onStatus('Selection separated into '+finalParts.length+' original object masks…');
   }
-  // Explicit compound selections are the ONLY appearance operation that
-  // resegments the generated result. Ordinary single-object AI Edit and
-  // Full Image AI Edit never call SAM 3. The SAM masks are candidates for
-  // RGB registration; they can NEVER replace the saved Object ID masks.
-  if(finalParts.length>1){
-    const seeds=finalParts.map(part=>{
-      const group=state.groups.find(g=>g.objectMapKey===part.mapKey&&g.objectMapObjectKey===part.objectKey);
-      return group?{group,mask:part.mask}:null;
-    }).filter(Boolean);
-    if(seeds.length>1){
-      try{
-        const segmentation=await segmentFullFrame(image,seeds,onStatus);
-        finalParts=finalParts.map(part=>{
-          const group=seeds.find(item=>item.group.objectMapKey===part.mapKey&&
-            item.group.objectMapObjectKey===part.objectKey)?.group;
-          const candidateMask=group&&segmentation.masks.get(group.id)?.mask;
-          return candidateMask?{...part,candidateMask,segmentationStatus:'sam3-candidate'}:part;
-        });
-      }catch(error){
-        onStatus('Kept original object IDs · optional resegmentation unavailable.');
-      }
-    }
-  }
+  // Compound appearance edits also keep the original masks. Perspective
+  // alignment uses RGB structural lines, so no SAM silhouette is needed.
   return finalParts;
 }
 window.MosaicSceneVersions={apply,segmentFullFrame,splitCreatedOverlap};

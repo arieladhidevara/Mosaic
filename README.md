@@ -87,9 +87,17 @@ limit BYOK generation when depleted. See [onboarding setup](docs/onboarding.md).
 1. Upload **Base**. A compact prompt bar appears under Base: type the first prompt and press **Enter** to generate a Master, or click the image icon to attach up to 3 visual references. Paste (Ctrl/Cmd+V) or drag image references into the bar too; small thumbnails appear only when attached. Alternatively upload Master manually. Base remains the camera/geometry reference.
 2. Draw a Line, Rectangle or Oval selection, click **Area**, and enter the instruction for that region. Each requested area receives a new colored contour and numbered label. Multiple areas can have different prompts.
 2a. **Generate Master from Base** uses **high** image quality for a full-resolution first Master; **Advanced Settings** provides Low / Medium / High quality for **AI Edit** (default Medium) and **Harmonize** (default High). Preferences are saved in each `.moz` project; older projects use these defaults.
-3. **AI Edit** crops the selected mask bounds with 40% context padding based on the longest dimension (minimum 96px per side), clipped to the canvas edges. It sends the proportional collage crop and transparent mask, the full current composition as scene context, original Base geometry, crop coordinates, the Group's object description, prompt notes and any attached references. Material changes preserve the selected object's identity and details (for example a door's frame and hardware), rather than requesting a material swatch. Colored Region Guide images are never sent to OpenAI. Output uses the model's supported `auto` size and is fitted back to the captured crop window, then clipped to the exact submitted mask.
+3. **AI Edit** crops the selected mask bounds with 15% context padding based on the longest dimension (minimum 48px per side), clipped to the canvas edges. It sends the proportional collage crop and transparent mask, the full current composition as scene context, original Base geometry, crop coordinates, the Group's object description, prompt notes and any attached references. Material changes preserve the selected object's identity and details (for example a door's frame and hardware), rather than requesting a material swatch. Colored Region Guide images are never sent to the image-generation endpoint. Output uses the model's supported `auto` size and is fitted back to the captured crop window, then clipped to the exact submitted mask.
 4. The returned **crop-only output** is resized to the original crop window and composited into the correct position on a transparent full-size working layer. The original selection mask limits the applied pixels; all pixels outside the selected area remain unchanged. Use **✦ Regen** on an option to retry or regenerate; this does not erase the approved option if generation fails.
 5. **Harmonize** sends the full approved collage and Base (no local crop) at the selected Harmonize quality to produce a new full Master. Base is always included, regardless of the geometry toggle. The Groups panel retains prior alternatives, and Master 2/3/etc. appear in the Master Versions browser. Previous editable snapshots remain in memory for branching.
+
+Before each regional generation, a small purple selection preview goes to `/api/ai/edit-context` using the existing saved key. Vision identifies the selected object(s) and adds that description to the image-edit instructions; the original user prompt and mask stay unchanged. Uncertain or unavailable inference falls back to the existing object description and prompt. The preview is used only for recognition, not as an image-generation reference.
+
+Regional output is checked inside each selected object before registration and again after alignment. Unexpected blank black areas or missing opacity reject the result while preserving the previous options; explicit black/dark material requests remain allowed. This is a conservative pixel heuristic, not a guarantee of visual quality. A compound edit validates all objects before saving any options.
+
+Material alignment keeps the original mask exactly. It matches a few long structural lines in the accepted and generated images and may apply one small perspective transform. It never pulls individual mask rows or matches every contour detail. Flat walls, ambiguous/repeated texture, insufficient lines, and large corrections stay unwarped. Compound and full-image appearance edits follow the same rule; SAM silhouettes are not used for appearance alignment. The transform follows the [projective mapping described by OpenCV](https://docs.opencv.org/4.12.0/da/d6e/tutorial_py_geometric_transformations.html), which preserves straight lines.
+
+**Cut:** select an object with Pointer, then click points and double-click (or press Enter) to finish the cut. Hold and drag for freehand; releasing commits that stroke. Escape, switching tools, or canceling the pointer discards an unfinished cut.
 
 Initial Master, AI Edit and Harmonize use `gpt-image-2.6-sunburst` through the Images Edit API. Initial Master always uses High quality and requests roughly 2K output independently of Base pixel count (2048px long edge, 1920px near-square). The generation preview starts at that working resolution, so selections made while generating stay aligned. Existing working canvases retain their dimensions to preserve layers and history. Extreme aspect ratios outside 1:3 to 3:1 retain automatic sizing. Image inputs use JPEG quality 94% within the payload budget; output uses JPEG quality 100%.
 
@@ -204,3 +212,31 @@ The welcome page fits one viewport without scrolling. The header groups Open/Sav
 ## Launch safety and monitoring
 
 The /privacy and /terms documents linked from the landing page describe beta data practices. The account dialog also links to them. On 5xx API errors, a random X-MozAI-Error-ID is added to the response and a sanitized structured log records only that ID, numeric status, and a validated code. Request bodies, uploaded imagery, user identifiers, prompt contents, and API keys are never intentionally logged by this handler. Run npm test to exercise these guarantees. Production rate limiting still requires independent Vercel WAF configuration and verification. The LICENSE notice is unchanged by this patch.
+
+
+### AI Assistant (Gemini)
+
+The right panel places AI Assistant above Groups. Editing tools run across the top;
+the project-name menu loads/saves `.moz` files and renames the project.
+
+The assistant uses `gemini-3.5-flash-lite` with current canvas images, object IDs,
+and up to 12 recent conversation messages. It does not require an OpenAI key.
+Set server-only `GEMINI_API_KEY` in gitignored `.env.local`, then run `npm run dev:local`.
+For deployment, add it as a server Secret and redeploy. Use a Google AI Studio project
+on the **Free** tier with billing disabled to enforce free usage; the API cannot
+select a billing tier per request. Quota errors stay visible and never switch to a
+paid model or provider. Live web search is disabled because it is unavailable on
+this model's API free tier. Preview/Generate buttons use the existing OpenAI image
+connection separately and require an explicit click.
+
+Official configuration: [Gemini pricing](https://ai.google.dev/gemini-api/docs/pricing#gemini-3.5-flash-lite),
+[API keys](https://ai.google.dev/gemini-api/docs/api-key), and
+[structured replies](https://ai.google.dev/gemini-api/docs/structured-output).
+
+
+Named objects with matching labels are grouped locally as they appear. Counters,
+position words, word order, and common plurals are normalized (for example,
+`Chair 1`, `Chairs 2`, and `Chair left`). Each object keeps its own mask and options.
+Manual groups and explicitly ungrouped objects are respected; **Group similar**
+can collect remaining matching names again. Branding is shared through
+`brand-theme.css` and the scalable pink/violet logo in `assets/mosaic-logo.svg`.

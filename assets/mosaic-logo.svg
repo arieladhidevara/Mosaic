@@ -1,50 +1,14 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 820 820" role="img" aria-labelledby="title desc">
   <title id="title">mozAI</title>
-  <desc id="desc">Five gradient diamonds on a purple and navy rounded square.</desc>
+  <desc id="desc">White opposing chevrons and a central diamond on a pink to violet rounded square.</desc>
   <defs>
-    <linearGradient id="background" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#5d0fcf"/>
-      <stop offset="0.42" stop-color="#11112d"/>
-      <stop offset="0.72" stop-color="#15152d"/>
-      <stop offset="1" stop-color="#3c296c"/>
-    </linearGradient>
-    <radialGradient id="purpleGlow" cx="0.12" cy="0.07" r="0.72">
-      <stop offset="0" stop-color="#9f00ff" stop-opacity="0.95"/>
-      <stop offset="0.48" stop-color="#5f00b8" stop-opacity="0.24"/>
-      <stop offset="1" stop-color="#5f00b8" stop-opacity="0"/>
-    </radialGradient>
-    <radialGradient id="violetGlow" cx="0.92" cy="0.88" r="0.72">
-      <stop offset="0" stop-color="#8163d8" stop-opacity="0.95"/>
-      <stop offset="0.5" stop-color="#6750ae" stop-opacity="0.25"/>
-      <stop offset="1" stop-color="#6750ae" stop-opacity="0"/>
-    </radialGradient>
-    <linearGradient id="purpleDiamond" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#ae24ff"/>
-      <stop offset="0.55" stop-color="#952bff"/>
-      <stop offset="1" stop-color="#6d68ef"/>
-    </linearGradient>
-    <linearGradient id="blendDiamond" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#ae24ff"/>
-      <stop offset="0.48" stop-color="#7875e8"/>
-      <stop offset="1" stop-color="#9890ed"/>
-    </linearGradient>
-    <linearGradient id="violetDiamond" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#b7a9ef"/>
-      <stop offset="0.55" stop-color="#9c88e8"/>
-      <stop offset="1" stop-color="#8c76d9"/>
-    </linearGradient>
-    <filter id="diamondShadow" x="-20%" y="-20%" width="140%" height="140%">
-      <feDropShadow dx="0" dy="2" stdDeviation="2" flood-color="#040817" flood-opacity="0.32"/>
-    </filter>
+    <linearGradient id="base" x2="1" y2="1"><stop stop-color="#ef3e72"/><stop offset=".48" stop-color="#49124f"/><stop offset=".72" stop-color="#251250"/><stop offset="1" stop-color="#8130f5"/></linearGradient>
+    <radialGradient id="pink" cx="0" cy="0" r=".95"><stop stop-color="#ff4877"/><stop offset="1" stop-color="#ff4877" stop-opacity="0"/></radialGradient>
+    <radialGradient id="violet" cx="1" cy="1" r=".78"><stop stop-color="#963bff"/><stop offset=".35" stop-color="#7728ef" stop-opacity=".8"/><stop offset="1" stop-color="#6521d0" stop-opacity="0"/></radialGradient>
+    <path id="chevron" d="M337 263Q322 249 308 263L190 382Q164 407 190 432L308 550Q322 565 337 550L391 496Q403 484 390 472L341 423Q320 407 341 388L391 339Q403 327 390 314Z"/>
   </defs>
-  <rect x="2" y="2" width="508" height="508" rx="104" fill="url(#background)"/>
-  <rect x="2" y="2" width="508" height="508" rx="104" fill="url(#purpleGlow)"/>
-  <rect x="2" y="2" width="508" height="508" rx="104" fill="url(#violetGlow)"/>
-  <g fill="#fff" filter="url(#diamondShadow)">
-    <path d="M191 136 248 207 191 278 134 207Z"/>
-    <path d="M321 136 378 207 321 278 264 207Z"/>
-    <path d="M126 218 184 291 126 364 68 291Z"/>
-    <path d="M256 218 314 291 256 364 198 291Z"/>
-    <path d="M386 218 444 291 386 364 328 291Z"/>
-  </g>
+  <rect width="820" height="820" rx="200" fill="url(#base)"/>
+  <rect width="820" height="820" rx="200" fill="url(#pink)"/>
+  <rect width="820" height="820" rx="200" fill="url(#violet)"/>
+  <g fill="#fff"><use href="#chevron"/><use href="#chevron" transform="translate(820) scale(-1 1)"/><path d="M399 350Q410 339 421 350L465 394Q478 407 465 420L421 464Q410 477 399 464L355 420Q342 407 355 394Z"/></g>
 </svg>
