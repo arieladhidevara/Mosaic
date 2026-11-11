@@ -82,7 +82,7 @@ function showProcessing(on){state.busy=on;$('processing').classList.toggle('hidd
 function clearDraft(){window.MosaicObjectCreateCut?.cancelCut?.();state.lasso=[];state.hoverPoint=null;state.pointerStart=null;state.dragFreehand=false;state.shapeStart=null;state.shapeEnd=null;state.drawing=false}
 function clearHover(){window.MosaicRegions?.clearHover()}
 function hideQuickPrompt(){document.getElementById('quickAreaPromptForm')?.classList.add('hidden')}
-function showQuickPrompt(point=state.lastCanvasPointer,keepText=false){
+function showQuickPrompt(point=state.lastCanvasPointer,keepText=false,focusInput=true){
   if(window.MosaicWorkspace?.isSelectingResult())return;
   if(!state.master||!state.selectionMask||!maskBoundingBox(state.selectionMask)||state.pendingSourceId||state.editingPatchId)return;
   const form=$('quickAreaPromptForm'),vp=$('viewport'),r=vp.getBoundingClientRect();
@@ -96,7 +96,7 @@ function showQuickPrompt(point=state.lastCanvasPointer,keepText=false){
   form.style.maxWidth=Math.max(120,right-left)+'px';
   form.style.maxHeight=Math.max(120,bottom-top)+'px';
   form.classList.remove('hidden');
-  showSelectionHighlightForPrompt();
+  if(focusInput)showSelectionHighlightForPrompt();
   const bounds=form.getBoundingClientRect(),w=bounds.width,h=bounds.height;
   // Keyboard completion and programmatic selection fall back to the actual
   // selection on canvas rather than an arbitrary corner of the viewport.
@@ -115,7 +115,7 @@ function showQuickPrompt(point=state.lastCanvasPointer,keepText=false){
   form.style.left=Math.max(left,Math.min(quickPromptPosition?r.left+quickPromptPosition.x:wantedX,Math.max(left,right-w)))+'px';
   form.style.top=Math.max(top,Math.min(quickPromptPosition?r.top+quickPromptPosition.y:wantedY,Math.max(top,bottom-h)))+'px';
   if(!keepText){window.MosaicPremium?.clearReferenceFiles?.('quick');$('quickAreaPromptInput').value=''}
-  if(!window.matchMedia('(max-width:850px)').matches)$('quickAreaPromptInput').focus({preventScroll:true});
+  if(focusInput&&!window.matchMedia('(max-width:850px)').matches)$('quickAreaPromptInput').focus({preventScroll:true});
 }
 function setSourcePreview(id,source){const img=$(id);if(!img||!source)return;img.src=source.toDataURL('image/jpeg',.75);img.classList.remove('hidden')}
 function updateSourceActions(){
@@ -346,7 +346,7 @@ function chooseGroupOption(group,patchId,{showPrompt=false,showOutline=false}={}
   optionChoiceVersions.set(group,groupChoiceVersion(group)+1);
   state.editingPatchId=null;group.active=patchId;group.objectRemoved=state.patches.get(patchId)?.editMode==='remove';refreshGroupFootprint(group);window.MosaicObjects?.scheduleRepair();
   selectGroupMask(group,{showOutline});
-  if(showPrompt)showQuickPrompt(state.lastCanvasPointer,true);
+  if(showPrompt)showQuickPrompt(state.lastCanvasPointer,true,false);
 }
 function refreshQuickOptions(){
   const form=$('quickAreaPromptForm');let rail=$('quickGroupOptions');
@@ -364,7 +364,7 @@ function refreshQuickOptions(){
     const thumb=patch&&patchThumbnail(patch);
     if(thumb){const image=document.createElement('img');image.src=thumb;image.alt='';button.append(image)}
     const label=document.createElement('span');label.textContent=patch?String(index+(group.hasHarmonizedMaster?1:0)):'Original';button.append(label);
-    button.onclick=()=>chooseGroupOption(group,patch?.id||null,{showPrompt:true,showOutline:!state.selectionOverlayHidden});
+    button.onclick=()=>chooseGroupOption(group,patch?.id||null,{showPrompt:true,showOutline:false});
     rail.append(button);
   });
 }
