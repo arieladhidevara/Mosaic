@@ -32,6 +32,10 @@
       "destination": "/api/ai/generate?_mozai_mode=edit"
     },
     {
+      "source": "/api/ai/edit-context",
+      "destination": "/api/ai/generate?_mozai_mode=edit-context"
+    },
+    {
       "source": "/api/ai/harmonize",
       "destination": "/api/ai/generate?_mozai_mode=harmonize"
     },

@@ -1,5 +1,13 @@
 const test=require('node:test'),assert=require('node:assert/strict');
-const {inferContext,validateContext}=require('../api/ai/edit-context');
+const {inferContext,validateContext}=require('../lib/edit-context-handler');
+test('original and rewritten edit-context URLs reach the shared function',async()=>{
+  const generate=require('../api/ai/generate');
+  for(const url of ['/api/ai/edit-context','/api/ai/generate?_mozai_mode=edit-context']){
+    const res={setHeader(){},status(n){this.statusCode=n;return this},json(value){this.body=value;return this}};
+    await generate({url,method:'GET',headers:{}},res);
+    assert.equal(res.statusCode,405);assert.equal(res.body.error,'Method not allowed');
+  }
+});
 function jpeg(){const bytes=Buffer.alloc(80);bytes.set([255,216,255,192,0,17,8,0,64,0,64]);return 'data:image/jpeg;base64,'+bytes.toString('base64')}
 test('context inference grounds vague prompts without rewriting their instructions',async()=>{
   const native=global.fetch;let sent;

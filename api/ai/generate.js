@@ -5,7 +5,7 @@ const { trackGeneration } = require('../../lib/generation-tracking');
 const { send, guard, loadApiKey } = require('../../lib/auth');
 const { generate } = require('../../lib/image-provider');
 
-const MODES = new Set(['edit', 'harmonize', 'master', 'chat', 'benchmark-object-map']);
+const MODES = new Set(['edit', 'edit-context', 'harmonize', 'master', 'chat', 'benchmark-object-map']);
 
 function operationFor(req) {
   const url = new URL(req.url || '/', 'http://localhost');
@@ -19,6 +19,7 @@ function operationFor(req) {
 module.exports = async function handler(req, res) {
   const operation = operationFor(req);
   if (!operation) return send(res, 404, { error: 'Unknown generation operation.' });
+  if(operation==='edit-context')return require('../../lib/edit-context-handler')(req,res);
   if(operation==='chat')return require('../../lib/ai-chat-handler')(req,res);
   if(operation==='benchmark-object-map')return require('../../lib/ai-benchmark-handler')(req,res);
   if (!await guard(req, res, 'POST') || !await loadApiKey(req, res)) return;

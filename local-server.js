@@ -21,7 +21,7 @@ const apiRoutes = new Map([
   ['/api/ai/classify', require('./api/ai/classify')],
   ['/api/ai/sam3', require('./api/ai/sam3')],
   ['/api/ai/object-intent', require('./api/ai/object-intent')],
-  ['/api/ai/edit-context', require('./api/ai/edit-context')],
+  ['/api/ai/edit-context', require('./api/ai/generate')],
   ['/api/ai/object-map', require('./api/ai/object-map')],
   ['/api/ai/option-name', require('./api/ai/option-name')],
   ['/api/ai/scene-intent', require('./api/ai/scene-intent')],
