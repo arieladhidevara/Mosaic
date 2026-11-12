@@ -1,0 +1,26 @@
+name: Gemini Assistant selection review
+on:
+  pull_request:
+    paths:
+      - 'design-copilot.js'
+      - 'design-copilot.css'
+      - 'lib/ai-chat-handler.js'
+      - 'lib/ai-project-memory.js'
+      - 'tests/ai-chat.test.cjs'
+      - 'tests/assistant-workspace-scenarios.js'
+      - 'supabase/migrations/*gemini*'
+      - '.github/workflows/copilot-review-ci.yml'
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm ci
+      - run: node --check design-copilot.js
+      - run: node --check lib/ai-chat-handler.js
+      - run: node --check lib/ai-project-memory.js
+      - run: node --check tests/assistant-workspace-scenarios.js
+      - run: node --test tests/ai-chat.test.cjs
