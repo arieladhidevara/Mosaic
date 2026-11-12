@@ -14,3 +14,6 @@
 .copilot-search-toggle{font-size:11px;display:flex;align-items:center;gap:5px;color:#b6b7c5}
 .copilot-controls{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:0 10px 3px}
 .copilot-canvas-highlights{position:absolute;inset:0;display:block;width:100%;height:100%;pointer-events:none!important;z-index:8}
+/* Review state: the user can correct AI object selections before any paid image edit. */
+.copilot-selection-hint{margin-top:8px;padding:7px 9px;font-size:11px;line-height:1.45;color:#d9cfff;background:#2b2740;border:1px solid #615182;border-radius:8px}
+.copilot-message .copilot-actions button:first-child:focus-visible{outline:2px solid #bc9cff;outline-offset:2px}
