@@ -340,13 +340,31 @@ function focusGroupInSidebar(group){
   const list=$('groupList'),section=[...list.querySelectorAll('.region-group')].find(row=>row.dataset.group===group.id);
   if(section)section.scrollIntoView({block:'nearest'});
 }
-function chooseGroupOption(group,patchId,{showPrompt=false,showOutline=false}={}){
-  if(!group||state.pendingSourceId||state.busy)return;
-  if(patchId!==null&&(!group.patchIds.includes(patchId)||!state.patches.has(patchId)))return;
+const optionLoadTickets=new WeakMap();
+async function chooseGroupOption(group,patchId,{showPrompt=false,showOutline=false}={}){
+  if(!group||state.pendingSourceId||state.busy)return false;
+  if(patchId!==null&&(!group.patchIds.includes(patchId)||!state.patches.has(patchId)))return false;
+  const ticket=(optionLoadTickets.get(group)||0)+1;
+  optionLoadTickets.set(group,ticket);
+  const patch=state.patches.get(patchId);
+  const source=patch&&state.sources.get(patch.sourceId);
+  if(source&&!source.canvas){
+    try{
+      message('Loading saved Option from this device…');
+      await window.MosaicDiskCache.ensure(source,'canvas');
+    }catch(error){
+      toast('Could not load Option: '+error.message);
+      return false;
+    }
+  }
+  if(optionLoadTickets.get(group)!==ticket||!state.groups.includes(group)||state.pendingSourceId||state.busy)return false;
   optionChoiceVersions.set(group,groupChoiceVersion(group)+1);
-  state.editingPatchId=null;group.active=patchId;group.objectRemoved=state.patches.get(patchId)?.editMode==='remove';refreshGroupFootprint(group);window.MosaicObjects?.scheduleRepair();
+  state.editingPatchId=null;group.active=patchId;group.objectRemoved=patch?.editMode==='remove';refreshGroupFootprint(group);window.MosaicObjects?.scheduleRepair();
   selectGroupMask(group,{showOutline});
   if(showPrompt)showQuickPrompt(state.lastCanvasPointer,true);
+  renderGroups();render();
+  window.MosaicDiskCache?.schedule?.();
+  return true;
 }
 function refreshQuickOptions(){
   const form=$('quickAreaPromptForm');let rail=$('quickGroupOptions');
@@ -795,16 +813,27 @@ function cutoutThumbnail(image,mask){
 }
 function patchThumbnail(patch){
   if(!patch)return '';
-  const src=state.sources.get(patch.sourceId),mask=displayedPatchMask(patch);
-  if(!src?.canvas||!mask||patch.awaitingResult)return '';
+  const src=state.sources.get(patch.sourceId),cached=optionThumbCache.get(patch);
+  // Keep the tiny cutout preview visible without decoding an inactive full-size source.
+  if(!src?.canvas)return cached?.data||'';
+  const mask=displayedPatchMask(patch);
+  if(!mask||patch.awaitingResult)return '';
   const signature=[patch.bbox?.x,patch.bbox?.y,patch.bbox?.w,patch.bbox?.h,
     ...(patch.corners||[]).flatMap(p=>[p.x,p.y])].join('/');
-  const cached=optionThumbCache.get(patch);
   if(cached&&cached.source===src.canvas&&cached.mask===patch.mask&&cached.signature===signature)return cached.data;
   const image=patch.corners?.length?renderedPatchLayer(patch):src.canvas;
   const data=cutoutThumbnail(image,mask);
   optionThumbCache.set(patch,{source:src.canvas,mask:patch.mask,signature,data});
   return data;
+}
+function releaseSourceTexture(sourceId){
+  // Both caches otherwise retain a strong reference to the old full-size canvas.
+  for(const patch of state.patches.values()){
+    if(patch.sourceId!==sourceId)continue;
+    patchTextures.delete(patch);
+    const thumb=optionThumbCache.get(patch);
+    if(thumb)optionThumbCache.set(patch,{...thumb,source:null});
+  }
 }
 const groupThumbCache=new WeakMap();
 function groupThumbnail(group){
@@ -906,9 +935,10 @@ function groupEvent(e){if(window.MosaicRegions?.handleGroupEvent(e))return;if(wi
     if(state.pendingSourceId){toast('Apply or discard the new image first.');return}
     hideQuickPrompt();state.editingPatchId=null;
     if((e.ctrlKey||e.metaKey)&&pid!=='master'){
-      optionChoiceVersions.set(group,groupChoiceVersion(group)+1);
-      group.active=pid;refreshGroupFootprint(group);
-      appendGroupSelection(group);showQuickPrompt();renderGroups();render();return;
+      void chooseGroupOption(group,pid).then(ok=>{
+        if(!ok)return;
+        appendGroupSelection(group);showQuickPrompt();renderGroups();render();
+      });return;
     }
     state.expandedObjectId=group.id;
     state.expandedOptionId=pid==='master'?null:state.expandedOptionId===pid?null:pid;
@@ -1872,5 +1902,5 @@ viewport.addEventListener('wheel',event=>{
 },{passive:false});
 window.addEventListener('mosaic:keyconnected',()=>state.groups.forEach(autoClassifyGroup));
 window.MosaicCore = {groupContainsPoint,appendGroupSelection,newGroup,matchingGroup,applyWandMask,svgNode,vectorLayer,drawVectorPaths,maskPathsFromRaster,state,canvas,overlay,ctx,makeCanvas,uid,setProjectTitle,toast,message,promptText,loadFileToCanvas,setMaster,continueWithBase,upgradeBaseDraft,setSourcePreview,updateSourceActions,render,composeApprovedCanvas,renderGroups,drawPatch,selectTool,setMode,updateApplyButton,maskBoundingBox,assignGroup,resetSelection,updateSelectionOutline,updateMaskWithLasso,updateZoomFit,escapeHTML,categoryFromText,updateGroupCategory,optionNameFromPrompt,prepareSelectionGroup,groupMask,selectGroupMask,CATEGORIES,showQuickPrompt,hideQuickPrompt,createBlankRegion,moveOptionToGroup,displayedPatchMask,renderedPatchLayer,refreshGroupFootprint,invalidateDisplayedMask,attachGeneratedSelection,patchSelectionPaths,exactMaskBoundingBox,unwarpPatchSelection,patchControlPoints,displayedMaskPoint};
-Object.assign(window.MosaicCore,{focusGroupInSidebar,chooseGroupOption,groupChoiceVersion,toggleComparison,canCreateSelection});
+Object.assign(window.MosaicCore,{focusGroupInSidebar,chooseGroupOption,groupChoiceVersion,toggleComparison,canCreateSelection,releaseSourceTexture});
 promptText();
