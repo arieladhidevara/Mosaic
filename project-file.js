@@ -9,9 +9,16 @@ const MAGIC='MOSAIC_PROJECT',VERSION=1;
 let fileBusy=false;
 
 function createCodec(){
-  const registry=[],seen=new Map();
+  const registry=[],seen=new Map(),seenDisk=new Map();
   const canvasImage=value=>value&&typeof value.toDataURL==='function'&&typeof value.getContext==='function';
   const isImageData=value=>typeof ImageData!=='undefined'&&value instanceof ImageData;
+  const offloadedImage=diskKey=>{
+    if(seenDisk.has(diskKey))return {$canvas:seenDisk.get(diskKey)};
+    const id=registry.length;
+    seenDisk.set(diskKey,id);
+    registry.push({id,data:null,diskKey});
+    return {$canvas:id};
+  };
   function pack(value,depth=0){
     if(depth>85)throw Error('Project history is too deeply nested.');
     if(value==null||typeof value==='string'||typeof value==='boolean'||typeof value==='number')return value;
@@ -33,8 +40,10 @@ function createCodec(){
     if(typeof value==='object'){
       const result={};
       for(const [key,val] of Object.entries(value)){
-        if(key==='generationQueue'||typeof val==='function')continue;
-        result[key]=pack(val,depth+1);
+        if(key==='generationQueue'||typeof val==='function'||key.endsWith('DiskKey'))continue;
+        const diskKey=value[key+'DiskKey'];
+        result[key]=val==null&&typeof diskKey==='string'&&diskKey.length
+          ?offloadedImage(diskKey):pack(val,depth+1);
       }
       return result;
     }
@@ -114,17 +123,21 @@ async function encodeQueue(pack){
 // The same complete, portable snapshot is used for .moz downloads and local recovery.
 // A recovery snapshot is never uploaded and never includes account credentials.
 async function buildProjectData(){
-  const codec=createCodec();
-  const packedState=codec.pack(projectState());
-  const packedPremium=codec.pack(premium.exportProjectState());
-  const queue=await encodeQueue(codec.pack);
-  return {
+  const resume=window.MosaicDiskCache?.pause?.();
+  try {
+    const codec=createCodec();
+    const packedState=codec.pack(projectState());
+    const packedPremium=codec.pack(premium.exportProjectState());
+    const queue=await encodeQueue(codec.pack);
+    await window.MosaicDiskCache?.fillRegistry?.(codec.registry);
+    return {
     format:MAGIC,version:VERSION,createdAt:new Date().toISOString(),
     analytics:{projectId:await window.MosaicAccount?.projectId().catch(()=>null)||null},
     app:'mozAI',state:packedState,premium:packedPremium,queue,
     ui:{projectName:$('projectName').textContent||'Untitled composition'},
-    images:codec.registry
-  };
+      images:codec.registry
+    };
+  } finally {resume?.();}
 }
 async function saveProject(){
   if(fileBusy)return;
