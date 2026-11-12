@@ -13,7 +13,7 @@ function canvas(width=32,height=24){
 }
 function harness({user={id:'sample'},archived=null}={}){
   const images = new Map(), callbacks = new Map(), notices = [];
-  let created=false,sequence=0;
+  let created=false,sequence=0,clockOffset=0;
   const state={master:canvas(),reference:canvas(),busy:false,
     sources:new Map(),groups:[],patches:new Map(),pendingSourceId:null,
     editingPatchId:null,selectedPatchId:null};
@@ -72,7 +72,7 @@ function harness({user={id:'sample'},archived=null}={}){
         queueMicrotask(()=>this.onload?.());
       }
     },
-    Blob,Promise,Date,Error,Number,Set,Map,WeakMap,
+    Blob,Promise,Date:class extends Date {static now(){return Date.now()+clockOffset;}},Error,Number,Set,Map,WeakMap,
     setTimeout(fn,delay){const key=++sequence;callbacks.set(key,{fn,delay});return key;},
     clearTimeout(key){callbacks.delete(key);},
     setInterval(){return ++sequence;}
@@ -80,6 +80,7 @@ function harness({user={id:'sample'},archived=null}={}){
   vm.runInNewContext(source,context,{filename:'image-disk-cache.js'});
   return {
     state,premium,images,notices,api:win.MosaicDiskCache,
+    advance(ms){clockOffset+=ms;},
     async ready(){for(let i=0;i<50;i++)await Promise.resolve();},
     async tick(){
       const [key,item]=[...callbacks.entries()][0]||[];
@@ -114,6 +115,22 @@ test('inactive option RGB is offloaded without losing active image, and reload r
   const restored=await h.api.ensure(h.state.sources.get('older'),'canvas');
   assert.equal(restored.width,32);
   assert.ok(h.state.sources.get('older').canvas);
+});
+
+test('repeatedly switching to the same Option reuses its PNG instead of filling disk',async()=>{
+  const h=harness();
+  h.state.sources.set('older',{id:'older',canvas:canvas()});
+  await h.ready();
+  await h.api.sweep();
+  const source=h.state.sources.get('older');
+  const first=source.canvasDiskKey;
+  assert.equal(h.images.size,1);
+  await h.api.ensure(source,'canvas');
+  h.advance(12000);
+  await h.api.sweep();
+  assert.equal(source.canvas,null);
+  assert.equal(source.canvasDiskKey,first);
+  assert.equal(h.images.size,1);
 });
 
 test('archived graph images and masks can be evicted then losslessly rehydrated',async()=>{
