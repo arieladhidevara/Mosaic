@@ -167,6 +167,8 @@
     try {
       if (inFlight) await inFlight;
       await remove(owner || ownerKey());
+      // New Project clears both the recoverable snapshot and evicted image blobs.
+      await window.MosaicDiskCache?.clearOwner?.(owner || ownerKey());
       location.reload();
     } catch (error) {
       stopping = false;
@@ -183,8 +185,11 @@
       let record = await read(owner);
       if (record && (!record.expiresAt || record.expiresAt <= Date.now())) {
         await remove(owner);
+        await window.MosaicDiskCache?.clearOwner?.(owner);
         record = null;
       }
+      if (!record && !hasProject())
+        await window.MosaicDiskCache?.clearOwner?.(owner);
       if (record?.blob && !hasProject()) {
         const file = new File([record.blob], 'temporary-recovery.moz', {type:'application/json'});
         const restored = await projects.loadProjectFile(file, {recovery: true});
