@@ -31,7 +31,9 @@ function copyGraph(groups, patches, sources) {
   return {
     groups: groups.map(g => ({...g, objectBehind:g.objectBehind?[...g.objectBehind]:undefined,objectOriginal:g.objectOriginal?{...g.objectOriginal,repairs:[...g.objectOriginal.repairs]}:undefined,patchIds: [...g.patchIds],footprint: g.footprint?cloneCanvas(g.footprint):null})),
     patches: new Map([...patches].map(([id,p]) => [id, {...p, objectRepairs:p.objectRepairs?[...p.objectRepairs]:undefined,mask: cloneCanvas(p.mask), corners: p.corners?.map(q=>({...q}))||null}])),
-    sources: new Map([...sources].map(([id,s]) => [id, {...s, canvas: cloneCanvas(s.canvas)}]))
+    // Archived branches may reference lossless images already stored on disk.
+    // Keep their disk pointers rather than decoding all inactive options here.
+    sources: new Map([...sources].map(([id,s]) => [id, {...s, canvas: s.canvas?cloneCanvas(s.canvas):null}]))
   };
 }
 function drawComposition(context, base, groups, patches, sources) {
@@ -272,9 +274,17 @@ function nodeMarkup(node, depth = 0) {
   return html + '</section>';
 }
 function renderHistory(list) { activePatchMarkup(); /* Versions now live inside their Regions. */ }
-function workFromNode(node, useFlattened) {
+async function workFromNode(node, useFlattened) {
   if (state.pendingSourceId || state.editingPatchId) {toast('Finish or discard your current mask first.');return;}
   if (state.groups.length && !window.confirm('Switch working version? Your current unharmonized patches will be replaced. Harmonized snapshots remain in history.')) return;
+  const masterAtStart=state.master,projectAtStart=state.selectionGeneration;
+  try {
+    await window.MosaicDiskCache?.hydrateArchive?.(node,{all:!useFlattened,flattened:useFlattened});
+  }catch(error){
+    toast('Archived images unavailable: '+error.message);
+    return;
+  }
+  if(masterAtStart!==state.master || projectAtStart!==state.selectionGeneration)return;
   premium.previewNode = null;
   state.pendingSourceId = null;
   state.queue = [];
@@ -304,7 +314,9 @@ function workFromNode(node, useFlattened) {
   message(useFlattened ? 'Editing a previous harmonized result. Existing history is preserved.' :
     'Restored the archived editable collage. Change alternatives and harmonize again.');
   toast('Branch created. Earlier harmonizations are still available.');
+  window.MosaicDiskCache?.schedule?.();
 }
+let archiveLoadToken=0;
 function handleGroupEvent(event) {
   const ai = event.target.closest('[data-ai-action]');
   if (ai) {
@@ -321,22 +333,29 @@ function handleGroupEvent(event) {
   if (!node) return true;
   if (state.pendingSourceId) {toast('Finish the imported variation first.');return true;}
   const action = control.dataset.historyAction;
-  if (action === 'toggle') {
+  if(action==='toggle'){
     premium.expanded.has(node.id) ? premium.expanded.delete(node.id) : premium.expanded.add(node.id);
-  } else if (action === 'preview') {
-    premium.previewNode = premium.previewNode === node.id ? null : node.id;
-  } else if (action === 'option') {
-    const group = node.groups.find(g => g.id === control.dataset.historyGroup);
-    if (group) {
-      const id = control.dataset.historyPatch;
-      group.active = id === 'master' ? null : id;
-      premium.previewNode = node.id;
+  }else if(action==='preview'||action==='option'){
+    const ticket=++archiveLoadToken;
+    const group=action==='option'?node.groups.find(g=>g.id===control.dataset.historyGroup):null;
+    const id=action==='option'?control.dataset.historyPatch:null;
+    if(action==='preview'&&premium.previewNode===node.id){
+      premium.previewNode=null;renderGroups();render();
+      window.MosaicDiskCache?.schedule?.();return true;
     }
-  } else if (action === 'restore') {
-    workFromNode(node, false);
+    void (async()=>{
+      try{
+        if(group)group.active=id==='master'?null:id;
+        await window.MosaicDiskCache?.hydrateArchive?.(node);
+        if(ticket!==archiveLoadToken)return;
+        premium.previewNode=node.id;
+        renderGroups();render();
+      }catch(error){toast('Cannot open archived image: '+error.message);}
+    })();
     return true;
-  } else if (action === 'result') {
-    workFromNode(node, true);
+  }else if(action==='restore'||action==='result'){
+    ++archiveLoadToken;
+    void workFromNode(node,action==='result');
     return true;
   }
   renderGroups();
@@ -982,6 +1001,8 @@ function initialMasterImage(){return premium.masterVersions[0]?.image||premium.i
 async function regenerateMaster(number){
   const version=premium.masterVersions.find(item=>item.number===Number(number));
   if(!version){toast('This Master version is no longer available.');return}
+  try{await window.MosaicDiskCache?.ensure?.(version,'image');}
+  catch(error){toast('Cannot load Master version: '+error.message);return}
   if(state.pendingSourceId||state.editingPatchId){toast('Apply or discard the unfinished patch first.');return}
   if(state.groups.some(g=>g.active&&state.patches.get(g.active)?.awaitingResult)){toast('Complete the pending AI region first.');return}
   if(!await window.MosaicAuth.ensure())return;

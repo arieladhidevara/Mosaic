@@ -98,6 +98,7 @@ const publicFiles = new Set([
   'sources.js',
   'project-file.js',
   'project-recovery.js',
+  'image-disk-cache.js',
   'assets/mosaic-logo.svg',
 ]);
 
