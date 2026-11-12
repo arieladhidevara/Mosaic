@@ -57,7 +57,55 @@ window.runAssistantWorkspaceChecks=async function(){
     await ask('quota-test');assert($('chatStatus').textContent.includes('quota')&&!$('chatGenerate').disabled&&chatCalls===4,'Quota failure was hidden or retried');
     await ask('Suggest softer lighting');assert(state.chatMessages.at(-1).text.includes('warm plaster'),'Chat cannot recover after quota error');
     checks.push('Quota error stays visible, makes one request, and allows a later retry');
+
   }finally{window.fetch=native}
+  // The Assistant may propose multiple existing IDs, but selection is editable
+  // and paid image generation remains locked until selection confirmation.
+  const chairMask=(x,y)=>{const m=makeCanvas(960,640),ctx=m.getContext('2d');ctx.fillStyle='#fff';ctx.fillRect(x,y,110,100);return m};
+  const chairLeft=core.newGroup(chairMask(40,180),'Furniture');
+  chairLeft.name=chairLeft.objectName='Dining Chair Left';chairLeft.mapPrepared=true;
+  const chairRight=core.newGroup(chairMask(650,180),'Furniture');
+  chairRight.name=chairRight.objectName='Dining Chair Right';chairRight.mapPrepared=true;
+  core.renderGroups();
+  const originalRequest=window.MosaicAccount.request;
+  let capturedConfirm=null;
+  window.MosaicAccount.request=async(path,options)=>{
+    if(path!=='/api/ai/chat')return originalRequest(path,options);
+    const body=options.body;
+    if(body.message==='Select all chairs')return {
+      reply:'I found two chairs. Is this selection correct?',action:'select',scope:'none',
+      targetIds:[chairLeft.id,chairRight.id],groupName:'',editPrompt:'',reason:'Chair labels'
+    };
+    if(body.message==='Change them to blue leather'){
+      capturedConfirm=body.confirmedSelectedIds;
+      return {reply:'Ready to change both chairs.',action:'generate',scope:'region',
+        targetIds:[chairLeft.id,chairRight.id],editPrompt:'Make the two selected chairs blue leather, preserve geometry.',
+        reason:'Confirmed chair edit'};
+    }
+    throw Error('Unexpected test prompt: '+body.message);
+  };
+  try{
+    await ask('Select all chairs');
+    const review=window.MosaicDesignCopilot.reviewSelection();
+    assert(review?.ids.length===2,'Select all chairs did not begin an editable review');
+    assert(document.querySelector('#copilotThread')?.textContent.includes('Confirm selection'),'Assistant did not ask for selection confirmation');
+    assert(![...document.querySelectorAll('#copilotThread button')].some(b=>b.textContent.includes('Generate · OpenAI')),'Unconfirmed selection offered image generation');
+    const overlay=$('overlayCanvas'),rect=overlay.getBoundingClientRect();
+    const clickAt=(x,y)=>{const cx=rect.left+x/960*rect.width,cy=rect.top+y/640*rect.height;
+      for(const type of ['pointerdown','pointerup'])overlay.dispatchEvent(new PointerEvent(type,{bubbles:true,button:0,pointerId:44,clientX:cx,clientY:cy}))};
+    clickAt(690,220);
+    assert(window.MosaicDesignCopilot.reviewSelection()?.ids.length===1,'Clicking a selected object did not deselect it');
+    clickAt(690,220);
+    assert(window.MosaicDesignCopilot.reviewSelection()?.ids.length===2,'Clicking an unselected object did not add it back');
+    const confirm=[...document.querySelectorAll('#copilotThread button')].find(b=>b.textContent==='Confirm selection');
+    assert(confirm,'Review confirmation button missing');confirm.click();
+    assert(window.MosaicDesignCopilot.reviewSelection()===null,'Confirmation did not exit selection review');
+    assert(window.MosaicDesignCopilot.confirmedSelection()?.ids.length===2,'Confirmation lost object IDs');
+    await ask('Change them to blue leather');
+    assert(capturedConfirm?.length===2,'Confirmed IDs were not sent to Gemini for pronoun resolution');
+    assert([...document.querySelectorAll('#copilotThread button')].some(b=>b.textContent==='Generate · OpenAI'),'Region Edit button missing after confirmation');
+    checks.push('Assistant proposes existing masks, toggles objects on canvas, confirms IDs, then enables OpenAI Generate');
+  }finally{window.MosaicAccount.request=originalRequest}
   let saved;const create=URL.createObjectURL,click=HTMLAnchorElement.prototype.click;
   URL.createObjectURL=function(blob){if(blob.type==='application/json')saved=blob;return create.call(this,blob)};
   HTMLAnchorElement.prototype.click=function(){if(!this.download?.endsWith('.moz'))click.call(this)};
