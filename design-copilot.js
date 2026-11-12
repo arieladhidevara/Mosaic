@@ -16,6 +16,7 @@ for(const tool of document.querySelectorAll('.tool-row .tool'))tool.dataset.tip=
 const wrap=$('canvasWrap'),layer=makeCanvas(1,1);layer.id='copilotHighlightLayer';layer.className='copilot-canvas-highlights';wrap.append(layer);
 state.copilotSession??=null;
 let revision=0,busy=false,highlighted=[],pointed=null,pointerStart=null;
+let pendingReview=null,confirmedSelection=null,selectionSerial=0,reviewPointer=null;
 const activeGroups=ids=>{const keys=new Set(ids||[]);return state.groups.filter(g=>keys.has(g.id)&&!g.mergedInto&&!g.objectMapBatch&&!g.objectRemoved)};
 function jpeg(source,maxEdge=940,quality=.77){
   if(!source)return null;
@@ -48,16 +49,66 @@ function redraw(){
   }
 }
 function highlight(ids){highlighted=[...new Set(ids||[])];redraw()}
+const sameIds=(a,b)=>Array.isArray(a)&&Array.isArray(b)&&a.length===b.length&&a.every(id=>b.includes(id));
 function select(ids){
-  const items=activeGroups(ids);if(!items.length){status.textContent='No matching Object IDs.';return false}
+  const items=activeGroups([...new Set(ids||[])]);
   core.resetSelection();
-  if(items.length===1){core.selectGroupMask(items[0]);highlight(ids);return true}
+  if(!items.length){highlight([]);core.renderGroups();core.render();return false}
   const mask=makeCanvas(canvas.width,canvas.height),ctx=mask.getContext('2d');
   for(const g of items)ctx.drawImage(core.groupMask(g),0,0);
-  state.selectionMask=mask;state.selectionPaths=items.flatMap(g=>core.maskPathsFromRaster(core.groupMask(g)));
+  state.selectionMask=mask;
+  state.selectionPaths=items.flatMap(g=>g.maskPaths?.length?g.maskPaths:core.maskPathsFromRaster(core.groupMask(g)));
   state.selectionPoints=state.selectionPaths.flat();
+  state.selectionOverlayHidden=false;
+  state.selectionTargetPatchId=null;
+  state.selectedPatchId=null;
+  state.draftGroupId=null;
   window.MosaicObjectMap?.adoptSelection(items.map(g=>window.MosaicObjectManager?.partForObject(g)).filter(Boolean));
-  core.updateSelectionOutline();core.renderGroups();core.render();highlight(ids);return true;
+  core.selectTool('select');core.updateSelectionOutline();core.updateApplyButton();
+  core.renderGroups();core.render();highlight(items.map(g=>g.id));return true;
+}
+function beginReview(message,ids){
+  pendingReview={message,ids:[...new Set(ids||[])],serial:++selectionSerial};
+  confirmedSelection=null;
+  pointed=null;contextUI();
+  message.reviewState='pending';
+  message.plan.targetIds=[...pendingReview.ids];
+  select(pendingReview.ids);
+  status.textContent='Review '+pendingReview.ids.length+' selected objects on the canvas.';
+  renderThread();
+}
+function toggleReviewObject(group){
+  if(!pendingReview||!group)return;
+  const ids=pendingReview.ids,at=ids.indexOf(group.id);
+  if(at>=0)ids.splice(at,1);else ids.push(group.id);
+  pendingReview.message.plan.targetIds=[...ids];
+  select(ids);
+  status.textContent=ids.length+' objects selected · click to add/remove, then confirm.';
+  renderThread();
+}
+function confirmReview(message){
+  if(!pendingReview||pendingReview.message!==message)return;
+  const ids=[...pendingReview.ids];
+  if(!ids.length){status.textContent='Select at least one object before confirming.';return}
+  confirmedSelection={ids,token:++selectionSerial};
+  message.plan.targetIds=[...ids];message.plan.confirmedToken=confirmedSelection.token;
+  message.reviewState='confirmed';pendingReview=null;
+  select(ids);
+  status.textContent=ids.length+' objects confirmed · ready for edit instructions.';
+  state.chatMessages.push({role:'assistant',text:'Confirmed '+ids.length+' object'+(ids.length===1?'':'s')+'. Tell me what to change, or click Generate if an edit prompt is ready.'});
+  renderThread();
+}
+function cancelReview(message){
+  if(!pendingReview||pendingReview.message!==message)return;
+  pendingReview=null;confirmedSelection=null;message.reviewState='cancelled';
+  select([]);status.textContent='Selection cancelled.';renderThread();
+}
+function canGenerate(message){
+  const p=message.plan||{};
+  if(!p.editPrompt)return false;
+  if(p.scope!=='region')return true;
+  return Boolean(confirmedSelection&&p.confirmedToken===confirmedSelection.token&&
+    sameIds(p.targetIds,confirmedSelection.ids)&&sameIds(selectionIds(),confirmedSelection.ids));
 }
 function group(ids,name){
   const items=activeGroups(ids),mgr=window.MosaicObjectManager;if(!items.length||!mgr)return false;
@@ -86,6 +137,25 @@ $('overlayCanvas').addEventListener('pointerup',e=>{
   const x=(e.clientX-b.left)*canvas.width/b.width,y=(e.clientY-b.top)*canvas.height/b.height;pointerStart=null;
   if(x<0||y<0||x>=canvas.width||y>=canvas.height)return;
   const g=objectAt(x,y);pointed={x:x/canvas.width,y:y/canvas.height,id:g?.id||null,label:g?.objectName||g?.name||'selected area'};contextUI();
+},true);
+// While Assistant selection review is active, clicks toggle existing Object IDs.
+ // Intercept before the regular canvas gesture handler, so no masks/Groups are created.
+const viewport=$('viewport');
+for(const type of ['pointerdown','pointermove','pointerup','pointercancel'])viewport.addEventListener(type,event=>{
+  if(!pendingReview||state.tool!=='select'||!event.target?.closest?.('#canvasWrap'))return;
+  if(state.before||state.busy||window.MosaicPremium?.isPreviewing())return;
+  event.preventDefault();event.stopImmediatePropagation();
+  if(type==='pointerdown'){
+    if(event.button!==0)return;
+    reviewPointer={id:event.pointerId,x:event.clientX,y:event.clientY};
+  }else if(type==='pointercancel')reviewPointer=null;
+  else if(type==='pointerup'){
+    const start=reviewPointer;reviewPointer=null;
+    if(!start||start.id!==event.pointerId||Math.hypot(start.x-event.clientX,start.y-event.clientY)>8)return;
+    const rect=$('overlayCanvas').getBoundingClientRect();
+    const x=(event.clientX-rect.left)*canvas.width/rect.width,y=(event.clientY-rect.top)*canvas.height/rect.height;
+    if(x>=0&&y>=0&&x<canvas.width&&y<canvas.height)toggleReviewObject(objectAt(x,y));
+  }
 },true);
 function files(){return [...form.querySelectorAll('input.region-reference-input')].flatMap(i=>[...i.files])}
 async function referenceImages(){
@@ -120,11 +190,28 @@ function renderThread(){
       }el.append(refs);
     }
     if(m.role==='assistant'&&m.plan){
-      const bar=document.createElement('div');bar.className='copilot-actions';
-      if(m.plan.targetIds?.length){bar.append(addButton('Highlight','highlight',m),addButton('Select','select',m))}
-      if(m.plan.targetIds?.length>1)bar.append(addButton('Group objects','group',m));
-      if(m.plan.editPrompt)bar.append(addButton('Preview · OpenAI','preview',m),addButton('Generate · OpenAI','generate',m));
-      el.append(bar);
+      if(m.reviewState==='pending'&&pendingReview?.message===m){
+        const hint=document.createElement('div');hint.className='copilot-selection-hint';
+        hint.textContent='Selected '+pendingReview.ids.length+' objects · click any object on the canvas to add/remove it.';
+        el.append(hint);
+        const bar=document.createElement('div');bar.className='copilot-actions';
+        bar.append(addButton('Confirm selection','confirm',m),addButton('Cancel','cancel',m));
+        el.append(bar);
+      }else{
+        const bar=document.createElement('div');bar.className='copilot-actions';
+        if(m.reviewState==='confirmed'){
+          const hint=document.createElement('div');hint.className='copilot-selection-hint';
+          hint.textContent='✓ Selection confirmed';el.append(hint);
+        }
+        if(m.plan.targetIds?.length){bar.append(addButton('Highlight','highlight',m))}
+        if(m.plan.targetIds?.length&&!pendingReview)bar.append(addButton('Select','select',m));
+        if(m.plan.targetIds?.length>1&&!pendingReview)bar.append(addButton('Group objects','group',m));
+        if(canGenerate(m)){
+          if(m.plan.scope!=='region')bar.append(addButton('Preview · OpenAI','preview',m));
+          bar.append(addButton('Generate · OpenAI','generate',m));
+        }
+        if(bar.childElementCount)el.append(bar);
+      }
     }
     thread.append(el);
   }
@@ -132,10 +219,13 @@ function renderThread(){
 }
 async function execute(action,m){
   const plan=m.plan||{},ids=plan.targetIds||[];
+  if(action==='confirm')return confirmReview(m);
+  if(action==='cancel')return cancelReview(m);
   if(action==='highlight')return highlight(ids);
-  if(action==='select')return select(ids);
+  if(action==='select')return beginReview(m,ids);
   if(action==='group')return group(ids,plan.groupName);
   if(!plan.editPrompt||busy)return;
+  if(!canGenerate(m)){status.textContent='Confirm the current selection before generating.';return}
   busy=true;send.disabled=true;
   try{
     if(!await window.MosaicAuth.ensure())throw Error('Connect your OpenAI API key.');
@@ -174,6 +264,7 @@ async function submit(event){
     const projectId=await window.MosaicAccount.projectId();
     const answer=await window.MosaicAccount.request('/api/ai/chat',{method:'POST',body:{
       message,projectId,canvasSize:{width:canvas.width,height:canvas.height},
+      confirmedSelectedIds:confirmedSelection&&sameIds(selectionIds(),confirmedSelection.ids)?confirmedSelection.ids:[],
       history:state.chatMessages.slice(0,-1).filter(m=>['user','assistant'].includes(m.role)).slice(-12).map(m=>({role:m.role,text:String(m.text||'').slice(0,1800)})),
       base:jpeg(state.reference||state.rawBase||state.master),
       currentImage:jpeg(core.composeApprovedCanvas(),800,.68),
@@ -183,10 +274,19 @@ async function submit(event){
     if(requestRevision!==revision||baseAtStart!==state.master)return;
     const plan={action:answer.action,scope:answer.scope,targetIds:answer.targetIds||[],groupName:answer.groupName,editPrompt:answer.editPrompt,reason:answer.reason};
     const m={role:'assistant',text:answer.reply,plan,references:answer.references||[]};
-    state.chatMessages.push(m);highlight(plan.targetIds);renderThread();
-    status.textContent=plan.targetIds.length?plan.targetIds.length+' objects highlighted':'Gemini · design advice ready';
-    if(plan.action==='select')select(plan.targetIds);
-    if(plan.action==='group')group(plan.targetIds,plan.groupName);
+    state.chatMessages.push(m);
+    // Semantic selection and region-edit targeting must be user-confirmed.
+    if(plan.targetIds.length&&(plan.action==='select'||plan.scope==='region')){
+      if(confirmedSelection&&sameIds(plan.targetIds,confirmedSelection.ids)&&!pendingReview&&plan.action!=='select'){
+        plan.confirmedToken=confirmedSelection.token;m.reviewState='confirmed';
+        select(confirmedSelection.ids);status.textContent='Selection confirmed · edit ready.';
+        renderThread();
+      }else beginReview(m,plan.targetIds);
+    }else{
+      highlight(plan.targetIds);renderThread();
+      status.textContent=plan.targetIds.length?plan.targetIds.length+' objects highlighted':'Gemini · design advice ready';
+      if(plan.action==='group')group(plan.targetIds,plan.groupName);
+    }
     // Image calls require the explicit Preview / Generate button below the advice.
   }catch(e){
     if(requestRevision!==revision||baseAtStart!==state.master)return;
@@ -198,9 +298,9 @@ async function submit(event){
 form.addEventListener('submit',e=>void submit(e),true);
 const oldReset=window.MosaicWorkspace?.reset;
 if(oldReset)window.MosaicWorkspace.reset=function(...args){
-  revision++;const v=oldReset(...args);state.copilotSession=null;pointed=null;highlight([]);contextUI();renderThread();return v;
+  revision++;const v=oldReset(...args);state.copilotSession=null;pointed=null;pendingReview=null;confirmedSelection=null;highlight([]);contextUI();renderThread();return v;
 };
-window.addEventListener('mosaic:projectloaded',()=>{revision++;state.copilotSession=null;renderThread();redraw();pointed=null;contextUI()});
+window.addEventListener('mosaic:projectloaded',()=>{revision++;state.copilotSession=null;pendingReview=null;confirmedSelection=null;renderThread();redraw();pointed=null;contextUI()});
 window.addEventListener('resize',redraw);
-window.MosaicDesignCopilot={highlight,select,group,redraw};
+window.MosaicDesignCopilot={highlight,select,group,redraw,reviewSelection:()=>pendingReview?{ids:[...pendingReview.ids]}:null,confirmedSelection:()=>confirmedSelection?{ids:[...confirmedSelection.ids]}:null};
 renderThread();
