@@ -277,12 +277,14 @@ function renderHistory(list) { activePatchMarkup(); /* Versions now live inside 
 async function workFromNode(node, useFlattened) {
   if (state.pendingSourceId || state.editingPatchId) {toast('Finish or discard your current mask first.');return;}
   if (state.groups.length && !window.confirm('Switch working version? Your current unharmonized patches will be replaced. Harmonized snapshots remain in history.')) return;
+  const masterAtStart=state.master,projectAtStart=state.selectionGeneration;
   try {
     await window.MosaicDiskCache?.hydrateArchive?.(node,{all:!useFlattened,flattened:useFlattened});
   }catch(error){
     toast('Archived images unavailable: '+error.message);
     return;
   }
+  if(masterAtStart!==state.master || projectAtStart!==state.selectionGeneration)return;
   premium.previewNode = null;
   state.pendingSourceId = null;
   state.queue = [];
@@ -314,6 +316,7 @@ async function workFromNode(node, useFlattened) {
   toast('Branch created. Earlier harmonizations are still available.');
   window.MosaicDiskCache?.schedule?.();
 }
+let archiveLoadToken=0;
 function handleGroupEvent(event) {
   const ai = event.target.closest('[data-ai-action]');
   if (ai) {
@@ -333,6 +336,7 @@ function handleGroupEvent(event) {
   if(action==='toggle'){
     premium.expanded.has(node.id) ? premium.expanded.delete(node.id) : premium.expanded.add(node.id);
   }else if(action==='preview'||action==='option'){
+    const ticket=++archiveLoadToken;
     const group=action==='option'?node.groups.find(g=>g.id===control.dataset.historyGroup):null;
     const id=action==='option'?control.dataset.historyPatch:null;
     if(action==='preview'&&premium.previewNode===node.id){
@@ -343,12 +347,14 @@ function handleGroupEvent(event) {
       try{
         if(group)group.active=id==='master'?null:id;
         await window.MosaicDiskCache?.hydrateArchive?.(node);
+        if(ticket!==archiveLoadToken)return;
         premium.previewNode=node.id;
         renderGroups();render();
       }catch(error){toast('Cannot open archived image: '+error.message);}
     })();
     return true;
   }else if(action==='restore'||action==='result'){
+    ++archiveLoadToken;
     void workFromNode(node,action==='result');
     return true;
   }
