@@ -155,7 +155,16 @@ function start(kind,patchId=null){
   core.hideQuickPrompt();core.message('Drag the 20% ghost image or resize its corner handles. Apply saves this image position.');
   syncControls();redraw();
 }
-function openOption(id){if(!state.patches.has(id)){toast('Option not found.');return}start('source',id)}
+async function openOption(id){
+  const patch=state.patches.get(id);
+  if(!patch){toast('Option not found.');return}
+  const source=state.sources.get(patch.sourceId);
+  if(source&&!source.canvas){
+    try{await window.MosaicDiskCache?.ensure?.(source,'canvas');}
+    catch(error){toast('Cannot load Option for editing: '+error.message);return}
+  }
+  start('source',id);
+}
 function reset(){if(!editing)return;editing.transform={...editing.initialTransform};syncControls();redraw()}
 function finish(){
   stage.classList.remove('active');paint.clearRect(0,0,stage.width,stage.height);
