@@ -31,7 +31,9 @@ function copyGraph(groups, patches, sources) {
   return {
     groups: groups.map(g => ({...g, objectBehind:g.objectBehind?[...g.objectBehind]:undefined,objectOriginal:g.objectOriginal?{...g.objectOriginal,repairs:[...g.objectOriginal.repairs]}:undefined,patchIds: [...g.patchIds],footprint: g.footprint?cloneCanvas(g.footprint):null})),
     patches: new Map([...patches].map(([id,p]) => [id, {...p, objectRepairs:p.objectRepairs?[...p.objectRepairs]:undefined,mask: cloneCanvas(p.mask), corners: p.corners?.map(q=>({...q}))||null}])),
-    sources: new Map([...sources].map(([id,s]) => [id, {...s, canvas: cloneCanvas(s.canvas)}]))
+    // Archived branches may reference lossless images already stored on disk.
+    // Keep their disk pointers rather than decoding all inactive options here.
+    sources: new Map([...sources].map(([id,s]) => [id, {...s, canvas: s.canvas?cloneCanvas(s.canvas):null}]))
   };
 }
 function drawComposition(context, base, groups, patches, sources) {
