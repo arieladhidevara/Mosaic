@@ -826,14 +826,18 @@ function patchThumbnail(patch){
   optionThumbCache.set(patch,{source:src.canvas,mask:patch.mask,signature,data});
   return data;
 }
+function releasePatchTexture(patch){
+  if(!patch)return;
+  patchTextures.delete(patch);
+  visibleMaskCache.delete(patch);
+  maskHandleCache.delete(patch);
+  // Keep the tiny thumbnail but discard its strong full-size source reference.
+  const thumb=optionThumbCache.get(patch);
+  if(thumb)optionThumbCache.set(patch,{...thumb,source:null});
+}
 function releaseSourceTexture(sourceId){
-  // Both caches otherwise retain a strong reference to the old full-size canvas.
-  for(const patch of state.patches.values()){
-    if(patch.sourceId!==sourceId)continue;
-    patchTextures.delete(patch);
-    const thumb=optionThumbCache.get(patch);
-    if(thumb)optionThumbCache.set(patch,{...thumb,source:null});
-  }
+  for(const patch of state.patches.values())
+    if(patch.sourceId===sourceId)releasePatchTexture(patch);
 }
 const groupThumbCache=new WeakMap();
 function groupThumbnail(group){
@@ -1902,5 +1906,5 @@ viewport.addEventListener('wheel',event=>{
 },{passive:false});
 window.addEventListener('mosaic:keyconnected',()=>state.groups.forEach(autoClassifyGroup));
 window.MosaicCore = {groupContainsPoint,appendGroupSelection,newGroup,matchingGroup,applyWandMask,svgNode,vectorLayer,drawVectorPaths,maskPathsFromRaster,state,canvas,overlay,ctx,makeCanvas,uid,setProjectTitle,toast,message,promptText,loadFileToCanvas,setMaster,continueWithBase,upgradeBaseDraft,setSourcePreview,updateSourceActions,render,composeApprovedCanvas,renderGroups,drawPatch,selectTool,setMode,updateApplyButton,maskBoundingBox,assignGroup,resetSelection,updateSelectionOutline,updateMaskWithLasso,updateZoomFit,escapeHTML,categoryFromText,updateGroupCategory,optionNameFromPrompt,prepareSelectionGroup,groupMask,selectGroupMask,CATEGORIES,showQuickPrompt,hideQuickPrompt,createBlankRegion,moveOptionToGroup,displayedPatchMask,renderedPatchLayer,refreshGroupFootprint,invalidateDisplayedMask,attachGeneratedSelection,patchSelectionPaths,exactMaskBoundingBox,unwarpPatchSelection,patchControlPoints,displayedMaskPoint};
-Object.assign(window.MosaicCore,{focusGroupInSidebar,chooseGroupOption,groupChoiceVersion,toggleComparison,canCreateSelection,releaseSourceTexture});
+Object.assign(window.MosaicCore,{focusGroupInSidebar,chooseGroupOption,groupChoiceVersion,toggleComparison,canCreateSelection,releaseSourceTexture,releasePatchTexture});
 promptText();
