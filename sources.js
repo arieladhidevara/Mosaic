@@ -8,8 +8,12 @@ let selected=null,lastVersionCount=0;
 function versions(){return window.MosaicPremium?.getMasterVersions?.()||[]}
 function latestMaster(){return versions().at(-1)}
 function versionByNumber(number){return versions().find(version=>version.number===Number(number))||null}
-function previewSource(kind,number=null){
+async function previewSource(kind,number=null){
   const version=kind==='version'?versionByNumber(number):null;
+  if(version&&!version.image){
+    try{await window.MosaicDiskCache?.ensure?.(version,'image');}
+    catch(error){toast('Cannot load Master version: '+error.message);return;}
+  }
   const source=kind==='base'?state.reference:version?.image||((state.master&&!state.masterIsBase)?state.master:null);
   if(!source){toast(kind==='base'?'Upload Base first.':'Upload or generate Master first.');return}
   const title=kind==='base'?'Base · Original':kind==='version'?'Master '+version.number:'Master '+(latestMaster()?.number||1);
@@ -80,13 +84,18 @@ $('quickMasterBtn').addEventListener('click',event=>{
 $('quickRevitBtn').addEventListener('click',event=>{
   if(state.reference){event.preventDefault();event.stopImmediatePropagation();previewSource('base')}
 },true);
-$('masterVersionsList').addEventListener('click',event=>{
+$('masterVersionsList').addEventListener('click',async event=>{
   const button=event.target.closest('[data-master-action]'),row=button?.closest('[data-version]');
   if(!row)return;
   const version=versionByNumber(row.dataset.version);if(!version)return;
   switch(button.dataset.masterAction){
-    case 'preview':previewSource('version',version.number);break;
-    case 'save':downloadPNG(version.image,'Mosaic_Master_'+version.number+'.png');break;
+    case 'preview':await previewSource('version',version.number);break;
+    case 'save':
+      try {
+        await window.MosaicDiskCache?.ensure?.(version,'image');
+        downloadPNG(version.image,'Mosaic_Master_'+version.number+'.png');
+      }catch(error){toast('Cannot load Master for download: '+error.message);}
+      break;
     case 'regen':void window.MosaicPremium?.regenerateMaster?.(version.number);break;
   }
 });
