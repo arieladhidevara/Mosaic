@@ -60,7 +60,7 @@ async function fileHash(file){
 async function chatRequestBody(message,projectId,forceContext=false){
   const base=state.reference||state.rawBase||state.master;
   const current=core.composeApprovedCanvas();
-  const objectsNow=objects(),projectPrompt=premium.projectPrompt();
+  const objectsNow=objects(),projectPrompt=String(premium.projectPrompt()||'');
   const attached=files().slice(0,3);
   if(files().length>3)throw Error('Maximum three reference images.');
   const hashes={
