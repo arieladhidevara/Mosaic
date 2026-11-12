@@ -188,8 +188,7 @@
         await window.MosaicDiskCache?.clearOwner?.(owner);
         record = null;
       }
-      if (!record && !hasProject())
-        await window.MosaicDiskCache?.clearOwner?.(owner);
+      // Absence of recovery in one tab must not delete an active tab's disk assets.
       if (record?.blob && !hasProject()) {
         const file = new File([record.blob], 'temporary-recovery.moz', {type:'application/json'});
         const restored = await projects.loadProjectFile(file, {recovery: true});
