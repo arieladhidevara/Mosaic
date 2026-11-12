@@ -222,8 +222,10 @@
       if(node.id===previewId) continue;
       const check=()=>archive().previewNode===node.id;
       for(const field of ['base','output']) if(hasCanvas(node[field]))items.push({target:node,field,check});
-      for(const source of node.sources?.values()||[])
-        if(hasCanvas(source.canvas))items.push({target:source,field:'canvas',check});
+      for(const [id,source] of node.sources||[])
+        if(hasCanvas(source.canvas))items.push({target:source,field:'canvas',check,
+          onEvict:()=>{for(const patch of node.patches?.values()||[])
+            if(patch.sourceId===id)core.releasePatchTexture?.(patch);}});
       for(const group of node.groups||[]) {
         if(hasCanvas(group.footprint))items.push({target:group,field:'footprint',check});
         const original=group.objectOriginal;
@@ -231,7 +233,8 @@
           if(hasCanvas(original[field]))items.push({target:original,field,check});
       }
       for(const patch of node.patches?.values()||[])
-        if(hasCanvas(patch.mask))items.push({target:patch,field:'mask',check});
+        if(hasCanvas(patch.mask))items.push({target:patch,field:'mask',check,
+          onEvict:()=>core.releasePatchTexture?.(patch)});
     }
     return items;
   }
