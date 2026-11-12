@@ -74,6 +74,7 @@ function mockBrowser(storage = new Map(), user = null) {
     confirm(){counters.confirmations++;return confirmResult;},
     addEventListener(){}
   };
+  win.indexedDB = idb;
   const context = {
     window:win,document:{
       getElementById:element,
