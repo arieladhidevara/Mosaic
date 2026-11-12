@@ -8,8 +8,12 @@ const objects=[
   {id:'chair-2',label:'Dining Chair',category:'Furniture',box:[100,0,40,40]},
   {id:'table-1',label:'Dining Table',category:'Furniture',box:[50,80,100,40]}
 ];
+const hash=n=>n.toString(16).padStart(64,'0');
+const contextHashes={base:hash(1),canvas:hash(2),objects:hash(3),prompt:hash(4),references:hash(5)};
 const base=()=>({message:'Select all chairs',objects,canvasSize:{width:200,height:200},
+  contextHashes:{...contextHashes},projectPrompt:'Warm interior',
   base:image,currentImage:image,history:[],selectedIds:[],confirmedSelectedIds:[],references:[]});
+const follow=()=>{const b=base();delete b.base;delete b.currentImage;delete b.objects;delete b.projectPrompt;delete b.references;return b};
 const response=(raw={})=>Response.json({
   id:'v1_savedInteraction01',status:'completed',steps:[{type:'model_output',content:[{type:'text',text:JSON.stringify({
     reply:'Select the chairs.',action:'select',scope:'none',target_ids:['chair-1'],
@@ -55,7 +59,7 @@ test('Confirmed multi-object selection is authoritative for edit them',async()=>
     assert.deepEqual(result.targetIds,['chair-1','chair-2']);
   }finally{global.fetch=original}
 });
-test('Expired Gemini session recovers using local chat history and long-lived design memory',async()=>{
+test('Expired Gemini session restarts with complete current context, not old chat history',async()=>{
   const original=global.fetch;const bodies=[];let calls=0;
   try{
     global.fetch=async(_url,options)=>{
@@ -65,7 +69,8 @@ test('Expired Gemini session recovers using local chat history and long-lived de
     const result=await consult({...base(),message:'Which finish?',history:[{role:'user',text:'Keep the desk'}]},
       'test-key',{id:'v1_expired',memory:'Keep desk',lastTargetIds:[]});
     assert.equal(calls,2);assert.equal(bodies[1].previous_interaction_id,undefined);
-    assert.deepEqual(JSON.parse(bodies[1].input[0].text).conversation_recovery,[{role:'user',text:'Keep the desk'}]);
+    assert.equal(JSON.parse(bodies[1].input[0].text).conversation_recovery,undefined);
+    assert.equal(JSON.parse(bodies[1].input[0].text).objects.length,3);
     assert.equal(result.session.memory,'Preserve furniture placement.');
   }finally{global.fetch=original}
 });
@@ -91,5 +96,63 @@ test('Invalid image, long history, browser secrets, and malformed output are rej
 });
 test('Saved Gemini memory strips unsafe data',()=>{
   assert.deepEqual(clean({id:'bad/identifier',memory:'hello',lastTargetIds:['chair-1','chair-1',12]}),
-    {id:null,memory:'hello',lastTargetIds:['chair-1']});
+    {id:null,memory:'hello',lastTargetIds:['chair-1'],context:null});
+});
+
+test('Omit unchanged Base, canvas, object map and project prompt on an active session',async()=>{
+  const original=global.fetch;const calls=[];
+  try{
+    global.fetch=async(_url,options)=>{calls.push(JSON.parse(options.body));return response()};
+    const first=await consult(base(),'test-key');
+    const next=await consult({...follow(),message:'What about the lighting?'},
+      'test-key',first.session);
+    assert.equal(calls.length,2);
+    assert.equal(calls[1].previous_interaction_id,first.session.id);
+    assert.equal(calls[1].input.length,1);
+    const metadata=JSON.parse(calls[1].input[0].text);
+    assert.equal(metadata.user_message,'What about the lighting?');
+    assert.equal(metadata.objects,undefined);
+    assert.equal(metadata.object_updates,undefined);
+    assert.equal(metadata.project_design_intent,undefined);
+    assert.equal(metadata.persistent_design_memory,undefined);
+    assert.deepEqual(next.session.context.objects,first.session.context.objects);
+  }finally{global.fetch=original}
+});
+test('Changed canvas sends only current canvas image; changed labels send only object updates',async()=>{
+  const original=global.fetch;const calls=[];
+  try{
+    global.fetch=async(_url,options)=>{calls.push(JSON.parse(options.body));return response()};
+    const first=await consult(base(),'test-key');
+    const changedCanvas={...follow(),message:'Review my new render',
+      contextHashes:{...contextHashes,canvas:hash(17)},currentImage:image};
+    const second=await consult(changedCanvas,'test-key',first.session);
+    assert.deepEqual(calls[1].input.map(x=>x.type),['text','image']);
+    assert.equal(JSON.parse(calls[1].input[0].text).objects,undefined);
+    assert.equal(JSON.parse(calls[1].input[0].text).current_canvas_updated,true);
+    const renamed=objects.map(o=>o.id==='chair-1'?{...o,label:'Lounge Chair'}:o);
+    const withLabel={...follow(),message:'Select all chairs',
+      contextHashes:{...contextHashes,canvas:hash(17),objects:hash(19)},objects:renamed};
+    await consult(withLabel,'test-key',second.session);
+    const metadata=JSON.parse(calls[2].input[0].text);
+    assert.equal(calls[2].input.length,1);
+    assert.equal(metadata.object_updates.upsert.length,1);
+    assert.equal(metadata.object_updates.upsert[0].label,'Lounge Chair');
+    assert.deepEqual(metadata.object_updates.removed_ids,[]);
+  }finally{global.fetch=original}
+});
+test('Partial context requires a complete snapshot after Gemini session expiry',async()=>{
+  const original=global.fetch;
+  try{
+    global.fetch=async()=>response();
+    const first=await consult(base(),'test-key');
+    let attempts=0;
+    global.fetch=async()=>{attempts++;return Response.json({error:{message:'Previous interaction ID not found'}},{status:400})};
+    await assert.rejects(consult(follow(),'test-key',first.session),
+      e=>e.status===409&&e.code==='GEMINI_CONTEXT_REQUIRED');
+    assert.equal(attempts,1);
+    const partial={...follow(),contextHashes:{...contextHashes,objects:hash(21)}};
+    await assert.rejects(consult(partial,'test-key',first.session),
+      e=>e.status===409&&e.code==='GEMINI_CONTEXT_REQUIRED');
+    assert.equal(attempts,1,'Must reject incomplete context before calling provider');
+  }finally{global.fetch=original}
 });

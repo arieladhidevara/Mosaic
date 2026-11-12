@@ -50,8 +50,13 @@ window.runAssistantWorkspaceChecks=async function(){
     await ask('Suggest a warmer finish');
     assert(state.chatMessages.at(-1).text.includes('warm plaster')&&!$('apiKeyDialog').open,'Gemini chat required OpenAI or failed');
     assert(requests[0].base.startsWith('data:image/jpeg')&&requests[0].currentImage.startsWith('data:image/jpeg'),'Chat lost canvas context');
-    await ask('Keep the cabinet');assert(requests[1].history.length>=2&&requests[1].objects.some(o=>o.id===object.id),'Follow-up context or Object IDs missing');
-    checks.push('Browser → authenticated chat route → Gemini mock works without OpenAI; follow-ups keep history, images and Object IDs');
+    await ask('Keep the cabinet');
+    assert(requests[0].objects.some(o=>o.id===object.id),'First chat did not include the Object Map');
+    assert(!requests[1].base&&!requests[1].currentImage&&!requests[1].objects,
+      'Follow-up unnecessarily re-uploaded unchanged Base, canvas or Object Map');
+    assert(requests[1].contextHashes.objects===requests[0].contextHashes.objects,
+      'Follow-up no longer references the correct Object Map revision');
+    checks.push('Gemini initial context includes Base and Object Map; unchanged follow-ups send only text and selection');
     await ask('plan-test');assert(imageCalls===0&&document.querySelector('.copilot-actions button:last-child')?.textContent.includes('OpenAI'),'Chat silently started paid image generation');
     checks.push('Image plans require explicit OpenAI Preview/Generate button clicks');
     await ask('quota-test');assert($('chatStatus').textContent.includes('quota')&&!$('chatGenerate').disabled&&chatCalls===4,'Quota failure was hidden or retried');

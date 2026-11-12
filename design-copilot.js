@@ -17,6 +17,8 @@ const wrap=$('canvasWrap'),layer=makeCanvas(1,1);layer.id='copilotHighlightLayer
 state.copilotSession??=null;
 let revision=0,busy=false,highlighted=[],pointed=null,pointerStart=null;
 let pendingReview=null,confirmedSelection=null,selectionSerial=0,reviewPointer=null;
+let lastSentContext=null;
+const baseHashCache=new WeakMap(),fileHashCache=new WeakMap();
 const activeGroups=ids=>{const keys=new Set(ids||[]);return state.groups.filter(g=>keys.has(g.id)&&!g.mergedInto&&!g.objectMapBatch&&!g.objectRemoved)};
 function jpeg(source,maxEdge=940,quality=.77){
   if(!source)return null;
@@ -32,6 +34,75 @@ function objects(){
       collection:state.objectCollections?.find(c=>c.id===g.collectionId)?.name||'',
       box:b?[Math.round(b.x),Math.round(b.y),Math.round(b.w),Math.round(b.h)]:[]};
   });
+}
+// SHA-256 fingerprints detect even small canvas changes without repeatedly
+// encoding and uploading the full image when its pixels are unchanged.
+async function sha256(bytes){
+  const digest=await crypto.subtle.digest('SHA-256',bytes);
+  return Array.from(new Uint8Array(digest),b=>b.toString(16).padStart(2,'0')).join('');
+}
+const textHash=value=>sha256(new TextEncoder().encode(value));
+async function imageHash(source){
+  const pixels=source.getContext('2d',{willReadFrequently:true})
+    .getImageData(0,0,source.width,source.height).data;
+  return textHash(source.width+'x'+source.height+':'+await sha256(pixels));
+}
+function baseHash(source){
+  let cache=baseHashCache.get(source);
+  if(!cache){cache=imageHash(source);baseHashCache.set(source,cache)}
+  return cache;
+}
+async function fileHash(file){
+  let cache=fileHashCache.get(file);
+  if(!cache){cache=sha256(await file.arrayBuffer());fileHashCache.set(file,cache)}
+  return cache;
+}
+async function chatRequestBody(message,projectId,forceContext=false){
+  const base=state.reference||state.rawBase||state.master;
+  const current=core.composeApprovedCanvas();
+  const objectsNow=objects(),projectPrompt=String(premium.projectPrompt()||'');
+  const attached=files().slice(0,3);
+  if(files().length>3)throw Error('Maximum three reference images.');
+  const hashes={
+    base:await baseHash(base),
+    canvas:await imageHash(current),
+    objects:await textHash(JSON.stringify({w:canvas.width,h:canvas.height,objects:objectsNow})),
+    prompt:await textHash(projectPrompt),
+    references:await textHash(JSON.stringify(await Promise.all(attached.map(async file=>({
+      name:file.name,type:file.type,bytes:file.size,hash:await fileHash(file)
+    })))))
+  };
+  const full=forceContext||!projectId||!lastSentContext||lastSentContext.projectId!==projectId;
+  const changed=key=>full||lastSentContext.hashes[key]!==hashes[key];
+  const body={
+    message,projectId,forceContext:Boolean(forceContext),
+    contextHashes:hashes,
+    canvasSize:{width:canvas.width,height:canvas.height},
+    confirmedSelectedIds:confirmedSelection&&sameIds(selectionIds(),confirmedSelection.ids)?confirmedSelection.ids:[],
+    selectedIds:selectionIds(),
+    point:pointed?{x:pointed.x,y:pointed.y,id:pointed.id}:null,
+    ...(changed('base')?{base:jpeg(base)}:{}),
+    ...(changed('canvas')?{currentImage:jpeg(current,800,.68)}:{}),
+    ...(changed('objects')?{objects:objectsNow}:{}),
+    ...(changed('prompt')?{projectPrompt}:{}),
+    ...(changed('references')?{references:await referenceImages()}: {})
+  };
+  return {body,receipt:{projectId,hashes}};
+}
+async function chatWithOptimizedContext(message,projectId){
+  // If the server lost context (expired Gemini session, new tab or concurrent
+  // workspace changes), rehydrate once with a complete current snapshot.
+  for(let attempt=0;attempt<2;attempt++){
+    const {body,receipt}=await chatRequestBody(message,projectId,attempt===1);
+    try{
+      const reply=await window.MosaicAccount.request('/api/ai/chat',{method:'POST',body});
+      lastSentContext=receipt;
+      return reply;
+    }catch(error){
+      if(attempt!==0||error.code!=='GEMINI_CONTEXT_REQUIRED')throw error;
+      lastSentContext=null;
+    }
+  }
 }
 function selectionIds(){
   const mapped=(state.objectSelectionParts||[]).map(p=>state.groups.find(g=>g.objectMapKey===p.mapKey&&g.objectMapObjectKey===p.objectKey)?.id).filter(Boolean);
@@ -264,15 +335,7 @@ async function submit(event){
   try{
     // Project identity is resolved from the signed-in account; Gemini interaction IDs stay server-side.
     const projectId=await window.MosaicAccount.projectId();
-    const answer=await window.MosaicAccount.request('/api/ai/chat',{method:'POST',body:{
-      message,projectId,canvasSize:{width:canvas.width,height:canvas.height},
-      confirmedSelectedIds:confirmedSelection&&sameIds(selectionIds(),confirmedSelection.ids)?confirmedSelection.ids:[],
-      history:state.chatMessages.slice(0,-1).filter(m=>['user','assistant'].includes(m.role)).slice(-12).map(m=>({role:m.role,text:String(m.text||'').slice(0,1800)})),
-      base:jpeg(state.reference||state.rawBase||state.master),
-      currentImage:jpeg(core.composeApprovedCanvas(),800,.68),
-      objects:objects(),selectedIds:selectionIds(),point:pointed?{x:pointed.x,y:pointed.y,id:pointed.id}:null,
-      references:await referenceImages(),projectPrompt:premium.projectPrompt()
-    }});
+    const answer=await chatWithOptimizedContext(message,projectId);
     if(requestRevision!==revision||baseAtStart!==state.master)return;
     const plan={action:answer.action,scope:answer.scope,targetIds:answer.targetIds||[],groupName:answer.groupName,editPrompt:answer.editPrompt,reason:answer.reason};
     const m={role:'assistant',text:answer.reply,plan,references:answer.references||[]};
@@ -300,9 +363,9 @@ async function submit(event){
 form.addEventListener('submit',e=>void submit(e),true);
 const oldReset=window.MosaicWorkspace?.reset;
 if(oldReset)window.MosaicWorkspace.reset=function(...args){
-  revision++;const v=oldReset(...args);state.copilotSession=null;pointed=null;pendingReview=null;confirmedSelection=null;highlight([]);contextUI();renderThread();return v;
+  revision++;const v=oldReset(...args);state.copilotSession=null;lastSentContext=null;pointed=null;pendingReview=null;confirmedSelection=null;highlight([]);contextUI();renderThread();return v;
 };
-window.addEventListener('mosaic:projectloaded',()=>{revision++;state.copilotSession=null;pendingReview=null;confirmedSelection=null;renderThread();redraw();pointed=null;contextUI()});
+window.addEventListener('mosaic:projectloaded',()=>{revision++;state.copilotSession=null;lastSentContext=null;pendingReview=null;confirmedSelection=null;renderThread();redraw();pointed=null;contextUI()});
 window.addEventListener('resize',redraw);
-window.MosaicDesignCopilot={highlight,select,group,redraw,reviewSelection:()=>pendingReview?{ids:[...pendingReview.ids]}:null,confirmedSelection:()=>confirmedSelection?{ids:[...confirmedSelection.ids]}:null};
+window.MosaicDesignCopilot={highlight,select,group,redraw,reviewSelection:()=>pendingReview?{ids:[...pendingReview.ids]}:null,confirmedSelection:()=>confirmedSelection?{ids:[...confirmedSelection.ids]}:null,chatRequestBody};
 renderThread();
