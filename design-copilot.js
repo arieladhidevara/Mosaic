@@ -26,7 +26,7 @@ function jpeg(source,maxEdge=940,quality=.77){
 }
 function objects(){
   return state.groups.filter(g=>!g.mergedInto&&!g.objectMapBatch&&!g.objectRemoved).slice(0,100).map(g=>{
-    const b=g.area||core.exactMaskBoundingBox(core.groupMask(g));
+    const b=core.exactMaskBoundingBox(core.groupMask(g))||g.area;
     return {id:g.id,label:g.objectName||g.name||g.category||'Object',category:g.category||'Other',
       collection:state.objectCollections?.find(c=>c.id===g.collectionId)?.name||'',
       box:b?[Math.round(b.x),Math.round(b.y),Math.round(b.w),Math.round(b.h)]:[]};
@@ -67,13 +67,6 @@ function group(ids,name){
   mgr.moveObjects(items.map(g=>g.id),c.id);highlight(ids);return true;
 }
 function objectAt(x,y){
-  const map=state.objectMap?.raster;
-  if(map){
-    const px=Math.min(map.width-1,Math.max(0,Math.floor(x/canvas.width*map.width)));
-    const py=Math.min(map.height-1,Math.max(0,Math.floor(y/canvas.height*map.height)));
-    const id=map.getContext('2d',{willReadFrequently:true}).getImageData(px,py,1,1).data[0];
-    const g=state.groups.find(g=>g.objectMapInstanceId===id&&!g.mergedInto&&!g.objectRemoved);if(g)return g;
-  }
   for(const g of [...state.groups].reverse()){
     if(g.mergedInto||g.objectMapBatch||g.objectRemoved)continue;
     const m=core.groupMask(g);if(m?.getContext('2d',{willReadFrequently:true}).getImageData(Math.floor(x),Math.floor(y),1,1).data[3]>=128)return g;
@@ -177,16 +170,18 @@ async function submit(event){
   busy=true;send.disabled=true;send.textContent='…';
   state.chatMessages.push({role:'user',text:message});prompt.value='';renderThread();status.textContent='Consulting on your design…';
   try{
+    // Project identity is resolved from the signed-in account; Gemini interaction IDs stay server-side.
+    const projectId=await window.MosaicAccount.projectId();
     const answer=await window.MosaicAccount.request('/api/ai/chat',{method:'POST',body:{
-      message,history:state.chatMessages.slice(0,-1).filter(m=>['user','assistant'].includes(m.role)).slice(-12).map(m=>({role:m.role,text:String(m.text||'').slice(0,1800)})),
+      message,projectId,canvasSize:{width:canvas.width,height:canvas.height},
+      history:state.chatMessages.slice(0,-1).filter(m=>['user','assistant'].includes(m.role)).slice(-12).map(m=>({role:m.role,text:String(m.text||'').slice(0,1800)})),
       base:jpeg(state.reference||state.rawBase||state.master),
       currentImage:jpeg(core.composeApprovedCanvas(),800,.68),
-      objects:objects(),selectedIds:selectionIds(),point:pointed?{x:pointed.x,y:pointed.y}:null,
+      objects:objects(),selectedIds:selectionIds(),point:pointed?{x:pointed.x,y:pointed.y,id:pointed.id}:null,
       references:await referenceImages(),projectPrompt:premium.projectPrompt()
     }});
     if(requestRevision!==revision||baseAtStart!==state.master)return;
     const plan={action:answer.action,scope:answer.scope,targetIds:answer.targetIds||[],groupName:answer.groupName,editPrompt:answer.editPrompt,reason:answer.reason};
-    state.copilotSession=null;
     const m={role:'assistant',text:answer.reply,plan,references:answer.references||[]};
     state.chatMessages.push(m);highlight(plan.targetIds);renderThread();
     status.textContent=plan.targetIds.length?plan.targetIds.length+' objects highlighted':'Gemini · design advice ready';
