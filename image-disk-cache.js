@@ -26,6 +26,9 @@
   let ownerAtStart = null;
   let notice = '';
   const recentlyUsed = new WeakMap();
+  // Canvas restored from a PNG is unchanged until callers replace the canvas.
+  // Reuse its existing file instead of writing a duplicate every time it goes idle.
+  const hydratedCanvas = new WeakMap();
 
   const hasCanvas = value => !!value && typeof value.toBlob === 'function' &&
     Number.isFinite(value.width) && Number.isFinite(value.height);
@@ -125,6 +128,13 @@
     const canvas=target?.[field];
     if(!hasCanvas(canvas) || check() || !cacheAvailable || blocked) return false;
     const epoch=projectEpoch, account=owner();
+    const prior=hydratedCanvas.get(target)?.[field];
+    if(prior?.canvas===canvas && prior.key===target[marker(field)]){
+      if(check()||blocked)return false;
+      target[field]=null;
+      onEvict();
+      return true;
+    }
     try {
       const blob=await toBlob(canvas);
       if(check() || target[field]!==canvas || epoch!==projectEpoch || account!==owner() || blocked) return false;
@@ -157,7 +167,12 @@
       throw Error('Image cache is unavailable. Restore a saved .moz project.');
     const canvas=await decode(record.blob);
     // A newer image may have arrived while the disk version was decoding.
-    if(!hasCanvas(target[field])) target[field]=canvas;
+    if(!hasCanvas(target[field])){
+      target[field]=canvas;
+      const history=hydratedCanvas.get(target)||{};
+      history[field]={canvas,key};
+      hydratedCanvas.set(target,history);
+    }
     recentlyUsed.set(target,Date.now());
     return target[field];
   }
