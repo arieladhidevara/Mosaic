@@ -161,8 +161,9 @@
     recentlyUsed.set(target,Date.now());
     return target[field];
   }
-  async function hydrateArchive(node,{all=false}={}) {
-    if(!node) return;
+  async function hydrateArchive(node,{all=false,flattened=false}={}) {
+    if(!node)return;
+    if(flattened){await ensure(node,'output');return;}
     await ensure(node,'base');
     if(all) await ensure(node,'output');
     const active=new Set(node.groups.filter(g=>g.active).map(g=>g.active));
@@ -214,7 +215,7 @@
     const dialog=document.getElementById('sourcePreviewDialog');
     for(const version of versions.slice(0,-1)) {
       if(!hasCanvas(version.image))continue;
-      items.push({target:version,field:'image',check:()=>Boolean(dialog?.open)||archive().regenerateFrom===version});
+      items.push({target:version,field:'image',check:()=>Boolean(dialog?.open)||Boolean(document.getElementById('harmonizeDialog')?.open)});
     }
     const previewId=snapshot.previewNode;
     for(const node of history()) {
