@@ -132,6 +132,7 @@
     if(prior?.canvas===canvas && prior.key===target[marker(field)]){
       if(check()||blocked)return false;
       target[field]=null;
+      delete hydratedCanvas.get(target)?.[field];
       onEvict();
       return true;
     }
@@ -146,6 +147,7 @@
       if(check() || target[field]!==canvas || epoch!==projectEpoch || account!==owner() || blocked) return false;
       target[marker(field)]=id;
       target[field]=null;
+      delete hydratedCanvas.get(target)?.[field];
       onEvict();
       return true;
     } catch(error) {
