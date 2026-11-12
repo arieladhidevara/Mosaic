@@ -111,6 +111,21 @@ async function encodeQueue(pack){
   }
   return output;
 }
+// The same complete, portable snapshot is used for .moz downloads and local recovery.
+// A recovery snapshot is never uploaded and never includes account credentials.
+async function buildProjectData(){
+  const codec=createCodec();
+  const packedState=codec.pack(projectState());
+  const packedPremium=codec.pack(premium.exportProjectState());
+  const queue=await encodeQueue(codec.pack);
+  return {
+    format:MAGIC,version:VERSION,createdAt:new Date().toISOString(),
+    analytics:{projectId:await window.MosaicAccount?.projectId().catch(()=>null)||null},
+    app:'mozAI',state:packedState,premium:packedPremium,queue,
+    ui:{projectName:$('projectName').textContent||'Untitled composition'},
+    images:codec.registry
+  };
+}
 async function saveProject(){
   if(fileBusy)return;
   if(!state.reference&&!state.master){toast('Upload an image before saving a project.');return}
@@ -119,24 +134,16 @@ async function saveProject(){
   fileBusy=true;const button=$('saveProjectBtn'),old=button.innerHTML;
   button.disabled=true;button.textContent='Saving…';
   try{
-    const codec=createCodec();
-    const packedState=codec.pack(projectState());
-    const packedPremium=codec.pack(premium.exportProjectState());
-    const queue=await encodeQueue(codec.pack);
-    const file={
-      format:MAGIC,version:VERSION,createdAt:new Date().toISOString(),
-      analytics:{projectId:await window.MosaicAccount?.projectId().catch(()=>null)||null},
-      app:'mozAI',state:packedState,premium:packedPremium,queue,
-      ui:{projectName:$('projectName').textContent||'Untitled composition'},
-      images:codec.registry
-    };
+    const file=await buildProjectData();
     const blob=new Blob([JSON.stringify(file)],{type:'application/json'});
     const name=(file.ui.projectName||'mozAI_project').replace(/[^a-z0-9_-]+/gi,'_').slice(0,48)||'mozAI_project';
     const url=URL.createObjectURL(blob),a=document.createElement('a');
     a.href=url;a.download=name+'.moz';document.body.appendChild(a);a.click();a.remove();void window.MosaicAccount?.track('project_saved');
     setTimeout(()=>URL.revokeObjectURL(url),20000);
     toast('Saved '+a.download+' with editable images, masks, Groups and Master history.');
-  }catch(error){toast('Save project failed: '+error.message)}
+    window.MosaicRecovery?.markSaved?.();
+    return true;
+  }catch(error){toast('Save project failed: '+error.message);return false}
   finally{fileBusy=false;button.disabled=false;button.innerHTML=old}
 }
 async function reviveQueue(data,images){
@@ -184,12 +191,12 @@ function restoreUI(saved,ui){
   core.updateSourceActions();renderGroups();render();
   window.MosaicSources?.refresh?.();
 }
-async function loadProjectFile(file){
+async function loadProjectFile(file,{recovery=false}={}){
   if(fileBusy||!file)return;
-  if(file.size>300000000){toast('Project exceeds the 300 MB file limit.');return}
+  if(file.size>(recovery?500*1024*1024:300000000)){toast('Project exceeds the supported file size limit.');return false}
   if(window.MosaicSourceEditor?.isEditing()){toast('Apply or cancel the current transform before opening a project.');return}
   if([...state.patches.values()].some(p=>p.generating)){toast('Complete the current AI request before opening another project.');return}
-  if((state.master||state.reference)&&!window.confirm('Open this project and replace the current unsaved project?'))return;
+  if(!recovery&&(state.master||state.reference)&&!window.confirm('Open this project and replace the current unsaved project?'))return false;
   fileBusy=true;const button=$('openProjectBtn'),old=button.innerHTML;
   button.disabled=true;button.textContent='Opening…';
   try{
@@ -218,8 +225,10 @@ async function loadProjectFile(file){
     state.selectionMask=state.selectionMask||(state.master?makeCanvas(state.master.width,state.master.height):null);
     premium.restoreProjectState(restoredPremium);
     restoreUI(saved,data.ui);window.dispatchEvent(new Event('mosaic:projectloaded'));void window.MosaicAccount?.startProject(true,data.analytics?.projectId);void window.MosaicAccount?.track('project_opened');
-    toast('Project restored, including Groups, options, selections and Master history.');
-  }catch(error){toast('Open project failed: '+error.message)}
+    if(!recovery)window.MosaicRecovery?.markLoaded?.();
+    toast(recovery?'Recovered your temporary workspace from this device.':'Project restored, including Groups, options, selections and Master history.');
+    return true;
+  }catch(error){toast((recovery?'Recovery failed: ':'Open project failed: ')+error.message);return false}
   finally{fileBusy=false;button.disabled=false;button.innerHTML=old}
 }
 $('saveProjectBtn').addEventListener('click',()=>void saveProject());
@@ -232,4 +241,4 @@ $('helpBtn').addEventListener('click',()=>{
   if(!$('helpDialog').open)$('helpDialog').showModal();
 });
 for(const id of ['helpCloseBtn','helpDoneBtn'])$(id).addEventListener('click',()=>$('helpDialog').close());
-window.MosaicProjects={saveProject,loadProjectFile};
+window.MosaicProjects={saveProject,loadProjectFile,buildProjectData};

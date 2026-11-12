@@ -97,6 +97,7 @@ const publicFiles = new Set([
   'source-editor.js',
   'sources.js',
   'project-file.js',
+  'project-recovery.js',
   'assets/mosaic-logo.svg',
 ]);
 

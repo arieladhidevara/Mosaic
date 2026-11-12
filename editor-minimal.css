@@ -147,3 +147,7 @@
   #tools .brush-context:has(>.hidden:only-child),#tools .wand-context{display:none!important}
   #tools .brush-context .brush-size{min-width:155px;font-size:11px}
 }
+
+/* Local recovery indicator in the project dropdown. */
+#projectMenu .recovery-menu-status{padding:7px 10px 9px;color:#a59cad;font:500 10px/1.45 Inter,system-ui,sans-serif;border-bottom:1px solid #ffffff14;margin-bottom:3px}
+#projectMenu #newProjectBtn{color:#e9e5f0}
