@@ -57,7 +57,7 @@ function select(ids){
   const mask=makeCanvas(canvas.width,canvas.height),ctx=mask.getContext('2d');
   for(const g of items)ctx.drawImage(core.groupMask(g),0,0);
   state.selectionMask=mask;
-  state.selectionPaths=items.flatMap(g=>g.maskPaths?.length?g.maskPaths:core.maskPathsFromRaster(core.groupMask(g)));
+  state.selectionPaths=items.flatMap(g=>core.maskPathsFromRaster(core.groupMask(g)));
   state.selectionPoints=state.selectionPaths.flat();
   state.selectionOverlayHidden=false;
   state.selectionTargetPatchId=null;
@@ -68,7 +68,9 @@ function select(ids){
   core.renderGroups();core.render();highlight(items.map(g=>g.id));return true;
 }
 function beginReview(message,ids){
-  pendingReview={message,ids:[...new Set(ids||[])],serial:++selectionSerial};
+  const valid=activeGroups([...new Set(ids||[])]).map(g=>g.id);
+  if(!valid.length){status.textContent='No matching objects found. Try selecting them manually.';return false}
+  pendingReview={message,ids:valid,serial:++selectionSerial};
   confirmedSelection=null;
   pointed=null;contextUI();
   message.reviewState='pending';
