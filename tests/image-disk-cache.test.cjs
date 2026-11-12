@@ -148,3 +148,48 @@ test('offline PNG registry can be embedded into portable .moz and New Project cl
   await h.api.clearOwner('user:sample');
   assert.equal(h.images.size,0);
 });
+
+test('portable .moz snapshot embeds an evicted source once and strips transient cache keys',async()=>{
+  const elements=new Map();
+  const get=id=>{
+    if(!elements.has(id))elements.set(id,{id,textContent:id==='projectName'?'Disk test project':'',
+      addEventListener(){},close(){}});
+    return elements.get(id);
+  };
+  let paused=0,resumed=0,embedded=0;
+  const fakeCanvas=canvas();
+  fakeCanvas.toDataURL=()=> 'data:image/png;base64,iVBORw0KGgo=';
+  const state={
+    master:fakeCanvas,reference:fakeCanvas,sources:new Map([
+      ['old',{id:'old',name:'Older Option',canvas:null,canvasDiskKey:'disk-asset-one'}]
+    ]),
+    patches:new Map(),groups:[],queue:[]
+  };
+  const versions=[{number:1,image:null,imageDiskKey:'disk-asset-one'}];
+  const window={
+    MosaicCore:{state,canvas:fakeCanvas,overlay:fakeCanvas,
+      makeCanvas:()=>canvas(),toast(){},render(){},renderGroups(){}},
+    MosaicPremium:{exportProjectState:()=>({masterVersions:versions,root:null})},
+    MosaicDiskCache:{
+      pause(){paused++;return ()=>{resumed++};},
+      async fillRegistry(registry){
+        for(const image of registry)if(image.diskKey){
+          embedded++;image.data='data:image/png;base64,aW1hZ2U=';delete image.diskKey;
+        }
+      }
+    },
+    MosaicAccount:{projectId:async()=>null}
+  };
+  const context={window,document:{getElementById:get},console,Date,Map,Set,Blob,ImageData:undefined,
+    Object,Number,Promise,Error};
+  vm.runInNewContext(portable,context,{filename:'project-file.js'});
+  const output=await window.MosaicProjects.buildProjectData();
+  const old=output.state.sources.$map[0][1];
+  assert.ok(Number.isInteger(old.canvas.$canvas));
+  assert.equal(Object.hasOwn(old,'canvasDiskKey'),false);
+  assert.equal(output.premium.masterVersions[0].image.$canvas,old.canvas.$canvas);
+  assert.equal(embedded,1);
+  assert.equal(output.images[old.canvas.$canvas].data,'data:image/png;base64,aW1hZ2U=');
+  assert.equal(paused,1);
+  assert.equal(resumed,1);
+});
