@@ -168,15 +168,16 @@
     if(all) await ensure(node,'output');
     const active=new Set(node.groups.filter(g=>g.active).map(g=>g.active));
     for(const group of node.groups) {
-      if(all || group.active || !group.objectOriginal) {
-        if(group.footprint || group.footprintDiskKey)
-          await ensure(group,'footprint');
-        if(group.objectOriginal) {
-          if(group.objectOriginal.mask || group.objectOriginal.maskDiskKey)
-            await ensure(group.objectOriginal,'mask');
-          if(group.objectOriginal.appearance || group.objectOriginal.appearanceDiskKey)
-            await ensure(group.objectOriginal,'appearance');
-        }
+      if((all || group.active) && (group.footprint || group.footprintDiskKey))
+        await ensure(group,'footprint');
+      // An archived object may be showing its original appearance instead of an Option.
+      // Repair layers also require the original mask when an Option is active.
+      if(group.objectOriginal) {
+        if(group.objectOriginal.mask || group.objectOriginal.maskDiskKey)
+          await ensure(group.objectOriginal,'mask');
+        if((all || !group.active) && (group.objectOriginal.appearance ||
+          group.objectOriginal.appearanceDiskKey))
+          await ensure(group.objectOriginal,'appearance');
       }
     }
     for(const [id,patch] of node.patches) {
