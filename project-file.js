@@ -102,15 +102,20 @@ function unpack(value,images,depth=0){
   return result;
 }
 function projectState(){
+  // Ensure durable .moz storage uses cropped, shared Option masks.
+  core.compactAllOptionMasks?.();
   const fields=[
-    'reference','master','rawBase','rawMaster','masterIsBase','alignmentTransforms',
+    'reference','rawBase','masterIsBase','alignmentTransforms',
     'sources','groups','patches','pendingSourceId','editingPatchId','selectedPatchId',
-    'selectionMask','selectionPoints','selectionPaths','selectionTargetPatchId','selectionMode','tool','pendingRevealOnly','serial',
+    'selectionMask','selectionGeometry','selectionPoints','selectionPaths','selectionTargetPatchId','selectionMode','tool','pendingRevealOnly','serial',
     'draftGroupId','queuedGroupId','selectionGeneration','brushTargetId',
     'undo','redo','zoom','fitZoom','projectTitle','projectTitleManual','brushSize','brushIntensity','maskEditOnly',
-    'markups','chatMessages','copilotSession','chatResult','objectMap','objectMaps','autoObjectSelect','featherEnabled','collapsedCategories','objectCollections','objectSelectionParts','objectReconstruction','cutHistory','sceneVersionCounters','sceneVersionHistory','sceneTargetSelections','objectMapLocked'
+    'markups','chatMessages','copilotSession','chatResult','objectMap','objectMaps','autoObjectSelect','featherEnabled','collapsedCategories','objectCollections','objectSelectionParts','objectReconstruction','cutHistory','sceneVersionCounters','sceneTargetSelections','objectMapLocked'
   ];
-  return Object.fromEntries(fields.map(name=>[name,state[name]]));
+  const result=Object.fromEntries(fields.map(name=>[name,state[name]]));
+  // The working canvas is reconstructed from the immutable Base on load.
+  result.baseWorkingSize=state.master?{width:state.master.width,height:state.master.height}:null;
+  return result;
 }
 async function encodeQueue(pack){
   const output=[];
@@ -170,7 +175,7 @@ async function reviveQueue(data,images){
   return output;
 }
 function restoreUI(saved,ui){
-  const hasMaster=Boolean(state.master),hasBase=Boolean(state.reference),realMaster=hasMaster&&!state.masterIsBase;
+  const hasMaster=Boolean(state.master),hasBase=Boolean(state.reference),realMaster=false;
   canvas.width=overlay.width=hasMaster?state.master.width:hasBase?state.reference.width:1;
   canvas.height=overlay.height=hasMaster?state.master.height:hasBase?state.reference.height:1;
   $('selectionDraft').setAttribute('viewBox','0 0 '+canvas.width+' '+canvas.height);
@@ -185,7 +190,7 @@ function restoreUI(saved,ui){
   $('masterInfo').textContent=realMaster?state.master.width+' × '+state.master.height:hasMaster?'Base-only working draft':'Working canvas';
   $('basePreview').classList.add('hidden');$('welcomeBaseThumb').classList.add('hidden');$('masterPreview').classList.add('hidden');
   if(hasBase){core.setSourcePreview('basePreview',state.reference);core.setSourcePreview('welcomeBaseThumb',state.reference)}
-  if(realMaster)core.setSourcePreview('masterPreview',state.master);
+  // Independent Master image has been retired. Base is the sole background.
   state.projectTitle=String(saved.projectTitle||ui?.projectName||'Untitled composition');state.projectTitleManual=Boolean(saved.projectTitleManual);core.setProjectTitle(state.projectTitle);
   state.brushSize=Number(saved.brushSize)||36;state.brushIntensity=Number.isFinite(saved.brushIntensity)?saved.brushIntensity:100;
   $('brushSize').value=state.brushSize;$('brushValue').textContent=state.brushSize;
@@ -227,7 +232,10 @@ async function loadProjectFile(file,{recovery=false}={}){
     if(!saved.master&&!saved.reference)throw Error('Project contains no images.');
     window.MosaicObjects?.reset();
     window.MosaicWorkspace?.reset();
-    Object.assign(state,saved);
+    Object.assign(state,{master:null,rawMaster:null},saved);
+    // Existing .moz files remain readable, but old full-scene Harmonize
+    // history metadata is not retained in the working project.
+    state.sceneVersionHistory=[];
     // Older .moz versions stored a separate identical mask for every
     // appearance Option. Consolidate them on load without changing geometry.
     core.shareSavedOptionMasks?.();
@@ -238,7 +246,17 @@ async function loadProjectFile(file,{recovery=false}={}){
     state.busy=false;state.before=false;state.transformDrag=null;state.maskVertexDrag=null;state.maskMoveDrag=null;state.maskEditOnly=Boolean(saved.maskEditOnly);state.selectionTargetPatchId=saved.selectionTargetPatchId||null;state.drawing=false;
     state.lasso=[];state.hoverPoint=null;state.pointerStart=null;
     state.brushTargetId=null;state.hoveredGroupId=null;
-    state.selectionMask=state.selectionMask||(state.master?makeCanvas(state.master.width,state.master.height):null);
+    const originalBase=state.reference||state.master;
+    if(originalBase){
+      const w=saved.baseWorkingSize?.width||state.master?.width||Math.min(2400,originalBase.width);
+      const h=saved.baseWorkingSize?.height||state.master?.height||Math.max(1,Math.round(originalBase.height*w/originalBase.width));
+      const working=makeCanvas(w,h);
+      working.getContext('2d').drawImage(originalBase,0,0,w,h);
+      state.reference=originalBase;state.rawBase=originalBase;
+      state.master=working;state.rawMaster=null;state.masterIsBase=true;
+      state.objectMapLocked=Boolean(state.groups.length)||state.objectMapLocked;
+    }
+    state.selectionMask=state.selectionMask||(state.selectionGeometry?null:(state.master?makeCanvas(state.master.width,state.master.height):null));
     premium.restoreProjectState(restoredPremium);
     restoreUI(saved,data.ui);window.dispatchEvent(new Event('mosaic:projectloaded'));void window.MosaicAccount?.startProject(true,data.analytics?.projectId);void window.MosaicAccount?.track('project_opened');
     if(!recovery)window.MosaicRecovery?.markLoaded?.();

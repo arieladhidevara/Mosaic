@@ -57,7 +57,19 @@ async function apply(image,{type='ai-edit',prompt='',onStatus=()=>{},preserveEdi
   if(image.width!==canvas.width||image.height!==canvas.height)throw Error('Full image must match the current canvas dimensions.');
   const generation=state.selectionGeneration,previous=state.master;
   const before=core.composeApprovedCanvas();
-  const groups=state.groups.filter(isVisible);
+  let groups=state.groups.filter(isVisible);
+  if(!groups.length&&state.objectMap?.raster){
+    window.MosaicObjectMap?.hydrate?.();
+    groups=state.groups.filter(isVisible);
+  }
+  if(!groups.length){
+    // A reversible full-image Option when no Object Map has been prepared.
+    const mask=makeCanvas(canvas.width,canvas.height),ctx=mask.getContext('2d');
+    ctx.fillStyle='#fff';ctx.fillRect(0,0,canvas.width,canvas.height);
+    const scene=core.newGroup(mask,'Scene');
+    scene.name='Entire image';scene.objectName='Entire image';
+    groups=[scene];
+  }
   const snapshots=groups.map(group=>({group,mask:originalMask(group),choice:group.active}));
   // The original Object Map is immutable during ordinary AI Edit and
   // Harmonize. No SAM 3 calls here: every Option keeps its original mask.
@@ -69,20 +81,23 @@ async function apply(image,{type='ai-edit',prompt='',onStatus=()=>{},preserveEdi
   const category=(kind==='harmonize'?'Harmonize ':'AI Edit ')+number;
   state.sceneVersionCounters??={harmonize:0,'ai-edit':0};
   state.sceneVersionCounters[kind]=number;
-  const sourceId=core.uid('full_scene_source'),oldSourceId=core.uid('previous_scene_source');
-  const fullImage=clone(image);
-  state.sources.set(sourceId,{id:sourceId,name:category,canvas:fullImage});
-  // Keep the previous visible image once, shared by original options.
-  const needPrevious=snapshots.some(({group})=>!group.patchIds.some(id=>state.patches.get(id)?.isOriginalMaster));
-  if(needPrevious)state.sources.set(oldSourceId,{id:oldSourceId,name:'Previous scene',canvas:clone(before)});
+  // The generated image already belongs to this request. Use it directly
+  // as the live Master; do not create a second full scene for history.
+  const fullImage=image;
   const records=[];
   for(const {group,mask,choice} of snapshots){
-    if(needPrevious&&!group.patchIds.some(id=>state.patches.get(id)?.isOriginalMaster)){
-      const oldId=core.uid('scene_before');
-      const paths=core.maskPathsFromRaster(mask);
-      state.patches.set(oldId,{id:oldId,groupId:group.id,sourceId:oldSourceId,mask:clone(mask),
-        bbox:core.exactMaskBoundingBox(mask),maskPaths:paths,maskPoints:paths.flat(),
-        name:'Before full image',manualName:true,isOriginalMaster:true,versionCategory:'Original'});
+    const bounds=core.exactMaskBoundingBox(mask);
+    if(!bounds)continue;
+    const paths=core.maskPathsFromRaster(mask);
+    // This is an actual original-appearance Option, not a full-size history
+    // snapshot. Crop it to its own Object ID exactly once.
+    if(!group.patchIds.some(id=>state.patches.get(id)?.isOriginalMaster)){
+      const oldId=core.uid('scene_before'),oldSourceId=core.uid('scene_before_crop');
+      state.sources.set(oldSourceId,{id:oldSourceId,name:'Original · '+group.name,
+        ...core.compactOptionSource(before,bounds,24),revealComplete:true});
+      state.patches.set(oldId,{id:oldId,groupId:group.id,sourceId:oldSourceId,mask,
+        bbox:bounds,maskPaths:paths,maskPoints:paths.flat(),
+        name:'Original appearance',manualName:true,isOriginalMaster:true,versionCategory:'Original'});
       group.patchIds.unshift(oldId);
       core.shareMaterialOptionMask(state.patches.get(oldId),group);
     }
@@ -95,15 +110,15 @@ async function apply(image,{type='ai-edit',prompt='',onStatus=()=>{},preserveEdi
       aligned=alignGeneratedToLockedMask({before,generated:fullImage,lockedMask:mask,makeCanvas,
         maxDimension:snapshots.length>100?160:320});
     }catch(error){console.warn('[mozAI:mask-fit]',error);}
-    let optionSourceId=sourceId;
-    if(aligned.aligned&&aligned.image!==fullImage){
-      optionSourceId=core.uid('aligned_scene_source');
-      state.sources.set(optionSourceId,{id:optionSourceId,name:category+' · aligned',canvas:aligned.image,
-        maskAlignment:aligned.status});
-    }
-    const paths=core.maskPathsFromRaster(mask),patchId=core.uid('scene_option');
-    state.patches.set(patchId,{id:patchId,groupId:group.id,sourceId:optionSourceId,mask:clone(mask),
-      bbox:core.exactMaskBoundingBox(mask),maskPaths:paths,maskPoints:paths.flat(),
+    // Persist only this object's RGB crop. Aligned full-frame images exist
+    // during processing, not in the Sources map or the .moz save.
+    const optionSourceId=core.uid('scene_option_source');
+    state.sources.set(optionSourceId,{id:optionSourceId,name:category+' · '+group.name,
+      ...core.compactOptionSource(aligned.image,bounds,24),revealComplete:true,
+      maskAlignment:aligned.status});
+    const patchId=core.uid('scene_option');
+    state.patches.set(patchId,{id:patchId,groupId:group.id,sourceId:optionSourceId,mask,
+      bbox:bounds,maskPaths:paths,maskPoints:paths.flat(),
       name:category,versionCategory:category,sceneVersion:category,sceneType:kind,
       manualName:true,createdFromFullImage:true,isMasterVersion:kind==='harmonize',
       objectId:group.objectId||group.id,objectLabel:group.objectLabel||group.objectName||group.name,
@@ -116,16 +131,13 @@ async function apply(image,{type='ai-edit',prompt='',onStatus=()=>{},preserveEdi
     core.refreshGroupFootprint(group);
     records.push({groupId:group.id,patchId,matched:Boolean(aligned.aligned),alignment:aligned.status});
   }
-  // Full Image AI Edit respects saved Object IDs. With existing groups,
-  // keep the previous Master as the immutable outside-mask background.
-  // Harmonize is intentionally allowed to replace the complete background.
-  if(kind==='harmonize'||!groups.length){state.master=fullImage;state.masterIsBase=false;}
+  // Immutable Base remains the background. Every AI Edit/Harmonize result is
+  // represented by per-object RGB Options, never by replacing state.master.
   state.objectMapLocked=Boolean(groups.length)||state.objectMapLocked;
-  (state.sceneVersionHistory??=[]).push({type:kind,number,category,sourceId,
-    prompt,createdAt:new Date().toISOString(),segmentationStatus:'locked-original',
-    records});
-  // If no original Object Map exists, at least keep the generated options usable.
-  if(!groups.length)window.MosaicObjectMap?.imageReady?.(fullImage);
+  // Do not accumulate a separate Harmonize history; Options are the history
+  // of each object's appearance, with no archived full-scene source references.
+  state.sceneVersionHistory=[];
+  // If no Object Map existed, the reversible Entire image Option remains active.
   renderGroups();render();
   return {category,objectCount:records.length,matched:records.filter(v=>v.matched).length,
     segmentationStatus:'locked-original'};

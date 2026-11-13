@@ -35,3 +35,13 @@ test('local Auto Create uses same SAM 3 URL as production without exposing secre
 test('local navigation supports legal pages',()=>{
   for(const file of ['privacy.html','terms.html'])assert.ok(files.has(file));
 });
+
+test('quick Option previews keep canvas guides hidden until editing text',()=>{
+  const app=fs.readFileSync(path.join(root,'app.js'),'utf8');
+  assert.match(app,/button\.onclick=\(\)=>chooseGroupOption\(group,patch\?\.id\|\|null,\{showPrompt:true,showOutline:false\}\)/);
+  assert.match(app,/if\(showPrompt\)showQuickPrompt\(state\.lastCanvasPointer,true,false\)/);
+  assert.match(app,/if\(focusInput\)showSelectionHighlightForPrompt\(\)/);
+  assert.match(app,/if\(focusInput&&!window\.matchMedia\('\(max-width:850px\)'\)\.matches\)\$\('quickAreaPromptInput'\)\.focus/);
+  assert.match(app,/for\(const type of \['focusin','pointerdown'\]\)document\.addEventListener\(type,event=>\{/);
+  assert.match(app,/if\(isEditPromptTarget\(event\.target\)\)showSelectionHighlightForPrompt\(\)/);
+});

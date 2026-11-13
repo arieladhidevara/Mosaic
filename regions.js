@@ -246,12 +246,13 @@ function onPointerMove(e){
   let found=null,paths=null;
   if(x>=0&&y>=0&&x<canvas.width&&y<canvas.height){
     const px=Math.floor(x),py=Math.floor(y);
-    for(let i=state.groups.length-1;i>=0;i--){
+    if(window.MosaicObjectMap?.hitTest)found=window.MosaicObjectMap.hitTest({x:px,y:py});
+    else for(let i=state.groups.length-1;i>=0;i--){
       const g=state.groups[i];if(g.mergedInto||g.objectMapBatch)continue;const mask=groupMask(g);
       if(mask.getContext('2d',{willReadFrequently:true}).getImageData(px,py,1,1).data[3]>0){found=g;break}
     }
     // Unsubmitted selections have a hover area too, without creating a Group.
-    if(state.boundaryCanvas&&state.selectionMask.getContext('2d').getImageData(px,py,1,1).data[3]>0){
+    if(state.boundaryCanvas&&core.selectionContainsPoint({x:px,y:py})){
       const target=state.groups.find(g=>g.id===state.draftGroupId);
       found=target||{id:'draft',name:'Selection (unsaved)'};paths=state.selectionPaths;
     }
