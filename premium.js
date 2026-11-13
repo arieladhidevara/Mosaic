@@ -226,21 +226,37 @@ function drawArchivePreview(context) {
   return true;
 }
 function activePatchMarkup(){
-  // Keep the four option controls stable even when a generation is pending.
-  for(const patch of state.patches.values()){
-    if(!patch.awaitingResult&&!patch.generating&&!patch.aiProgress)continue;
-    const row=$('groupList').querySelector('.variant-row[data-action="choose"][data-patch="'+patch.id+'"]');
-    if(!row)continue;row.classList.add('awaiting-ai');
-    const progress=patch.aiProgress;if(!progress)continue;
-    row.classList.add('has-ai-progress');
-    const box=document.createElement('div');box.className='option-ai-progress '+(progress.status||'');
-    const meta=document.createElement('div');meta.className='option-ai-progress-meta';
-    const label=document.createElement('span');label.textContent=progress.detail;
-    const percent=document.createElement('span');percent.textContent=progress.value+'%';meta.append(label,percent);
-    const bar=document.createElement('div');bar.className='ai-progress-track';bar.setAttribute('role','progressbar');
-    bar.setAttribute('aria-valuemin','0');bar.setAttribute('aria-valuemax','100');bar.setAttribute('aria-valuenow',String(progress.value));
-    const progressFill=document.createElement('div');progressFill.className='ai-progress-fill';progressFill.style.width=progress.value+'%';
-    bar.append(progressFill);box.append(meta,bar);row.append(box);
+  // Update the existing progress node rather than appending a second one
+  // whenever the same Option receives another AI progress event.
+  const list=$('groupList');
+  for(const row of list.querySelectorAll('.variant-row[data-patch]')){
+    const patch=state.patches.get(row.dataset.patch);
+    const progress=patch?.aiProgress,working=Boolean(patch?.generating||patch?.awaitingResult||progress);
+    row.classList.toggle('awaiting-ai',working);
+    row.classList.toggle('has-ai-progress',Boolean(progress));
+    let box=row.querySelector('.option-ai-progress');
+    if(!progress){box?.remove();continue}
+    if(!box){
+      box=document.createElement('div');box.className='option-ai-progress';
+      const meta=document.createElement('div');meta.className='option-ai-progress-meta';
+      meta.append(document.createElement('span'),document.createElement('span'));
+      const bar=document.createElement('div');bar.className='ai-progress-track';
+      bar.setAttribute('role','progressbar');bar.setAttribute('aria-valuemin','0');
+      bar.setAttribute('aria-valuemax','100');
+      const fill=document.createElement('div');fill.className='ai-progress-fill';
+      bar.append(fill);box.append(meta,bar);row.append(box);
+    }
+    box.className='option-ai-progress '+(progress.status||'');
+    const meta=box.querySelector('.option-ai-progress-meta');
+    if(meta){
+      const spans=meta.querySelectorAll('span');
+      if(spans[0])spans[0].textContent=progress.detail||'';
+      if(spans[1])spans[1].textContent=progress.value+'%';
+    }
+    const bar=box.querySelector('.ai-progress-track');
+    if(bar)bar.setAttribute('aria-valuenow',String(progress.value));
+    const fill=box.querySelector('.ai-progress-fill');
+    if(fill)fill.style.width=progress.value+'%';
   }
 }
 function groupMarkup(group, node) {
