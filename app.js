@@ -1221,19 +1221,45 @@ function renderGroups(){
     return `<div class="region-group ${expanded?'object-expanded':''}" data-group="${g.id}"><div class="group-head" data-action="focus" data-group="${g.id}" aria-expanded="${expanded}"><span class="group-icon">${groupThumb?`<img class="group-cutout" src="${groupThumb}" alt="" loading="lazy">`:'▧'}</span><span class="group-heading-copy"><span class="group-name">${escapeHTML(g.name||g.objectName||'Unnamed Object')}</span></span><span class="group-count">${readyIds.length||''}</span><span class="object-chevron" aria-hidden="true">${expanded?'⌄':'›'}</span><span class="group-head-actions"><button type="button" class="variant-action group-add-option" data-region-action="add-option" title="Add an option to this object" aria-label="Add option">＋</button></span></div><div class="group-options" ${expanded?'':'hidden'}>${optionCategories}${originalRow}${readyIds.length?'':`<small class="group-pending-options">${g.patchIds.length?'Generating edit…':'No options yet'}</small>`}</div></div>`;
   };
   const collapsed=new Set(state.collapsedCategories||[]);
-  list.innerHTML=[...categories].sort((a,b)=>{
+  const arranged=[...categories].sort((a,b)=>{
     const rank=id=>id===UNNAMED_OBJECTS?2:id===''?1:0,delta=rank(a[0])-rank(b[0]);
     if(delta)return delta;
     const label=id=>collections.find(g=>g.id===id)?.name||'';
     return label(a[0]).localeCompare(label(b[0]),undefined,{numeric:true,sensitivity:'base'});
-  }).map(([id,groups])=>{
+  });
+  const snapshot={layout:JSON.stringify([state.selectionGeneration,...arranged.map(([id,groups])=>[
+    id,collections.find(c=>c.id===id)?.name||'',groups.slice().sort(sortObjectNames).map(g=>g.id)
+  ])]),groups:new Map(visibleGroups.map(g=>[g.id,sidebarGroupRecord(g)]))};
+  const plan=planSidebarRender(sidebarSnapshot,snapshot);
+  const movingForm=Boolean(liveForm&&(plan.full||plan.replace.includes(liveGroup)));
+  if(movingForm)liveForm.remove();
+  if(plan.full){
+    list.innerHTML=arranged.map(([id,groups])=>{
     const collection=collections.find(g=>g.id===id),isUnnamed=id===UNNAMED_OBJECTS;
     const isCollapsed=isUnnamed?!state.expandedUnnamedObjects:collapsed.has(id);
     const objects=groups.slice().sort(sortObjectNames);
     const label=isUnnamed?'Unnamed Objects':collection?collection.name:'Ungrouped Objects';
     return `<section class="object-category ${isUnnamed?'unnamed-category':''}" data-collection="${escapeHTML(id)}"><div class="object-collection-heading"><button type="button" class="object-category-head" data-action="toggle-category" data-category="${escapeHTML(id)}" aria-expanded="${!isCollapsed}"><span class="category-chevron" aria-hidden="true">${isCollapsed?'&#9656;':'&#9662;'}</span><strong>${escapeHTML(label)}</strong><span>${groups.length}</span></button>${collection?`<input class="collection-name" aria-label="Group name" data-collection-name="${collection.id}" value="${escapeHTML(collection.name)}"><button type="button" class="collection-rename" data-action="rename-collection" aria-label="Rename group" title="Rename group">✎</button><button type="button" class="remove-collection" data-remove-collection="${collection.id}" title="Remove group; keep its objects">&#215;</button>`:''}</div><div class="object-category-items" ${isCollapsed?'hidden':''}>${objects.map(renderGroup).join('')}${objects.length?'':'<small class="empty-collection">No objects</small>'}</div></section>`;
   }).join('');
-  if(liveForm&&liveGroup){
+  }else{
+    // Keyed object-level updates: changing one Option never destroys the list
+    // or the other objects, and selection-only changes preserve focused forms.
+    const nodes=new Map([...list.querySelectorAll('.region-group[data-group]')]
+      .map(node=>[node.dataset.group,node]));
+    for(const id of plan.replace){
+      const group=visibleGroups.find(g=>g.id===id),node=nodes.get(id);
+      if(!group||!node){sidebarSnapshot=null;return renderGroups()}
+      const template=document.createElement('template');
+      template.innerHTML=renderGroup(group);
+      node.replaceWith(template.content.firstElementChild);
+    }
+    for(const id of plan.update){
+      const group=visibleGroups.find(g=>g.id===id),node=nodes.get(id);
+      if(group&&node)syncSidebarGroupNode(node,group);
+    }
+  }
+  syncSidebarCategoryNodes(list,collapsed);
+  if(movingForm&&liveForm&&liveGroup){
     const section=[...list.querySelectorAll('.region-group[data-group]')]
       .find(group=>group.dataset.group===liveGroup);
     const slot=section?.querySelector('.group-options');
@@ -1245,8 +1271,24 @@ function renderGroups(){
       }
     }
   }
-  window.MosaicRegions?.decorate();window.MosaicObjectManager?.decorate();window.MosaicPremium?.decorateActive?.();updateSourceActions();
-  refreshQuickOptions();
+  if(plan.full||plan.replace.length){
+    window.MosaicRegions?.decorate();window.MosaicObjectManager?.decorate();
+  }
+  if(plan.full||plan.replace.length||plan.update.length)
+    window.MosaicPremium?.decorateActive?.();
+  sidebarSnapshot=snapshot;
+  // The floating Option rail is separate from the sidebar. Refresh it only
+  // when the selected group's Options change, not on unrelated UI redraws.
+  const quickGroup=state.groups.find(group=>group.id===state.draftGroupId||
+    group.patchIds.includes(state.selectionTargetPatchId));
+  const quickKey=JSON.stringify([state.selectionGeneration,quickGroup?.id,quickGroup?.active,
+    quickGroup?.hasHarmonizedMaster,quickGroup?.patchIds.map(id=>{
+      const patch=state.patches.get(id);
+      return [id,patch?.hideUntilReady,patch?.name,patch?.sourceId,
+        sidebarPatchRevisions.get(patch)||0,sidebarIdentity(state.sources.get(patch?.sourceId)?.canvas)];
+    })]);
+  if(sidebarQuickKey!==quickKey){sidebarQuickKey=quickKey;refreshQuickOptions()}
+  updateSourceActions();
 }
 function editExisting(pid){if(state.pendingSourceId){toast('Apply or discard your new image before editing saved variants.');return}const patch=state.patches.get(pid);if(!patch)return;state.editingPatchId=pid;state.selectedPatchId=pid;resetSelection();state.selectionPoints=patchControlPoints(patch).map(({x,y})=>({x,y}));state.selectionMask.getContext('2d').drawImage(displayedPatchMask(patch),0,0);setMode('add');selectTool('lasso');updateSelectionOutline();updateApplyButton();message('Editing a saved mask. Refine it, then click Update mask to commit changes.')}
 function groupEvent(e){if(window.MosaicRegions?.handleGroupEvent(e))return;if(window.MosaicPremium?.handleGroupEvent(e))return;const target=e.target.closest('[data-action]');if(!target)return;const action=target.dataset.action,group=state.groups.find(g=>g.id===target.dataset.group),pid=target.dataset.patch;
