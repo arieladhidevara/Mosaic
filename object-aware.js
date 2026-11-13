@@ -180,7 +180,17 @@ async function prepare(prompt){
 }
 function orderedGroups(){return sceneOrder(state.groups.filter(group=>!group.cutArchived))}
 function setIdentity(group,mask,label){
-  if(!group.objectOriginal){group.objectOriginal={mask:copy(mask),appearance:core.composeApprovedCanvas(),geometryId:signature(data(mask)),repairs:[]}}
+  if(!group.objectOriginal){
+    // The original look is only ever drawn through this object's silhouette.
+    // Keep its exact bounding rectangle, not a full-resolution scene per object.
+    const box=bounds(data(mask),mask.width,mask.height);
+    const scene=core.composeApprovedCanvas();
+    const x=box?.x||0,y=box?.y||0,w=box?.w||scene.width,h=box?.h||scene.height;
+    const appearance=makeCanvas(w,h);
+    appearance.getContext('2d').drawImage(scene,-x,-y);
+    group.objectOriginal={mask:copy(mask),appearance,appearanceOffset:{x,y},
+      geometryId:signature(data(mask)),repairs:[]};
+  }
   if(label)group.objectLabel=label;
   group.objectId=group.objectId||group.id;
 }
@@ -256,7 +266,18 @@ function drawBase(target,groups=orderedGroups(),patches=state.patches){
 }
 function drawOriginal(target,group){
   if(group.active||!group.objectOriginal?.appearance)return;
-  let original=originalDrawCache.get(group.objectOriginal);if(!original){original=copy(group.objectOriginal.appearance);const x=original.getContext('2d');x.globalCompositeOperation='destination-in';x.drawImage(group.objectOriginal.mask,0,0);originalDrawCache.set(group.objectOriginal,original)}target.drawImage(original,0,0);
+  const saved=group.objectOriginal;
+  let original=originalDrawCache.get(saved);
+  if(!original){
+    // Old .moz projects still contain full-image appearances (no offset).
+    const x=saved.appearanceOffset?.x||0,y=saved.appearanceOffset?.y||0;
+    const image=copy(saved.appearance),ctx=image.getContext('2d');
+    ctx.globalCompositeOperation='destination-in';
+    ctx.drawImage(saved.mask,-x,-y);
+    original={image,x,y};
+    originalDrawCache.set(saved,original);
+  }
+  target.drawImage(original.image,original.x,original.y);
 }
 function drawOptionRepairs(target,group,patch){if(!patch?.objectRepairs?.length||patch.corners?.length)return;const support=patch.objectSupport||patch.mask,valid=patch.objectValid||patch.mask;let cached=repairClipCache.get(patch);if(!cached||cached.support!==support||cached.valid!==valid){cached={support,valid,canvas:raster(combine(data(support),data(valid),'subtract'))};repairClipCache.set(patch,cached)}drawRepairs(target,patch,cached.canvas)}
 function invalidated(patch){
