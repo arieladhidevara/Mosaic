@@ -195,9 +195,13 @@ function apply(){
       const transformedMask=makeCanvas(canvas.width,canvas.height);
       drawTransformed(transformedMask.getContext('2d'),current.optionMask||core.displayedPatchMask(patch),current.transform,1);
       const id=core.uid('source_edit');
-      state.sources.set(id,{id,name:source.name+' edited',canvas:raster});
-      patch.sourceId=id;patch.mask=transformedMask;
+      patch.mask=transformedMask;
       patch.bbox=core.maskBoundingBox(transformedMask)||patch.bbox;
+      const exact=core.exactMaskBoundingBox(transformedMask);
+      const padding=exact?Math.max(48,Math.ceil(Math.max(exact.w,exact.h)*.15)):0;
+      state.sources.set(id,{id,name:source.name+' edited',
+        ...core.compactOptionSource(raster,exact,padding),revealComplete:true});
+      patch.sourceId=id;
       patch.maskPaths=current.optionPaths.map(path=>path.map(point=>transformedPoint(point,current.image,current.transform)));
       patch.maskPoints=current.optionPoints.map(point=>transformedPoint(point,current.image,current.transform));
       patch.corners=null; // Previous warp is now included in the raster and mask.

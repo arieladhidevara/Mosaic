@@ -174,7 +174,7 @@ function onSourceEdited(kind,raster){
       for(const patch of state.patches.values()){
         if(!patch.isMasterVersion||patch.masterVersion!==latest.number||updated.has(patch.sourceId))continue;
         const source=state.sources.get(patch.sourceId);
-        if(source){source.canvas=cloneCanvas(raster);updated.add(patch.sourceId)}
+        if(source){source.canvas=cloneCanvas(raster);source.crop=null;updated.add(patch.sourceId)}
       }
     }
     refreshMasterBrowser();
@@ -622,16 +622,28 @@ async function generateRegion(patchId,regenerate=false){
         renderGroups();render();progress.done('Edit saved for '+count+' '+(count===1?'object.':'objects.'));
         message('Generated image clipped to each original object mask.');toast('Saved edits for '+count+' '+(count===1?'object.':'objects.'));return;
       }
-      // Commit only after all validation; failed regeneration keeps its source.
+      // Commit only after all validation. Full-frame alignment output is
+      // temporary; persist just the returned region, including Reveal context.
+      // A skewed Option is unwarped back into its original mask coordinates.
+      // Crop in that coordinate system, not its transformed on-screen region.
+      const originalBounds=submittedPatch.corners?.length?submittedPatch.bbox:region;
+      const originalPadding=submittedPatch.corners?.length?
+        Math.max(48,Math.ceil(Math.max(originalBounds.w,originalBounds.h)*.15)):0;
+      const compact=core.compactOptionSource(result,originalBounds,originalPadding);
       if(regenerate){
         const id=uid('ai_source');
-        state.sources.set(id,{id,name:'Regenerated '+existing.name,canvas:result,revealComplete:true});
+        state.sources.set(id,{id,name:'Regenerated '+existing.name,...compact,revealComplete:true});
         existing.sourceId=id;
       }else{
         const source=state.sources.get(existing.sourceId);
-        source.canvas=result;source.name='AI region '+patch.regionNumber;source.revealComplete=true;
+        Object.assign(source,compact);
+        source.name='AI region '+patch.regionNumber;source.revealComplete=true;
       }
       window.MosaicObjects?.generated(existing,existing.mask,currentMaskUnchanged);
+      // Previously every completed Option still referenced a full RGB
+      // pre-edit collage through request.baseImage and request.reference.
+      // Reveal uses this Option's saved contextual crop instead.
+      if(existing.request){delete existing.request.baseImage;delete existing.request.reference;}
       core.invalidateDisplayedMask(existing);
       existing.awaitingResult=false;
       // New options enter the right sidebar only after a real image is ready.
@@ -710,9 +722,8 @@ function commitObjectMapParts(batch,result,underlay,requestOrder){
   changedContext.globalCompositeOperation='destination-in';
   changedContext.drawImage(union,0,0);
   combined.getContext('2d').drawImage(changed,0,0);
-  const sharedSourceId=uid('object_batch_source');
-  state.sources.set(sharedSourceId,{id:sharedSourceId,name:'Selected objects · generated',canvas:combined,
-    revealComplete:true});
+  // One temporary composite drives validation; completed parts are saved
+  // separately as small, independently positioned image crops.
   for(const [partIndex,part] of batch.objectMapParts.entries()){
     let group=state.groups.find(g=>g.objectMapKey===part.mapKey&&g.objectMapObjectKey===part.objectKey);
     const mask=cloneCanvas(part.mask);if(part.previousMask)mask.getContext('2d').drawImage(part.previousMask,0,0);
@@ -722,19 +733,22 @@ function commitObjectMapParts(batch,result,underlay,requestOrder){
     if(!group.manualName)group.name=group.objectName;
     // Alignment changes RGB only. Every Option keeps its original mask.
     const aligned=alignments[partIndex];
-    let sourceId=sharedSourceId;
+    let sourceImage=combined;
     if(aligned.aligned&&aligned.image!==result){
-      const source=cloneCanvas(combined),layer=cloneCanvas(aligned.image),lx=layer.getContext('2d');
+      sourceImage=cloneCanvas(combined);
+      const layer=cloneCanvas(aligned.image),lx=layer.getContext('2d');
       lx.globalCompositeOperation='destination-in';lx.drawImage(part.mask,0,0);
-      source.getContext('2d').drawImage(layer,0,0);
-      sourceId=uid('aligned_object_source');
-      state.sources.set(sourceId,{id:sourceId,name:group.objectName+' · aligned',canvas:source,
-        revealComplete:true});
+      sourceImage.getContext('2d').drawImage(layer,0,0);
     }
+    const bounds=core.exactMaskBoundingBox(mask);
+    const padding=Math.max(48,Math.ceil(Math.max(bounds.w,bounds.h)*.15));
+    const sourceId=uid('object_part_source');
+    state.sources.set(sourceId,{id:sourceId,name:group.objectName+' · crop',
+      ...core.compactOptionSource(sourceImage,bounds,padding),revealComplete:true});
     const {objectMapParts,aiProgress,...template}=batch;
     const patch={...template,id:uid('object_patch'),sourceId,mask,bbox:core.exactMaskBoundingBox(mask),maskPaths:core.maskPathsFromRaster(mask),maskPoints:[],groupId:group.id,
       objectMapKey:part.mapKey,objectMapCategory:part.category,objectMapObjectKey:part.objectKey,objectMapInstanceId:part.instanceId,objectLabel:part.label,generating:false,awaitingResult:false,hideUntilReady:false,
-      request:{...batch.request,mask},maskAlignmentStatus:aligned.status,
+      request:{prompt:batch.prompt,mask},maskAlignmentStatus:aligned.status,
       name:core.optionNameFromPrompt(batch.prompt,part.category+' edit')};
     patch.maskPoints=patch.maskPaths.flat();
     const activeBefore=group.active,choice=core.groupChoiceVersion(group),previous=lastAppliedGenerations.get(group);
@@ -891,9 +905,13 @@ async function attachAIResult(file) {
     c.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
     const source = state.sources.get(patch.sourceId);
     if (!source) throw new Error('Original request was not found');
-    source.canvas = c;
+    const bounds=core.exactMaskBoundingBox(patch.mask);
+    const padding=bounds?Math.max(48,Math.ceil(Math.max(bounds.w,bounds.h)*.15)):0;
+    Object.assign(source,core.compactOptionSource(c,bounds,padding));
     source.name = file.name;
+    source.revealComplete=true;
     patch.awaitingResult = false;
+    if(patch.request){delete patch.request.baseImage;delete patch.request.reference;}
     if(!patch.manualName&&!patch.semanticNamed)patch.name = core.optionNameFromPrompt(patch.prompt,file.name.replace(/\.[^.]+$/,''));
     const group = state.groups.find(g => g.patchIds.includes(patch.id));
     // Keep the user's currently selected Group option as-is. The generated

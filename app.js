@@ -16,6 +16,29 @@ const state = {
 };
 const uid = name => `${name}_${state.serial++}`;
 const makeCanvas = (w,h) => {const c=document.createElement('canvas');c.width=w;c.height=h;return c};
+// Regional AI still uses a full-frame *temporary* for perspective registration,
+// but completed Options only retain their RGB crop and its world coordinates.
+function compactOptionSource(image,area,padding=0){
+  if(!image||!area)return {canvas:image,crop:null};
+  const pad=Math.max(0,Math.ceil(Number(padding)||0));
+  const x=Math.max(0,Math.min(image.width,Math.floor(area.x-pad)));
+  const y=Math.max(0,Math.min(image.height,Math.floor(area.y-pad)));
+  const right=Math.max(x,Math.min(image.width,Math.ceil(area.x+area.w+pad)));
+  const bottom=Math.max(y,Math.min(image.height,Math.ceil(area.y+area.h+pad)));
+  const w=right-x,h=bottom-y;
+  if(!w||!h||w===image.width&&h===image.height)
+    return {canvas:image,crop:null};
+  const cropped=makeCanvas(w,h);
+  cropped.getContext('2d').drawImage(image,-x,-y);
+  return {canvas:cropped,crop:{x,y,width:w,height:h}};
+}
+function expandOptionSource(source){
+  if(!source?.canvas)return null;
+  if(!source.crop)return source.canvas;
+  const full=makeCanvas(canvas.width,canvas.height);
+  full.getContext('2d').drawImage(source.canvas,source.crop.x,source.crop.y);
+  return full;
+}
 const clamp = (v,a,b) => Math.min(b, Math.max(a,v));
 const center = b => ({x:b.x+b.w/2,y:b.y+b.h/2});
 let toastTimer;
@@ -537,7 +560,7 @@ function patchTexture(patch, source) {
   const x=Math.max(0,Math.floor(b.x)-pad),y=Math.max(0,Math.floor(b.y)-pad);
   const right=Math.min(canvas.width,Math.ceil(b.x+b.w)+pad),bottom=Math.min(canvas.height,Math.ceil(b.y+b.h)+pad);
   const image=makeCanvas(Math.max(1,right-x),Math.max(1,bottom-y)),tc=image.getContext('2d');
-  tc.drawImage(source.canvas,-x,-y);
+  tc.drawImage(source.canvas,(source.crop?.x||0)-x,(source.crop?.y||0)-y);
   tc.globalCompositeOperation='destination-in';
   if(!state.featherEnabled||source.canvas===patch.mask||patch.isMasterVersion){tc.drawImage(patch.mask,-x,-y)}
   else{
@@ -818,7 +841,7 @@ function escapeHTML(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':
 // Small thumbnails show an actual cutout on transparency, not a full render.
 // Cache completed option thumbs to avoid expensive full-image work during UI redraws.
 const optionThumbCache=new WeakMap();
-function cutoutThumbnail(image,mask,cropOrigin=null){
+function cutoutThumbnail(image,mask,cropOrigin=null,imageOrigin=null){
   if(!image||!mask)return '';
   // Object Map holds the small mask and its offset; preview it directly
   // instead of allocating a full-image intermediate for every sidebar row.
@@ -828,7 +851,7 @@ function cutoutThumbnail(image,mask,cropOrigin=null){
   const dw=b.w*scale,dh=b.h*scale,dx=(width-dw)/2,dy=(height-dh)/2;
   const thumb=makeCanvas(width,height),t=thumb.getContext('2d');
   t.imageSmoothingEnabled=true;t.imageSmoothingQuality='high';
-  t.drawImage(image,b.x,b.y,b.w,b.h,dx,dy,dw,dh);
+  t.drawImage(image,b.x-(imageOrigin?.x||0),b.y-(imageOrigin?.y||0),b.w,b.h,dx,dy,dw,dh);
   t.globalCompositeOperation='destination-in';
   t.filter='blur(.8px)';
     t.drawImage(mask,cropOrigin?0:b.x,cropOrigin?0:b.y,b.w,b.h,dx,dy,dw,dh);
@@ -846,7 +869,7 @@ function patchThumbnail(patch){
     ...(patch.corners||[]).flatMap(p=>[p.x,p.y])].join('/');
   if(cached&&cached.source===src.canvas&&cached.mask===patch.mask&&cached.signature===signature)return cached.data;
   const image=patch.corners?.length?renderedPatchLayer(patch):src.canvas;
-  const data=cutoutThumbnail(image,mask);
+  const data=cutoutThumbnail(image,mask,null,patch.corners?.length?null:src.crop);
   optionThumbCache.set(patch,{source:src.canvas,mask:patch.mask,signature,data});
   return data;
 }
@@ -1083,9 +1106,11 @@ function deformSelectionMask(mask,fromPaths,toPaths,paths){
 }
 function commitImagePlacement(patch,layer){
   const source=state.sources.get(patch.sourceId),id=uid('placed_source');
-  state.sources.set(id,{id,name:source?.name||patch.name,canvas:layer});patch.sourceId=id;
   patch.mask=cloneMask(state.selectionMask);patch.maskPaths=MaskGeometry.copyPaths(state.selectionPaths);patch.maskPoints=patch.maskPaths.flat();
   patch.bbox=exactMaskBoundingBox(patch.mask)||patch.bbox;patch.corners=null;invalidateDisplayedMask(patch);
+  const pad=Math.max(48,Math.ceil(Math.max(patch.bbox.w,patch.bbox.h)*.15));
+  state.sources.set(id,{id,name:source?.name||patch.name,...compactOptionSource(layer,patch.bbox,pad)});
+  patch.sourceId=id;
   const group=state.groups.find(g=>g.patchIds.includes(patch.id));if(group)refreshGroupFootprint(group);
 }
 function saveSelectionGeometry(pixels=true){
@@ -1947,6 +1972,6 @@ viewport.addEventListener('wheel',event=>{
   if(state.shapeStart)state.shapeEnd=canvasPoint(event,false);drawOverlay();
 },{passive:false});
 window.addEventListener('mosaic:keyconnected',()=>state.groups.forEach(autoClassifyGroup));
-window.MosaicCore = {groupContainsPoint,appendGroupSelection,newGroup,newGroupFromCrop,matchingGroup,applyWandMask,svgNode,vectorLayer,drawVectorPaths,maskPathsFromRaster,state,canvas,overlay,ctx,makeCanvas,uid,setProjectTitle,toast,message,promptText,loadFileToCanvas,setMaster,continueWithBase,upgradeBaseDraft,setSourcePreview,updateSourceActions,render,composeApprovedCanvas,renderGroups,drawPatch,selectTool,setMode,updateApplyButton,maskBoundingBox,assignGroup,resetSelection,updateSelectionOutline,updateMaskWithLasso,updateZoomFit,escapeHTML,categoryFromText,updateGroupCategory,optionNameFromPrompt,prepareSelectionGroup,groupMask,selectGroupMask,CATEGORIES,showQuickPrompt,hideQuickPrompt,createBlankRegion,moveOptionToGroup,displayedPatchMask,renderedPatchLayer,refreshGroupFootprint,invalidateDisplayedMask,attachGeneratedSelection,patchSelectionPaths,exactMaskBoundingBox,unwarpPatchSelection,patchControlPoints,displayedMaskPoint};
+window.MosaicCore = {compactOptionSource,expandOptionSource,groupContainsPoint,appendGroupSelection,newGroup,newGroupFromCrop,matchingGroup,applyWandMask,svgNode,vectorLayer,drawVectorPaths,maskPathsFromRaster,state,canvas,overlay,ctx,makeCanvas,uid,setProjectTitle,toast,message,promptText,loadFileToCanvas,setMaster,continueWithBase,upgradeBaseDraft,setSourcePreview,updateSourceActions,render,composeApprovedCanvas,renderGroups,drawPatch,selectTool,setMode,updateApplyButton,maskBoundingBox,assignGroup,resetSelection,updateSelectionOutline,updateMaskWithLasso,updateZoomFit,escapeHTML,categoryFromText,updateGroupCategory,optionNameFromPrompt,prepareSelectionGroup,groupMask,selectGroupMask,CATEGORIES,showQuickPrompt,hideQuickPrompt,createBlankRegion,moveOptionToGroup,displayedPatchMask,renderedPatchLayer,refreshGroupFootprint,invalidateDisplayedMask,attachGeneratedSelection,patchSelectionPaths,exactMaskBoundingBox,unwarpPatchSelection,patchControlPoints,displayedMaskPoint};
 Object.assign(window.MosaicCore,{focusGroupInSidebar,chooseGroupOption,groupChoiceVersion,toggleComparison,canCreateSelection,releaseSourceTexture,releasePatchTexture});
 promptText();
