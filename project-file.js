@@ -105,7 +105,7 @@ function projectState(){
   const fields=[
     'reference','master','rawBase','rawMaster','masterIsBase','alignmentTransforms',
     'sources','groups','patches','pendingSourceId','editingPatchId','selectedPatchId',
-    'selectionMask','selectionPoints','selectionPaths','selectionTargetPatchId','selectionMode','tool','pendingRevealOnly','serial',
+    'selectionMask','selectionGeometry','selectionPoints','selectionPaths','selectionTargetPatchId','selectionMode','tool','pendingRevealOnly','serial',
     'draftGroupId','queuedGroupId','selectionGeneration','brushTargetId',
     'undo','redo','zoom','fitZoom','projectTitle','projectTitleManual','brushSize','brushIntensity','maskEditOnly',
     'markups','chatMessages','copilotSession','chatResult','objectMap','objectMaps','autoObjectSelect','featherEnabled','collapsedCategories','objectCollections','objectSelectionParts','objectReconstruction','cutHistory','sceneVersionCounters','sceneVersionHistory','sceneTargetSelections','objectMapLocked'

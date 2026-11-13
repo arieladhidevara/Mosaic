@@ -63,7 +63,7 @@ function currentGroup(){return state.groups.find(g=>g.id===state.draftGroupId||g
 function reset(){clearSmartProgress();clearSmartStatus();clearTimeout(timer);clearTimeout(repairTimer);revision++;repairRevision++;selection=null;preview=null;cancelAnimationFrame(previewFrame);maskCache.clear();intentCache.clear();inflight.clear();failures.clear();if(worker){worker.terminate();worker=null}for(const job of jobs.values())job.reject(Error('Project changed'));jobs.clear()}
 function cancelSelection(){window.MosaicObjectMap?.cancelSelection();clearSmartProgress();clearSmartStatus();revision++;clearTimeout(timer);cancelAnimationFrame(previewFrame);selection=null;preview=null}
 function selectionChanged(){
-  if(applying)return;
+  if(applying||state.selectionGeometry)return;
   const mask=state.selectionMask;
   if(!mask||!state.master)return;
   const hash=signature(data(mask));

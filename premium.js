@@ -796,7 +796,7 @@ async function regenerateOption(patchId){
 async function openAreaPrompt() {
   if (!canSelectArea()) {toast('Finish the current layer or restore an archived branch before prompting.');return;}
   if (state.lasso.length > 2) core.updateMaskWithLasso();
-  const bbox = state.selectionMask && maskBoundingBox(state.selectionMask);
+  const bbox = core.selectionBounds();
   if (!bbox) {toast('Draw a lasso selection first, then press Prompt area.');return;}
   if(!await window.MosaicAuth.ensure())return;
   $('areaPromptInput').value = '';clearReferenceFiles('area');
@@ -864,9 +864,9 @@ async function generateSelection(prompt,groupId=null,referenceFiles=[]){
   if(!await window.MosaicAuth.ensure())return;
   if(!canSelectArea()){toast('Finish the current imported layer before generating.');return}
   if(state.lasso.length>2)core.updateMaskWithLasso();
-  const bbox=maskBoundingBox(state.selectionMask);
+  const bbox=core.selectionBounds();
   if(!bbox){toast('Select a region before generating.');return}
-  const initialMask=cloneCanvas(state.selectionMask),generation=state.selectionGeneration;
+  const initialMask=cloneCanvas(core.ensureSelectionMask()),generation=state.selectionGeneration;
   const initialPoints=state.selectionPoints?.map(point=>({...point}))||[];
   const initialPaths=window.MozMaskGeometry.copyPaths(state.selectionPaths);
   const initialGroup=groupId||state.draftGroupId||null;
@@ -991,7 +991,7 @@ async function harmonizeWithAI(prompt,sourceVersion=null) {
   }
   const editingInProgress=Boolean(state.pendingSourceId||state.editingPatchId
     ||state.drawing||state.lasso.length
-    ||(state.selectionMask&&maskBoundingBox(state.selectionMask)));
+    ||core.selectionBounds());
   const graph = submittedGraph;
   const number = ++premium.serial;
   const masterVersion=addMasterVersion(finalImage,sourceVersion?'Regenerated':'Harmonized',prompt,sourceVersion?.number||null);

@@ -49,6 +49,7 @@ function resolvePart(part,identityOnly=false){
 function busyObjects(keys){return [...state.patches.values()].some(p=>p.generating&&(keys.includes(p.objectMapObjectKey)||p.objectMapParts?.some(part=>keys.includes(part.objectKey))))}
 function selectedParts(){return window.MosaicObjectMap?.partsForSelection(state.selectionMask)||[]}
 function mergeSelection(){
+  core.ensureSelectionMask();
   const parts=selectedParts();if(parts.length<2)return;
   if(busyObjects(parts.map(p=>p.objectKey))){core.toast('The selected objects are still generating. Other objects can be edited now.');return}
   const mask=clone(state.selectionMask),image=core.composeApprovedCanvas(),members=parts.map(part=>state.groups.find(g=>(g.objectMapObjectKey||g.id)===part.objectKey));
