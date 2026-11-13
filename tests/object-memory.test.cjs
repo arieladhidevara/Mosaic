@@ -46,3 +46,37 @@ test('undo keeps latest operation and bounds retained pixel memory',()=>{
   context.trimUndo();assert.equal(state.undo.length,4);
   state.undo=[{image:{data:{byteLength:200*1024*1024}}}];context.trimUndo();assert.equal(state.undo.length,1);
 });
+
+
+test('refreshing edited group footprints releases full masks without overwriting original Object Map crops',()=>{
+  const mask=makeCanvas(100,80);
+  for(let y=20;y<24;y++)for(let x=30;x<36;x++)mask.data[(y*100+x)*4+3]=255;
+  const originalCrop={mask:makeCanvas(6,4),x:30,y:20};
+  const mapped={id:'mapped',patchIds:['p'],active:'p',mapPrepared:true,maskCrop:originalCrop,footprint:null};
+  const manual={id:'manual',patchIds:['p'],active:'p',footprint:null};
+  const state={patches:new Map([['p',{mask}]]),groups:[mapped,manual]};
+  const bbox=source=>{
+    let left=source.width,top=source.height,right=-1,bottom=-1;
+    for(let y=0;y<source.height;y++)for(let x=0;x<source.width;x++)
+      if(source.data[(y*source.width+x)*4+3]){
+        left=Math.min(left,x);top=Math.min(top,y);right=Math.max(right,x);bottom=Math.max(bottom,y);
+      }
+    return right<0?null:{x:left,y:top,w:right-left+1,h:bottom-top+1};
+  };
+  const context=vm.createContext({
+    makeCanvas,canvas:{width:100,height:80},state,
+    groupThumbCache:new WeakMap(),displayedPatchMask:p=>p.mask,
+    groupMask:g=>state.patches.get(g.active).mask,
+    exactMaskBoundingBox:bbox,maskBoundingBox:bbox,
+    window:{MosaicObjects:{scheduleRepair(){}}}
+  });
+  vm.runInContext(section(app,'function refreshGroupFootprint','function moveOptionToGroup'),context);
+  context.refreshGroupFootprint(mapped);
+  assert.equal(mapped.footprint,null);
+  assert.equal(mapped.maskCrop,originalCrop,'Original Object Map identity must survive switching options');
+  context.refreshGroupFootprint(manual);
+  assert.equal(manual.footprint,null);
+  assert.deepEqual({x:manual.maskCrop.x,y:manual.maskCrop.y,w:manual.maskCrop.mask.width,h:manual.maskCrop.mask.height},
+    {x:30,y:20,w:6,h:4});
+  assert.equal(manual.maskCrop.mask.data[3],255);
+});
