@@ -81,11 +81,13 @@ test('partially transparent image RGB can be recovered without changing final ma
   assert.ok(out.coverage>.99);
   for(let i=0;i<locked.length;i++)assert.equal(out.rgba[i*4+3],255);
 });
-test('browser Material Edit opts into PNG but never uses alpha as permanent geometry or rejection threshold',()=>{
+test('browser Material Edit uses opaque JPG and only structural perspective alignment',()=>{
   const premium=readFileSync('premium.js','utf8');
-  assert.match(premium,/transparentLayer:!patch\.objectMapParts/);
-  assert.match(premium,/alignTransparentCornersBestEffort/);
-  assert.match(premium,/if\(!transparentResult\)\s*for\(const mask of resultMasks\)validateRegionalResult/);
-  assert.match(premium,/if\(!transparentResult&&!existing\.objectMapParts/);
-  assert.doesNotMatch(premium,/insufficient-alpha-coverage|unmatched-alpha-boundaries|alpha-overlap-too-low/);
+  assert.doesNotMatch(premium,/transparentLayer|alignTransparentCornersBestEffort|transparentResult/);
+  assert.match(premium,/alignGeneratedToLockedMask/);
+  assert.match(premium,/lockedMask:visibleMask,makeCanvas/);
+  assert.match(premium,/validateRegionalResult\(aligned\.image,capture\.collage,visibleMask/);
+  const provider=readFileSync('lib/image-provider.js','utf8');
+  assert.match(provider,/output_format:'jpeg',output_compression:100/);
+  assert.match(provider,/mimeType:'image\/jpeg'/);
 });
