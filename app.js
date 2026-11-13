@@ -1,3 +1,4 @@
+import {planSidebarRender} from './sidebar-render-state.mjs';
 /* Mosaic — manual-first, local-only image compositor.
    Each uploaded variation is a temporary top layer until its mask is applied.
    Masks remain editable; only approved patches are combined with the master. */
@@ -649,7 +650,9 @@ function optionNameFromPrompt(prompt,fallback='New option'){
 const patchTextures = new WeakMap();
 const visibleMaskCache = new WeakMap();
 const maskHandleCache = new WeakMap();
+const sidebarPatchRevisions=new WeakMap();
 function invalidateDisplayedMask(patch,{geometryChanged=true}={}){
+  sidebarPatchRevisions.set(patch,(sidebarPatchRevisions.get(patch)||0)+1);
   if(geometryChanged){if(patch?.mask)fullFrameMaskCache.delete(patch.mask);window.MosaicObjects?.invalidated(patch)}
   visibleMaskCache.delete(patch);
   patchTextures.delete(patch);
@@ -1053,6 +1056,94 @@ function releaseSourceTexture(sourceId){
     if(patch.sourceId===sourceId)releasePatchTexture(patch);
 }
 const groupThumbCache=new WeakMap();
+const sidebarGroupRevisions=new WeakMap();
+let sidebarSnapshot=null,sidebarSemanticKey='',sidebarQuickKey='';
+const sidebarIdentityRefs=new WeakMap();let sidebarIdentitySerial=0;
+function sidebarIdentity(value){
+  if(!value||typeof value!=='object')return 0;
+  if(!sidebarIdentityRefs.has(value))sidebarIdentityRefs.set(value,++sidebarIdentitySerial);
+  return sidebarIdentityRefs.get(value);
+}
+function sidebarSemanticSignature(){
+  return JSON.stringify([
+    state.groups.map(g=>[g.id,g.name,g.objectName,g.collectionId,g.autoGroupExcluded,g.mergedInto,g.objectRemoved]),
+    (state.objectCollections||[]).map(c=>[c.id,c.name])
+  ]);
+}
+function sidebarGroupRecord(g){
+  const expanded=state.expandedObjectId===g.id;
+  const ready=g.patchIds.map(id=>state.patches.get(id)).filter(p=>p&&!p.hideUntilReady);
+  const structure=JSON.stringify([expanded,g.hasHarmonizedMaster||false,g.patchIds.length,expanded?ready.map(p=>p.id):[]]);
+  const content=JSON.stringify([
+    g.name,g.category,g.active,g.classificationPending||false,g.objectRemoved||false,
+    state.draftGroupId===g.id,sidebarGroupRevisions.get(g)||0,
+    sidebarIdentity(state.master),sidebarIdentity(g.maskCrop?.mask),sidebarIdentity(g.footprint),
+    ready.map(p=>[
+      p.id,p.name,p.generating||false,p.awaitingResult||false,p.aiProgress?.status,
+      p.aiProgress?.value,p.aiProgress?.detail,p.sourceId,p.hideUntilReady||false,
+      state.maskEditOnly&&state.selectionTargetPatchId===p.id,
+      expanded&&state.expandedOptionId===p.id,sidebarPatchRevisions.get(p)||0,
+      sidebarIdentity(p.mask),sidebarIdentity(state.sources.get(p.sourceId)?.canvas)
+    ])
+  ]);
+  return {structure,content};
+}
+function syncSidebarGroupNode(section,g){
+  section.classList.toggle('region-focused',state.draftGroupId===g.id);
+  const head=section.querySelector('.group-head');
+  if(head)head.title='Click to reuse '+g.name+' selection on the current image';
+  const title=section.querySelector('.group-name');
+  if(title&&!title.querySelector('.region-rename-input'))title.textContent=g.name||g.objectName||'Unnamed Object';
+  const category=section.querySelector('.group-category');
+  if(category&&category.value!==g.category)category.value=g.category||'Region';
+  const ready=g.patchIds.map(id=>state.patches.get(id)).filter(p=>p&&!p.hideUntilReady);
+  const count=section.querySelector('.group-count');if(count)count.textContent=ready.length||'';
+  const url=groupThumbnail(g),icon=section.querySelector('.group-icon');
+  if(icon){
+    const image=icon.querySelector('img');
+    if(url){
+      if(image){if(image.getAttribute('src')!==url)image.src=url}
+      else{const img=document.createElement('img');img.className='group-cutout';img.src=url;img.alt='';icon.replaceChildren(img)}
+    }else if(image)icon.textContent='▧';
+  }
+  for(const row of section.querySelectorAll('.variant-row[data-patch]')){
+    const id=row.dataset.patch,p=id==='master'?null:state.patches.get(id);
+    row.classList.toggle('selected',g.active===(p?.id||null));
+    if(!p)continue;
+    const open=state.expandedOptionId===p.id;
+    row.classList.toggle('option-expanded',open);
+    row.classList.toggle('mask-editing',Boolean(state.maskEditOnly&&state.selectionTargetPatchId===p.id));
+    row.setAttribute('aria-expanded',String(open));
+    const actions=row.querySelector('.option-actions');
+    if(actions)actions.classList.toggle('is-open',open);
+    const label=row.querySelector('.variant-text');
+    if(label&&!label.querySelector('.region-rename-input'))label.textContent=p.name||'Untitled option';
+    const thumb=patchThumbnail(p),imageHost=row.querySelector('.option-image');
+    if(imageHost){
+      const image=imageHost.querySelector('img');
+      if(thumb){
+        if(image){if(image.getAttribute('src')!==thumb)image.src=thumb}
+        else{const img=document.createElement('img');img.className='option-cutout';img.src=thumb;img.alt='';img.loading='lazy';imageHost.replaceChildren(img)}
+      }else if(image)imageHost.textContent='◻';
+    }
+    const edit=row.querySelector('[data-action="edit-mask"]');
+    if(edit)edit.setAttribute('aria-pressed',String(state.maskEditOnly&&state.selectionTargetPatchId===p.id));
+    const regen=row.querySelector('[data-region-action="regen-option"]');
+    if(regen){regen.textContent=p.generating?'…':'↻';regen.disabled=Boolean(p.generating)}
+  }
+}
+function syncSidebarCategoryNodes(list,collapsed){
+  for(const section of list.querySelectorAll('.object-category[data-collection]')){
+    const id=section.dataset.collection,isCollapsed=id===UNNAMED_OBJECTS?!state.expandedUnnamedObjects:collapsed.has(id);
+    const btn=section.querySelector('.object-category-head');
+    if(btn)btn.setAttribute('aria-expanded',String(!isCollapsed));
+    const chevron=section.querySelector('.category-chevron');
+    if(chevron)chevron.textContent=isCollapsed?'▸':'▾';
+    const items=section.querySelector('.object-category-items');
+    if(items)items.hidden=isCollapsed;
+  }
+}
+
 function groupThumbnail(group){
   const active=state.patches.get(group.active);
   if(active){
@@ -1073,7 +1164,17 @@ const objectLabel=g=>String(g.name||g.objectName||'').trim();
 const unnamedObject=g=>!objectLabel(g)||/^(?:unnamed(?: object)?|object\s*#?\d+|region\s*#?\d+|new object|untitled)(?:\s*\d+)?$/i.test(objectLabel(g));
 const sortObjectNames=(a,b)=>objectLabel(a).localeCompare(objectLabel(b),undefined,{numeric:true,sensitivity:'base'})||String(a.id).localeCompare(String(b.id));
 function renderGroups(){
-  compactAllOptionMasks();
+  // Keep storage work out of selection-only redraws: only rasterize/compact
+  // when the underlying mask references or generation status have changed.
+  const storageKey=JSON.stringify([state.drawing,state.maskMoveDrag!==null,state.maskVertexDrag!==null,
+    ...[...state.patches].map(([id,p])=>[id,sidebarIdentity(p.mask),Boolean(p.generating),
+      Boolean(p.awaitingResult),p.maskOffset?.x,p.maskOffset?.y])]);
+  if(renderGroups.lastStorageKey!==storageKey){
+    compactAllOptionMasks();
+    renderGroups.lastStorageKey=JSON.stringify([state.drawing,state.maskMoveDrag!==null,state.maskVertexDrag!==null,
+      ...[...state.patches].map(([id,p])=>[id,sidebarIdentity(p.mask),Boolean(p.generating),
+        Boolean(p.awaitingResult),p.maskOffset?.x,p.maskOffset?.y])]);
+  }
   const list=$('groupList');
   // Async AI status/semantic naming refreshes the Groups panel while people
   // type an inline prompt. Preserve the actual form node, its attached files,
@@ -1083,8 +1184,11 @@ function renderGroups(){
   const liveFocus=liveForm?.contains(document.activeElement)?document.activeElement:null;
   const caret=liveFocus&&typeof liveFocus.selectionStart==='number'
     ?[liveFocus.selectionStart,liveFocus.selectionEnd]:null;
-  if(liveForm)liveForm.remove();
-  window.MosaicObjectManager?.groupSimilarNames();
+  const semanticKey=sidebarSemanticSignature();
+  if(sidebarSemanticKey!==semanticKey){
+    window.MosaicObjectManager?.groupSimilarNames();
+    sidebarSemanticKey=sidebarSemanticSignature();
+  }
   const visibleGroups=state.groups.filter(group=>!group.objectMapBatch&&!group.mergedInto&&!group.objectRemoved);
   const collections=state.objectCollections||[];
   const categories=new Map(collections.slice().sort((a,b)=>String(a.name||'').localeCompare(String(b.name||''),undefined,{numeric:true,sensitivity:'base'})).map(group=>[group.id,[]]));
@@ -1097,8 +1201,9 @@ function renderGroups(){
   $('pendingBanner').classList.toggle('hidden',!state.pendingSourceId);
   if(state.pendingSourceId){const source=state.sources.get(state.pendingSourceId);$('pendingName').textContent='● Editing: '+(source?.name||'New variation')}
   if(!visibleGroups.length&&!collections.length){
-    list.innerHTML='<div class="empty-groups"><span>◌</span><strong>No objects yet</strong><p>Continue with Base to prepare objects, or draw a mask. Use + to create a Group.</p></div>';
-    return;
+    if(!list.querySelector('.empty-groups'))
+      list.innerHTML='<div class="empty-groups"><span>◌</span><strong>No objects yet</strong><p>Continue with Base to prepare objects, or draw a mask. Use + to create a Group.</p></div>';
+    sidebarSnapshot=null;sidebarQuickKey='';return;
   }
   const renderGroup=g=>{
     const readyIds=g.patchIds.filter(id=>state.patches.get(id)&&!state.patches.get(id).hideUntilReady);
