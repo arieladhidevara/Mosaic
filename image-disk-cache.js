@@ -29,6 +29,10 @@
   // Canvas restored from a PNG is unchanged until callers replace the canvas.
   // Reuse its existing file instead of writing a duplicate every time it goes idle.
   const hydratedCanvas = new WeakMap();
+  // Several Material Options may share one immutable canvas. Backing up the
+  // same object multiple times would waste IndexedDB as well as RAM.
+  const savedCanvasKeys=new WeakMap();
+  const hydratedKeys=new Map(); // Disk key -> weak canvas reference, no RAM pin.
 
   const hasCanvas = value => !!value && typeof value.toBlob === 'function' &&
     Number.isFinite(value.width) && Number.isFinite(value.height);
@@ -129,6 +133,15 @@
     if(!hasCanvas(canvas) || check() || !cacheAvailable || blocked) return false;
     const epoch=projectEpoch, account=owner();
     const prior=hydratedCanvas.get(target)?.[field];
+    const sharedKey=prior?.canvas===canvas?prior.key:savedCanvasKeys.get(canvas);
+    if(sharedKey){
+      if(check()||blocked)return false;
+      target[marker(field)]=sharedKey;
+      target[field]=null;
+      delete hydratedCanvas.get(target)?.[field];
+      onEvict();
+      return true;
+    }
     if(prior?.canvas===canvas && prior.key===target[marker(field)]){
       if(check()||blocked)return false;
       target[field]=null;
@@ -145,6 +158,7 @@
       bytes+=blob.size;
       // Do not change the live graph until the lossless file has been persisted.
       if(check() || target[field]!==canvas || epoch!==projectEpoch || account!==owner() || blocked) return false;
+      savedCanvasKeys.set(canvas,id);
       target[marker(field)]=id;
       target[field]=null;
       delete hydratedCanvas.get(target)?.[field];
@@ -167,7 +181,11 @@
     const record=await read(key);
     if(!record?.blob || record.owner!==owner())
       throw Error('Image cache is unavailable. Restore a saved .moz project.');
-    const canvas=await decode(record.blob);
+    // Reuse the same decoded pixels for all Options with a shared disk key.
+    const reused=hydratedKeys.get(key)?.deref?.();
+    const canvas=reused||await decode(record.blob);
+    if(typeof WeakRef==='function')hydratedKeys.set(key,new WeakRef(canvas));
+    savedCanvasKeys.set(canvas,key);
     // A newer image may have arrived while the disk version was decoding.
     if(!hasCanvas(target[field])){
       target[field]=canvas;
