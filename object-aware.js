@@ -305,7 +305,7 @@ async function repairScene(version){
     let missing=combine(support,valid,'subtract'),occlusion=new Uint8Array(w*h);
     for(const item of foreground(group))occlusion=combine(occlusion,data(item.mask));
     missing=combine(missing,occlusion,'subtract');
-    if(count(missing))requests.push({record:patch,missing,exclude:Uint8Array.from(valid,v=>v?0:1),image:state.sources.get(patch.sourceId)?.canvas,group});
+    if(count(missing))requests.push({record:patch,missing,exclude:Uint8Array.from(valid,v=>v?0:1),image:core.expandOptionSource(state.sources.get(patch.sourceId)),group});
   }
   for(const request of requests){
     if(version!==repairRevision||scene!==token()||project!==state.selectionGeneration)return;
