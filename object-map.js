@@ -3,7 +3,7 @@ import './object-management.js';
 import {PALETTE,decodeColors,idsOverlappingShape,labelAt,CATEGORIES,objectMapSize} from './object-map-utils.mjs';
 import {CLEANUP_VERSION} from './object-map-cleanup.mjs';
 import {cropObjectLabel} from './object-mask-crop.mjs';
-import {buildObjectHitGrid} from './object-hit-index.mjs';
+import {buildObjectHitGrid,cropContainsPoint} from './object-hit-index.mjs';
 import {prepareInstanceMap,readInstanceLabels} from './object-map-geometry.mjs';
 const core=window.MosaicCore,{state,canvas,makeCanvas}=core;
 let labels=null,mapWidth=0,mapHeight=0,serial=0,busy=false,pendingBase=null,attemptedBase=null,picking=false,pickingIds=[],pickingMode='new',pendingClick=null,active=false,hoverId=0,hoverMask=null,heldImage=null,operation=null;
@@ -30,7 +30,7 @@ function hitObjectAt(point){
   // Only groups in this small spatial cell are considered; never scan every
   // full-resolution object mask on each pointer move.
   for(const item of index.grid.candidates(point))
-    if(core.groupContainsPoint(item.group,point))return item.group;
+    if(cropContainsPoint(core.groupMaskCrop(item.group),point))return item.group;
   const id=labels?labelAt(labels,mapWidth,mapHeight,point.x,point.y,canvas.width,canvas.height):0;
   const mapped=index.byId.get(id);
   // A moved object must not remain selectable at its obsolete Base pixels.
