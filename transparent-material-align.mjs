@@ -168,18 +168,67 @@ function sampleOpaque(rgba,width,height,x,y){
   }
   let sum=0,r=0,g=0,b=0;
   for(const item of candidates){sum+=item.weight;r+=rgba[item.j]*item.weight;g+=rgba[item.j+1]*item.weight;b+=rgba[item.j+2]*item.weight}
-  if(sum>=.82)return [r/sum,g/sum,b/sum];
+  // The PNG edge often contains valid antialiased/partially transparent RGB.
+  // Renormalize its premultiplied contribution instead of demanding 82% alpha
+  // and turning a usable material edge into an empty hole.
+  if(sum>=.22)return [r/sum,g/sum,b/sum];
   // Only recover a narrow antialiased gap. Never extrapolate across a door.
   let winner=null,distance=Infinity;
   for(let dy=-5;dy<=5;dy++)for(let dx=-5;dx<=5;dx++){
     const xx=Math.round(x)+dx,yy=Math.round(y)+dy;
     if(xx<0||yy<0||xx>=width||yy>=height)continue;
     const j=index(xx,yy,width)*4;
-    if(rgba[j+3]<238)continue;
+    if(rgba[j+3]<112)continue;
     const d=dx*dx+dy*dy;
     if(d<distance){distance=d;winner=j}
   }
   return winner===null?null:[rgba[winner],rgba[winner+1],rgba[winner+2]];
+}
+
+/** Fill only narrow missing strips *within* the immutable approved mask.
+ * Multi-source shortest-path propagation never enters an excluded door/hole,
+ * and its distance cap prevents a missing wall/object from being fabricated.
+ * This is a local RGB repair, not an alpha mask expansion.
+ */
+export function repairLockedMaskGaps({rgba,targetRGBA,width,height,maxDistance=0}){
+  const totalPixels=width*height;
+  if(rgba.length!==totalPixels*4||targetRGBA.length!==rgba.length)
+    throw new TypeError('Locked-mask repair dimensions differ');
+  const limit=Math.max(1,Math.min(48,Math.round(maxDistance||Math.min(36,Math.max(8,Math.min(width,height)*.018)))));
+  const steps=new Uint8Array(totalPixels),queue=new Uint32Array(totalPixels);
+  let head=0,tail=0,targetCount=0,initialFilled=0;
+  for(let i=0;i<totalPixels;i++){
+    const j=i*4;
+    if(targetRGBA[j+3]<8)continue;
+    targetCount++;
+    if(rgba[j+3]>=8){steps[i]=1;queue[tail++]=i;initialFilled++}
+  }
+  // Do not turn mostly empty or incorrect cutouts into copied color patches.
+  const initialCoverage=initialFilled/Math.max(1,targetCount);
+  if(initialCoverage<.80)return {rgba:null,coverage:initialCoverage,initialCoverage,repairedPixels:0};
+  let repairedPixels=0;
+  while(head<tail){
+    const i=queue[head++],distance=steps[i]-1;
+    if(distance>=limit)continue;
+    const x=i%width,y=Math.floor(i/width),sourceIndex=i*4;
+    const copyTo=n=>{
+      if(steps[n]||targetRGBA[n*4+3]<8)return;
+      steps[n]=steps[i]+1;
+      const k=n*4;
+      rgba[k]=rgba[sourceIndex];rgba[k+1]=rgba[sourceIndex+1];
+      rgba[k+2]=rgba[sourceIndex+2];rgba[k+3]=targetRGBA[k+3];
+      queue[tail++]=n;repairedPixels++;
+    };
+    if(x>0)copyTo(i-1);
+    if(x+1<width)copyTo(i+1);
+    if(y>0)copyTo(i-width);
+    if(y+1<height)copyTo(i+width);
+  }
+  const coverage=(initialFilled+repairedPixels)/Math.max(1,targetCount);
+  // Filling more than 16% is no longer a small geometric correction.
+  if(coverage<.995||repairedPixels/Math.max(1,targetCount)>.16)
+    return {rgba:null,coverage,initialCoverage,repairedPixels};
+  return {rgba,coverage,initialCoverage,repairedPixels};
 }
 
 export function warpTransparentPixels({sourceRGBA,targetRGBA,width,height,fit}){
@@ -200,9 +249,12 @@ export function warpTransparentPixels({sourceRGBA,targetRGBA,width,height,fit}){
     filled++;output[j]=rgb[0];output[j+1]=rgb[1];output[j+2]=rgb[2];
     output[j+3]=targetRGBA[j+3];
   }
-  const coverage=filled/Math.max(1,total);
-  if(coverage<.98)return {rgba:null,coverage};
-  return {rgba:output,coverage};
+  const initialCoverage=filled/Math.max(1,total);
+  if(initialCoverage>=.9999)return {rgba:output,coverage:initialCoverage,initialCoverage,repairedPixels:0};
+  // A transparent image can miss a thin anti-aliased rim around an otherwise
+  // accurately matched floor, wall or opening. Repair those local strips rather
+  // than rejecting an already-paid AI generation at 97% coverage.
+  return repairLockedMaskGaps({rgba:output,targetRGBA,width,height});
 }
 
 /** Browser adapter; source is the transparent layer placed at full-canvas coordinates. */
@@ -226,7 +278,8 @@ export function alignTransparentLayerToLockedMask({generated,lockedMask,makeCanv
   if(!warped.rgba)return {image:null,aligned:false,status:'insufficient-alpha-coverage',coverage:warped.coverage};
   const output=makeCanvas(width,height),x=output.getContext('2d'),pixels=x.createImageData(width,height);
   pixels.data.set(warped.rgba);x.putImageData(pixels,0,0);
-  return {image:output,aligned:true,status:'alpha-boundary-aligned',
-    coverage:warped.coverage,matchedPoints:fit.matchedPoints,globalMethod:fit.globalMethod,
-    openingAgreement:fit.openingAgreement};
+  return {image:output,aligned:true,status:warped.repairedPixels?'alpha-boundary-repaired':'alpha-boundary-aligned',
+    coverage:warped.coverage,initialCoverage:warped.initialCoverage,
+    repairedPixels:warped.repairedPixels,matchedPoints:fit.matchedPoints,
+    globalMethod:fit.globalMethod,openingAgreement:fit.openingAgreement};
 }
