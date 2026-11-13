@@ -118,6 +118,12 @@ function hydrate(){
   entryById=new Map(map.entries.map(entry=>[entry.id,entry]));sourceCropCache.clear();invalidateHitIndex();
   migrateLegacyGroups(map);
   window.MosaicObjectManager.ensureObjects(map,maskForIds,maskCropForEntry);core.renderGroups();
+  if(!map.entries.length){
+    update('No separate objects found · click Retry objects',true);
+    for(const waiter of preparedWaiters)
+      waiter.onStatus('No separate objects detected. Click Retry objects to finish splitting.');
+    return true;
+  }
   const needsReview=Array.isArray(map.qualityWarnings)&&map.qualityWarnings.length>0;
   update(needsReview?'Objects ready · review map quality':map.labelsAvailable?'Objects ready':'Objects ready · categories unavailable',false,needsReview);
   notifyPrepared();return true;
@@ -141,6 +147,8 @@ async function prepareBase(force=false){
     if(!window.MosaicAuth.isReady()&&!await window.MosaicAuth.restore()){update('Connect AI to prepare objects');return}
     if(ticket!==serial||state.master!==base||busy)return;
     attemptedBase=base;busy=true;update('Preparing objects…');
+    for(const waiter of preparedWaiters)
+      waiter.onStatus('Preparing original Base objects…');
     window.MosaicMaskProgress?.show('objects','Preparing objects','Preparing the working image object map…');
     const target=objectMapSize(base.width,base.height),w=target.width,h=target.height;
     const sample=makeCanvas(w,h);sample.getContext('2d').drawImage(base,0,0,w,h);
@@ -442,7 +450,7 @@ function selectObject(object,{append=false}={}){
   const part=compactObjectPart(object),mode=append&&state.objectSelectionParts?.length?'add':'new';operation={parts:snapshotSelection(),picked:[part]};picking=true;pickingMode=mode;state.selectionTargetPatchId=null;state.draftGroupId=null;state.selectedPatchId=null;state.maskEditOnly=false;core.setMode(mode);const selection=makeCanvas(canvas.width,canvas.height);drawPartMask(selection.getContext('2d'),part);core.applyWandMask(selection);picking=false}
 function invalidateBase(){rejectPrepared(Error('Original Object Map invalidated.'));serial++;busy=false;pendingBase=state.master;attemptedBase=pendingBase;labels=null;state.objectMap=null;state.objectMapSelection=null;if(state.master)delete state.objectMaps?.[sourceKey(state.master)];leave();window.MosaicMaskProgress?.hide('objects');update('Image changed · prepare objects again',true)}
 function imageChanged(){if(state.objectMapLocked)return;if(state.master&&state.master!==heldImage&&state.master!==pendingBase)baseLoaded(state.master)}
-window.MosaicObjectMap={imageReady:baseLoaded,baseLoaded,prepareBase,whenReady,refineMask,selectShape,selectionCompleted,cancelSelection,partsForSelection,adoptSelection,adoptIdentity,snapshotSelection,selectObject,hitTest:hitObjectAt,invalidateHitIndex,cropAt,tintCrop,hasSelection:()=>Boolean(state.objectSelectionParts?.length),hydrate,invalidateBase,drawSelection,holdImage:image=>{heldImage=image}};
+window.MosaicObjectMap={imageReady:baseLoaded,baseLoaded,prepareBase,whenReady,hasPreparedObjects,refineMask,selectShape,selectionCompleted,cancelSelection,partsForSelection,adoptSelection,adoptIdentity,snapshotSelection,selectObject,hitTest:hitObjectAt,invalidateHitIndex,cropAt,tintCrop,hasSelection:()=>Boolean(state.objectSelectionParts?.length),hydrate,invalidateBase,drawSelection,holdImage:image=>{heldImage=image}};
 // Preserve the canvas tool integration while removing model downloads and all
 // SAM calls. Wand hover/click are now lookups into the saved Base index map.
 window.MosaicSlimWand={onToolChange,hoverAt,selectAt,leave,reset:()=>{active=false;pendingClick=null;leave()},preload(){},imageChanged,imageKey:()=>state.objectMap?.sourceKey};
