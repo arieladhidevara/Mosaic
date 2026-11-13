@@ -18,6 +18,8 @@ on:
       - 'tests/scene-*'
       - 'geometry-edit.js'
       - 'geometry-mask.mjs'
+      - 'transparent-material-align.mjs'
+      - 'tests/transparent-material-align.test.mjs'
       - 'geometry-edit.css'
       - 'lib/image-provider.js'
       - 'premium.js'
