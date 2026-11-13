@@ -39,7 +39,7 @@ function bounds(mask){
 }
 function harness(){
   const state={patches:new Map(),groups:[]};
-  const sandbox=vm.createContext({state,canvas:{width:16,height:12},makeCanvas:canvas,
+  const sandbox=vm.createContext({state,uid:prefix=>prefix+'_test',canvas:{width:16,height:12},makeCanvas:canvas,
     exactMaskBoundingBox:bounds,invalidateDisplayedMask:p=>{p.invalidated=true}});
   vm.runInContext(section(app,'function cloneMask','function groupMask'),sandbox);
   return {sandbox,state};
