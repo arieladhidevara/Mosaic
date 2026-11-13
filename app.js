@@ -215,7 +215,7 @@ function selectionContainsPoint(point){
 function cloneMask(mask){const c=makeCanvas(canvas.width,canvas.height);c.getContext('2d').drawImage(mask,0,0);return c}
 // Canonical per-Option geometry lives in a local alpha crop + world offset.
 // Rasterize the entire Master only at a legacy edit or AI boundary.
-const compactMaskCache=new WeakMap();
+const compactMaskCache=new WeakMap(),fullFrameMaskCache=new WeakSet();
 function fullPatchMask(patch){
   if(!patch?.mask)return null;
   if(!patch.maskOffset)return patch.mask;
@@ -237,10 +237,11 @@ function compactPatchMask(patch){
     state.drawing&&state.brushTargetId===patch.id||state.editingPatchId===patch.id)return patch?.mask;
   // Do not crop genuinely full-image geometry.
   const original=patch.mask;
+  if(fullFrameMaskCache.has(original))return original;
   let cached=compactMaskCache.get(original);
   if(!cached){
     const box=exactMaskBoundingBox(original);
-    if(!box||box.x===0&&box.y===0&&box.w===canvas.width&&box.h===canvas.height)return original;
+    if(!box||box.x===0&&box.y===0&&box.w===canvas.width&&box.h===canvas.height){fullFrameMaskCache.add(original);return original;}
     const cropped=makeCanvas(box.w,box.h);
     cropped.getContext('2d').drawImage(original,-box.x,-box.y);
     cached={mask:cropped,offset:{x:box.x,y:box.y},geometryId:uid('mask_geometry')};
@@ -254,9 +255,14 @@ function compactPatchMask(patch){
 }
 function compactAllOptionMasks(){
   if(state.drawing||state.maskVertexDrag||state.maskMoveDrag)return;
-  for(const patch of state.patches.values())if(!patch.maskOffset)compactPatchMask(patch);
-  // Material-only Options sharing exact shape also share the cropped raster.
-  shareSavedOptionMasks();
+  let converted=false;
+  for(const patch of state.patches.values())if(!patch.maskOffset){
+    const old=patch.mask;
+    compactPatchMask(patch);
+    if(patch.mask!==old)converted=true;
+  }
+  // Do not recompare all Option alpha pixels on every sidebar redraw.
+  if(converted)shareSavedOptionMasks();
 }
 // A material-only Option reuses the same immutable mask object as an existing
 // Option with identical alpha geometry. Shape/Create variants keep their own
@@ -644,7 +650,7 @@ const patchTextures = new WeakMap();
 const visibleMaskCache = new WeakMap();
 const maskHandleCache = new WeakMap();
 function invalidateDisplayedMask(patch,{geometryChanged=true}={}){
-  if(geometryChanged)window.MosaicObjects?.invalidated(patch);
+  if(geometryChanged){if(patch?.mask)fullFrameMaskCache.delete(patch.mask);window.MosaicObjects?.invalidated(patch)}
   visibleMaskCache.delete(patch);
   patchTextures.delete(patch);
   maskHandleCache.delete(patch);
