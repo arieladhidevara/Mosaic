@@ -65,7 +65,7 @@ test('refreshing edited group footprints releases full masks without overwriting
   };
   const context=vm.createContext({
     makeCanvas,canvas:{width:100,height:80},state,
-    groupThumbCache:new WeakMap(),displayedPatchMask:p=>p.mask,
+    groupThumbCache:new WeakMap(),groupCropCache:new WeakMap(),displayedPatchMask:p=>p.mask,
     groupMask:g=>state.patches.get(g.active).mask,
     exactMaskBoundingBox:bbox,maskBoundingBox:bbox,
     window:{MosaicObjects:{scheduleRepair(){}}}
