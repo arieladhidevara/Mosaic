@@ -460,7 +460,7 @@ function selectGroupMask(group,{showOutline=false,append=false}={}){
   state.selectionGeometry={groupId:group.id,crop,
     bounds:{x:crop.x,y:crop.y,w:crop.mask.width,h:crop.mask.height}};
   const active=state.patches.get(group.active);
-  setSelectionPaths(active?patchSelectionPaths(active):group.maskPaths?.length?group.maskPaths:[]);
+  setSelectionPaths(active?patchSelectionPaths(active):group.maskPaths?.length?group.maskPaths:maskPathsFromCrop(crop));
   state.selectionTargetPatchId=state.pendingSourceId?null:active?.id||null;
   state.draftGroupId=group.id;state.selectedPatchId=active?.id||null;state.selectionOverlayHidden=!showOutline;
   window.MosaicObjectMap?.adoptIdentity?.(group);
@@ -1147,6 +1147,14 @@ function maskPathsFromRaster(mask,points=[]){
     const before=path[(index+path.length-1)%path.length],after=path[(index+1)%path.length];
     return Math.abs((point.x-before.x)*(after.y-point.y)-(point.y-before.y)*(after.x-point.x))>1e-8;
   })).filter(path=>path.length>=3);
+}
+function maskPathsFromCrop(crop){
+  if(!crop?.mask)return [];
+  const {mask,x,y}=crop;
+  const pixels=mask.getContext('2d',{willReadFrequently:true})
+    .getImageData(0,0,mask.width,mask.height).data;
+  return MaskGeometry.traceMask(pixels,mask.width,mask.height,1,1,0)
+    .map(path=>path.map(point=>({x:point.x+x,y:point.y+y})));
 }
 function setSelectionPaths(paths){
   state.selectionPaths=MaskGeometry.copyPaths(paths);state.selectionPoints=state.selectionPaths.flat();
