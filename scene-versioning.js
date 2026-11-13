@@ -56,6 +56,25 @@ async function apply(image,{type='ai-edit',prompt='',onStatus=()=>{},preserveEdi
   if(!state.master)throw Error('Open a Base first.');
   if(image.width!==canvas.width||image.height!==canvas.height)throw Error('Full image must match the current canvas dimensions.');
   const generation=state.selectionGeneration,previous=state.master;
+  // The original Base map is the only source of Object IDs and geometry.
+  // Full-image generations should never request a second object map or SAM.
+  // If the initial map is still preparing, hold this generated image in memory
+  // until its original objects are available, instead of creating Entire image.
+  if(window.MosaicObjectMap?.whenReady){
+    const status='Waiting for the original Object Map before splitting…';
+    const progress=window.MosaicMaskProgress;
+    onStatus(status);
+    progress?.show('scene-split','Splitting generated image',status);
+    try{
+      await window.MosaicObjectMap.whenReady(detail=>{
+        onStatus(detail);
+        progress?.show('scene-split','Splitting generated image',detail);
+      });
+    }finally{progress?.hide('scene-split');}
+  }
+  if(generation!==state.selectionGeneration||previous!==state.master)
+    throw Error('The working project changed while the original Object Map was preparing.');
+  onStatus('Splitting the result with the original object masks…');
   const before=core.composeApprovedCanvas();
   let groups=state.groups.filter(isVisible);
   if(!groups.length&&state.objectMap?.raster){
