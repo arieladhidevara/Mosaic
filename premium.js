@@ -3,6 +3,7 @@ import './generation-pool.js';
 import './object-aware.js';
 import {assertGeneratedImage,assertGeneratedRegion} from './generated-image.mjs';
 import {alignGeneratedToLockedMask} from './geometry-mask.mjs';
+import {alignTransparentCornersBestEffort} from './transparent-corner-warp.mjs';
 const core = window.MosaicCore;
 if (!core) throw new Error('Mosaic core must load before Premium');
 const {state, canvas, makeCanvas, uid, render, renderGroups, resetSelection, assignGroup, maskBoundingBox, toast, message} = core;
@@ -478,6 +479,9 @@ function encodeRegionalCrop(patch){
     const payload={
       collage:cropFrame(collage,region,w,h),
       mask:cropFrame(editMask,region,w,h,true),
+      // The generated alpha is provisional geometry for matching corners only.
+      // Shape/Create/Remove use their own geometry-changing workflow.
+      transparentLayer:!patch.objectMapParts?.length&&!['shape','remove','create'].includes(patch.editIntent),
       quality:premium.settings.regionQuality,
       projectPrompt:premium.projectPrompt,
       prompt:patch.prompt,
@@ -599,27 +603,48 @@ async function generateRegion(patchId,regenerate=false){
         if(existing)existing.generating=false;renderGroups();
         progress.done('Finished, but the project changed; current work was kept.');return;
       }
-      const rawPlaced=makeCanvas(canvasSize.width,canvasSize.height);
-      rawPlaced.getContext('2d').drawImage(image,region.x,region.y,region.w,region.h);
+      const generatedLayer=makeCanvas(canvasSize.width,canvasSize.height);
+      generatedLayer.getContext('2d').drawImage(image,region.x,region.y,region.w,region.h);
+      // Transparent edits use only the AI PNG alpha for TEMPORARY corner
+      // correspondences. The accepted Object ID and mask never change.
+      const transparentResult=Boolean(payload.transparentLayer&&answer.mimeType==='image/png');
       const resultMasks=existing.objectMapParts?.map(part=>part.mask)||[visibleMask];
-      for(const mask of resultMasks)validateRegionalResult(rawPlaced,capture.collage,mask,payload.prompt,'provider-region',answer.generationId);
-      progress.update(92,'Checking key edges for gentle perspective alignment…');
-      const placed=makeCanvas(canvasSize.width,canvasSize.height),placedContext=placed.getContext('2d');
-      placedContext.drawImage(capture.collage,0,0);
-      placedContext.drawImage(image,region.x,region.y,region.w,region.h);
-      // Only a small, single perspective correction from matching long image
-      // lines is allowed. No silhouette fitting or per-row contour stretch.
-      let aligned={image:placed,status:'locked-mask',aligned:false};
-      // Compound selections are aligned separately within their original IDs.
-      if(!existing.objectMapParts?.length){
+      // Keep the legacy validation for geometry-changing / compound paths.
+      // Never reject a valid Material Edit because its AI alpha/edges drift.
+      if(!transparentResult)
+        for(const mask of resultMasks)validateRegionalResult(generatedLayer,capture.collage,mask,payload.prompt,'provider-region',answer.generationId);
+      progress.update(92,transparentResult?'Fitting architectural corners to original geometry…':'Checking key edges for gentle perspective alignment…');
+      let placed=cloneCanvas(capture.collage),aligned={image:placed,status:'locked-mask',aligned:false,method:'direct-clip'};
+      if(transparentResult){
         try{
-          aligned=alignGeneratedToLockedMask({
-            before:capture.collage,generated:placed,lockedMask:visibleMask,makeCanvas
+          aligned=alignTransparentCornersBestEffort({
+            before:capture.collage,generated:generatedLayer,
+            lockedMask:visibleMask,makeCanvas
           });
-        }catch(error){console.warn('[mozAI:mask-registration]',error);}
+          placed=aligned.image||placed;
+        }catch(error){
+          // Best-effort direct clipping is a success path, NOT a rejection.
+          console.warn('[mozAI:corner-alignment-fallback]',error);
+          const layer=cloneCanvas(generatedLayer),ctx=layer.getContext('2d');
+          ctx.globalCompositeOperation='destination-in';
+          ctx.drawImage(visibleMask,0,0);
+          placed.getContext('2d').drawImage(layer,0,0);
+          aligned={image:placed,status:'direct-clip',method:'direct-clip',aligned:false};
+        }
+      }else{
+        placed.getContext('2d').drawImage(image,region.x,region.y,region.w,region.h);
+        aligned={image:placed,status:'locked-mask',aligned:false,method:'direct-clip'};
+        if(!existing.objectMapParts?.length){
+          try{
+            aligned=alignGeneratedToLockedMask({
+              before:capture.collage,generated:placed,lockedMask:visibleMask,makeCanvas
+            });
+          }catch(error){console.warn('[mozAI:mask-registration]',error)}
+        }
       }
       if(state.patches.get(patchId)!==patch||state.selectionGeneration!==projectAtStart||existing.sourceId!==generationId){existing.generating=false;return}
-      if(!existing.objectMapParts?.length)validateRegionalResult(aligned.image,capture.collage,visibleMask,payload.prompt,'mask-alignment',answer.generationId);
+      if(!transparentResult&&!existing.objectMapParts?.length)
+        validateRegionalResult(aligned.image,capture.collage,visibleMask,payload.prompt,'mask-alignment',answer.generationId);
       const currentMaskUnchanged=maskAtStart===window.MosaicObjects?.maskKey(core.fullPatchMask(existing));
       // Preserve the complete unmasked RGB source for Reveal/Add.
       // Restore source coordinates before the existing option warp; this does
@@ -628,6 +653,8 @@ async function generateRegion(patchId,regenerate=false){
       existing.maskAlignmentStatus=aligned.status;
       existing.maskAlignmentSegmentation=aligned.segmentation||null;
       existing.maskAlignmentIoU=Number.isFinite(aligned.iou)?aligned.iou:null;
+      existing.maskAlignmentCoverage=Number.isFinite(aligned.coverage)?aligned.coverage:null;
+      existing.maskAlignmentCorners=Number.isFinite(aligned.matchedCorners)?aligned.matchedCorners:null;
       if(existing.objectMapParts?.length){
         // A combined Line/Rectangle/Oval selection is one temporary generation.
         // After the image arrives, split it across every touched original ID.
@@ -693,9 +720,11 @@ async function generateRegion(patchId,regenerate=false){
       // Async output updates the layer underneath whichever tool, mask or editor
       // the user is working with. Never steal focus or select another option.
       renderGroups();render();
-      const alignmentMessage=aligned.aligned
-        ?' Key edges aligned with a gentle perspective adjustment; original mask kept.'
-        :' Original mask kept; no perspective correction needed or confidently supported.';
+      const alignmentMessage=transparentResult
+        ?' '+(aligned.method==='corner-warp'?'Local corner warp aligned shifted geometry.':aligned.method==='perspective-warp'?'Perspective fallback used.':'Direct clip fallback used.')+' Original mask kept.'
+        :aligned.aligned
+          ?' Key edges aligned with a gentle perspective adjustment; original mask kept.'
+          :' Original mask kept; no perspective correction needed or confidently supported.';
       message((activateResult
         ?'Material edit applied to the existing Group and mask.'
         :'Material edit saved as an Option in the existing Group.')+alignmentMessage);
