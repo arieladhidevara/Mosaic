@@ -327,6 +327,13 @@ function tintCrop(target,crop,opacity){
   target.style.height=(mask.height/canvas.height*100)+'%';
   target.hidden=false;
 }
+function idAt(point,group){
+  if(group)return group.id;
+  if(!labels)return 0;
+  const id=labelAt(labels,mapWidth,mapHeight,point.x,point.y,canvas.width,canvas.height);
+  // A shifted/replaced object is no longer located at its original ID pixels.
+  return indexedObjects().byId.get(id)?.active?0:id;
+}
 function cropAt(point,group){
   if(group)return core.groupMaskCrop(group);
   const id=labels?labelAt(labels,mapWidth,mapHeight,point.x,point.y,canvas.width,canvas.height):0;
@@ -341,8 +348,7 @@ function hoverAt(point){
   if(!active||state.before||state.busy||window.MosaicPremium?.isPreviewing())return leave();
   const live=liveObjectAt(point);
   if(!live&&(!labels||state.objectMapLocked))return leave();
-  const rawId=labels?labelAt(labels,mapWidth,mapHeight,point.x,point.y,canvas.width,canvas.height):0;
-  const id=live?.id||rawId;if(!id)return leave();
+  const id=idAt(point,live);if(!id)return leave();
   const crop=cropAt(point,live);if(!crop)return leave();
   if(id===hoverId&&hoverMask===crop.mask&&!preview.hidden)return;
   hoverId=id;hoverMask=crop.mask;
@@ -360,7 +366,7 @@ function selectAt(point,options={}){
     else if(!options.append&&!options.subtract){core.resetSelection();core.render();}
     return;
   }
-  const id=live?.id||(labels?labelAt(labels,mapWidth,mapHeight,point.x,point.y,canvas.width,canvas.height):0);
+  const id=idAt(point,live);
   if(!id){if(!options.append&&!options.subtract){core.resetSelection();core.render()}return}
   core.ensureSelectionMask();
   const hasObjects=state.objectSelectionParts?.length;
