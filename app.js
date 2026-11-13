@@ -228,7 +228,7 @@ function expandPatchMask(patch){
   if(patch.maskOffset){
     const old=patch.mask;patch.mask=fullPatchMask(patch);patch.maskOffset=null;
     if(patch.request?.mask===old)patch.request.mask=patch.mask;
-    invalidateDisplayedMask(patch);
+    invalidateDisplayedMask(patch,{geometryChanged:false});
   }
   return patch.mask;
 }
@@ -249,7 +249,7 @@ function compactPatchMask(patch){
   patch.mask=cached.mask;patch.maskOffset={...cached.offset};
   patch.maskGeometryId=cached.geometryId;
   if(patch.request?.mask===original)patch.request.mask=patch.mask;
-  invalidateDisplayedMask(patch);
+  invalidateDisplayedMask(patch,{geometryChanged:false});
   return patch.mask;
 }
 function compactAllOptionMasks(){
@@ -284,7 +284,7 @@ function shareMaterialOptionMask(patch,group){
     patch.mask=candidate.mask;
     patch.maskGeometryId=candidate.maskGeometryId||patch.maskGeometryId;
     if(patch.request?.mask===original)patch.request.mask=patch.mask;
-    if(original!==patch.mask)invalidateDisplayedMask(patch);
+    if(original!==patch.mask)invalidateDisplayedMask(patch,{geometryChanged:false});
     return patch.mask;
   }
   return patch.mask;
@@ -303,7 +303,7 @@ function detachSharedOptionMask(patch){
     detached.getContext('2d').drawImage(original,0,0);
     patch.mask=detached;patch.maskGeometryId=uid('mask_geometry');
     if(patch.request?.mask===original)patch.request.mask=patch.mask;
-    invalidateDisplayedMask(patch);
+    invalidateDisplayedMask(patch,{geometryChanged:false});
   }
   return patch.mask;
 }
@@ -643,8 +643,8 @@ function optionNameFromPrompt(prompt,fallback='New option'){
 const patchTextures = new WeakMap();
 const visibleMaskCache = new WeakMap();
 const maskHandleCache = new WeakMap();
-function invalidateDisplayedMask(patch){
-  window.MosaicObjects?.invalidated(patch);
+function invalidateDisplayedMask(patch,{geometryChanged=true}={}){
+  if(geometryChanged)window.MosaicObjects?.invalidated(patch);
   visibleMaskCache.delete(patch);
   patchTextures.delete(patch);
   maskHandleCache.delete(patch);
