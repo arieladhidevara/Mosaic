@@ -185,11 +185,16 @@ function drawOverlay(){
   ink.hidden=state.before||result;
   if(result&&!peekKeys.size){
     s.fillStyle='rgba(0,0,0,.20)';s.fillRect(0,0,shade.width,shade.height);
-    if(state.selectionMask){s.globalCompositeOperation='destination-out';s.drawImage(state.selectionMask,0,0);s.globalCompositeOperation='source-over'}
+    if(state.selectionGeometry?.crop||state.selectionMask){
+      s.globalCompositeOperation='destination-out';
+      if(state.selectionGeometry?.crop){const {mask,x,y}=state.selectionGeometry.crop;s.drawImage(mask,x,y)}
+      else s.drawImage(state.selectionMask,0,0);
+      s.globalCompositeOperation='source-over';
+    }
   }
   if(!result){for(let index=0;index<state.markups.length;index++)if(textSession?.index!==index)drawMark(i,state.markups[index]);if(draft)drawMark(i,draft);drawMarkupSelection(i)}
   positionTextEditor();
-  $('resultDone').disabled=!result||!state.selectionMask||!core.maskBoundingBox(state.selectionMask);
+  $('resultDone').disabled=!result||!core.selectionBounds();
 }
 // Snapshot the image shown in the viewport. Editor handles, selection guides and
 // the result-selection tint are UI; user-created markup belongs to the image.
@@ -292,7 +297,7 @@ for(const b of document.querySelectorAll('[data-tool]'))b.addEventListener('clic
 
 function selectedPixels(){
   if(state.lasso.length>=3)core.updateMaskWithLasso();
-  const mask=state.selectionMask,bbox=mask&&core.exactMaskBoundingBox(mask);
+  const mask=core.ensureSelectionMask(),bbox=mask&&core.exactMaskBoundingBox(mask);
   if(!bbox){toast('Select an area before copying.');return null}
   const image=visibleImage({annotations:false});if(!image)return null;
   image.getContext('2d').globalCompositeOperation='destination-in';image.getContext('2d').drawImage(mask,0,0);
@@ -412,7 +417,7 @@ window.addEventListener('keydown',e=>{
     e.preventDefault();e.stopImmediatePropagation();addHistory({type:'markup',markups:state.markups});state.markups=state.markups.filter((_,index)=>index!==selectedMarkup);selectedMarkup=-1;drawOverlay();return;
   }
   if(e.key==='Enter'&&state.chatResult&&!state.lasso.length){e.preventDefault();e.stopImmediatePropagation();$('resultDone').click();return}
-  if(modifier&&key==='c'&&state.master&&!window.getSelection()?.toString()&&state.selectionMask&&core.maskBoundingBox(state.selectionMask)){
+  if(modifier&&key==='c'&&state.master&&!window.getSelection()?.toString()&&core.selectionBounds()){
     e.preventDefault();e.stopImmediatePropagation();copySelection();
   }
   if(modifier&&key==='v'&&clipboard){e.preventDefault();e.stopImmediatePropagation();pasteSelection()}

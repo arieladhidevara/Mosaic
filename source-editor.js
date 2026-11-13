@@ -195,7 +195,7 @@ function apply(){
       const transformedMask=makeCanvas(canvas.width,canvas.height);
       drawTransformed(transformedMask.getContext('2d'),current.optionMask||core.displayedPatchMask(patch),current.transform,1);
       const id=core.uid('source_edit');
-      patch.mask=transformedMask;
+      patch.mask=transformedMask;patch.maskOffset=null;
       patch.bbox=core.maskBoundingBox(transformedMask)||patch.bbox;
       const exact=core.exactMaskBoundingBox(transformedMask);
       const padding=exact?Math.max(48,Math.ceil(Math.max(exact.w,exact.h)*.15)):0;

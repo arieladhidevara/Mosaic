@@ -268,7 +268,8 @@ $('geometryApply').addEventListener('click',commit);
 async function generate(prompt,files=[],operation='shape'){
   if(processing){toast('A shape edit is already generating.');return;}
   if(review){toast('Apply or discard the current preview first.');return;}
-  if(!state.master||!state.selectionMask||!core.maskBoundingBox(state.selectionMask)){toast('Select one object first.');return;}
+  if(!state.master||!core.selectionBounds()){toast('Select one object first.');return;}
+  core.ensureSelectionMask();
   if(state.pendingSourceId||state.editingPatchId){toast('Finish the pending import or mask edit first.');return;}
   const before=core.composeApprovedCanvas(),oldMask=clone(state.selectionMask),generation=state.selectionGeneration,master=state.master;
   let group,label;

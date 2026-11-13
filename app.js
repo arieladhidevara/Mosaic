@@ -1,3 +1,4 @@
+import {planSidebarRender} from './sidebar-render-state.mjs';
 /* Mosaic — manual-first, local-only image compositor.
    Each uploaded variation is a temporary top layer until its mask is applied.
    Masks remain editable; only approved patches are combined with the master. */
@@ -8,7 +9,7 @@ const MaskGeometry=window.MozMaskGeometry;
 const state = {
   reference: null, master: null, rawBase: null, rawMaster: null, masterIsBase: false, alignmentTransforms: null, sources: new Map(), groups: [], patches: new Map(),
   pendingSourceId: null, queue: [], editingPatchId: null, selectedPatchId: null,
-  selectionMask: null, boundaryCanvas: null, selectionPoints: [], selectionPaths: [], selectionTargetPatchId: null, maskVertexDrag: null, maskMoveDrag: null, maskEditOnly: false, selectionMode: 'new', lasso: [], drawing: false,
+  selectionMask: null, selectionGeometry: null, boundaryCanvas: null, selectionPoints: [], selectionPaths: [], selectionTargetPatchId: null, maskVertexDrag: null, maskMoveDrag: null, maskEditOnly: false, selectionMode: 'new', lasso: [], drawing: false,
   pointerStart: null, dragFreehand: false, hoverPoint: null, shapeStart: null, shapeEnd: null,
   tool: 'select', lastPoint: null, lastCanvasPointer: null, pendingRevealOnly: false, brushTargetId: null, before: false, zoom: 1, fitZoom: 1, busy: false,
   undo: [], redo: [], serial: 1, panAnchor: null, transformDrag: null, draftGroupId: null, queuedGroupId: null, hoveredGroupId: null, selectionGeneration: 0, selectionOverlayHidden: false, forceNewSelectionGroup: false,
@@ -105,9 +106,9 @@ function showProcessing(on){state.busy=on;$('processing').classList.toggle('hidd
 function clearDraft(){window.MosaicObjectCreateCut?.cancelCut?.();state.lasso=[];state.hoverPoint=null;state.pointerStart=null;state.dragFreehand=false;state.shapeStart=null;state.shapeEnd=null;state.drawing=false}
 function clearHover(){window.MosaicRegions?.clearHover()}
 function hideQuickPrompt(){document.getElementById('quickAreaPromptForm')?.classList.add('hidden')}
-function showQuickPrompt(point=state.lastCanvasPointer,keepText=false){
+function showQuickPrompt(point=state.lastCanvasPointer,keepText=false,focusInput=true){
   if(window.MosaicWorkspace?.isSelectingResult())return;
-  if(!state.master||!state.selectionMask||!maskBoundingBox(state.selectionMask)||state.pendingSourceId||state.editingPatchId)return;
+  if(!state.master||!selectionBounds()||state.pendingSourceId||state.editingPatchId)return;
   const form=$('quickAreaPromptForm'),vp=$('viewport'),r=vp.getBoundingClientRect();
   refreshQuickOptions();
   // The prompt is position:fixed, so work in actual screen coordinates.
@@ -119,11 +120,11 @@ function showQuickPrompt(point=state.lastCanvasPointer,keepText=false){
   form.style.maxWidth=Math.max(120,right-left)+'px';
   form.style.maxHeight=Math.max(120,bottom-top)+'px';
   form.classList.remove('hidden');
-  showSelectionHighlightForPrompt();
+  if(focusInput)showSelectionHighlightForPrompt();
   const bounds=form.getBoundingClientRect(),w=bounds.width,h=bounds.height;
   // Keyboard completion and programmatic selection fall back to the actual
   // selection on canvas rather than an arbitrary corner of the viewport.
-  const selection=maskBoundingBox(state.selectionMask);
+  const selection=selectionBounds();
   const canvasRect=overlay.getBoundingClientRect();
   const selectedX=canvasRect.left+(selection.x+selection.w/2)/canvas.width*canvasRect.width;
   const selectedY=canvasRect.top+(selection.y+selection.h/2)/canvas.height*canvasRect.height;
@@ -138,7 +139,7 @@ function showQuickPrompt(point=state.lastCanvasPointer,keepText=false){
   form.style.left=Math.max(left,Math.min(quickPromptPosition?r.left+quickPromptPosition.x:wantedX,Math.max(left,right-w)))+'px';
   form.style.top=Math.max(top,Math.min(quickPromptPosition?r.top+quickPromptPosition.y:wantedY,Math.max(top,bottom-h)))+'px';
   if(!keepText){window.MosaicPremium?.clearReferenceFiles?.('quick');$('quickAreaPromptInput').value=''}
-  if(!window.matchMedia('(max-width:850px)').matches)$('quickAreaPromptInput').focus({preventScroll:true});
+  if(focusInput&&!window.matchMedia('(max-width:850px)').matches)$('quickAreaPromptInput').focus({preventScroll:true});
 }
 function setSourcePreview(id,source){const img=$(id);if(!img||!source)return;img.src=source.toDataURL('image/jpeg',.75);img.classList.remove('hidden')}
 function updateSourceActions(){
@@ -160,10 +161,10 @@ function updateSourceActions(){
   if(state.master){$('welcome').classList.add('hidden');$('canvasWrap').classList.remove('hidden')}
   window.MosaicSources?.refresh?.();
 }
-function resetSelection(){window.MosaicObjects?.cancelSelection?.();$('selectionOutlineVectors')?.replaceChildren();state.selectionPaths=[];state.maskMoveDrag=null;state.maskEditOnly=false;activeMaskVertex=null;hoverMaskEdge=null;maskEditVersion++;state.selectionPoints=[];state.selectionTargetPatchId=null;state.maskVertexDrag=null;state.selectionMask=state.master?makeCanvas(canvas.width,canvas.height):null;state.boundaryCanvas=null;state.draftGroupId=null;state.selectionOverlayHidden=false;state.forceNewSelectionGroup=false;state.pendingRevealOnly=false;hideQuickPrompt();clearDraft();updateApplyButton();clearHover()}
+function resetSelection(deferMask=false){window.MosaicObjects?.cancelSelection?.();$('selectionOutlineVectors')?.replaceChildren();state.selectionPaths=[];state.maskMoveDrag=null;state.maskEditOnly=false;activeMaskVertex=null;hoverMaskEdge=null;maskEditVersion++;state.selectionPoints=[];state.selectionTargetPatchId=null;state.maskVertexDrag=null;state.selectionGeometry=null;state.selectionMask=state.master&&!deferMask?makeCanvas(canvas.width,canvas.height):null;state.boundaryCanvas=null;state.draftGroupId=null;state.selectionOverlayHidden=false;state.forceNewSelectionGroup=false;state.pendingRevealOnly=false;hideQuickPrompt();clearDraft();updateApplyButton();clearHover()}
 function updateApplyButton(){
   const pending=Boolean(state.pendingSourceId),editing=Boolean(state.editingPatchId),btn=$('commitBtn');
-  btn.disabled=!(pending||editing)||!Boolean(state.selectionMask&&maskBoundingBox(state.selectionMask));
+  btn.disabled=!(pending||editing)||!Boolean(selectionBounds());
   btn.classList.toggle('hidden',!(pending||editing));
   btn.textContent=editing?'✓ Update mask':'✓ Apply';
 }
@@ -187,7 +188,83 @@ function categoryFromText(value){
     ['Structure',/\b(column|beam|truss|structural)\b/],['Landscape',/\b(tree|plant|landscape)\b/],['Stairs',/\b(stairs|staircase|tread|steps)\b/]];
   return lookups.find(([,regex])=>regex.test(valueLower))?.[0]||null;
 }
+// Select by an Object ID and world-positioned crop. Full-frame rasterization
+// is delayed until an operation actually edits or submits pixels.
+function selectionBounds(){
+  return state.selectionGeometry?.bounds||(state.selectionMask?maskBoundingBox(state.selectionMask):null);
+}
+function ensureSelectionMask(){
+  if(!state.selectionMask&&state.selectionGeometry?.crop?.mask){
+    const {mask,x,y}=state.selectionGeometry.crop;
+    state.selectionMask=makeCanvas(canvas.width,canvas.height);
+    state.selectionMask.getContext('2d').drawImage(mask,x,y);
+    state.selectionGeometry=null;
+  }
+  return state.selectionMask;
+}
+function selectionContainsPoint(point){
+  const crop=state.selectionGeometry?.crop;
+  if(crop){
+    const x=Math.floor(point.x)-crop.x,y=Math.floor(point.y)-crop.y;
+    return x>=0&&y>=0&&x<crop.mask.width&&y<crop.mask.height&&
+      crop.mask.getContext('2d',{willReadFrequently:true}).getImageData(x,y,1,1).data[3]>0;
+  }
+  const mask=state.selectionMask;
+  return !!mask&&point.x>=0&&point.y>=0&&point.x<mask.width&&point.y<mask.height&&
+    mask.getContext('2d',{willReadFrequently:true}).getImageData(Math.floor(point.x),Math.floor(point.y),1,1).data[3]>0;
+}
 function cloneMask(mask){const c=makeCanvas(canvas.width,canvas.height);c.getContext('2d').drawImage(mask,0,0);return c}
+// Canonical per-Option geometry lives in a local alpha crop + world offset.
+// Rasterize the entire Master only at a legacy edit or AI boundary.
+const compactMaskCache=new WeakMap(),fullFrameMaskCache=new WeakSet();
+function fullPatchMask(patch){
+  if(!patch?.mask)return null;
+  if(!patch.maskOffset)return patch.mask;
+  const output=makeCanvas(canvas.width,canvas.height),{x,y}=patch.maskOffset;
+  output.getContext('2d').drawImage(patch.mask,x,y);
+  return output;
+}
+function expandPatchMask(patch){
+  if(!patch?.mask)return null;
+  if(patch.maskOffset){
+    const old=patch.mask;patch.mask=fullPatchMask(patch);patch.maskOffset=null;
+    if(patch.request?.mask===old)patch.request.mask=patch.mask;
+    invalidateDisplayedMask(patch,{geometryChanged:false});
+  }
+  return patch.mask;
+}
+function compactPatchMask(patch){
+  if(!patch?.mask||patch.maskOffset||patch.generating||patch.awaitingResult||
+    state.drawing&&state.brushTargetId===patch.id||state.editingPatchId===patch.id)return patch?.mask;
+  // Do not crop genuinely full-image geometry.
+  const original=patch.mask;
+  if(fullFrameMaskCache.has(original))return original;
+  let cached=compactMaskCache.get(original);
+  if(!cached){
+    const box=exactMaskBoundingBox(original);
+    if(!box||box.x===0&&box.y===0&&box.w===canvas.width&&box.h===canvas.height){fullFrameMaskCache.add(original);return original;}
+    const cropped=makeCanvas(box.w,box.h);
+    cropped.getContext('2d').drawImage(original,-box.x,-box.y);
+    cached={mask:cropped,offset:{x:box.x,y:box.y},geometryId:uid('mask_geometry')};
+    compactMaskCache.set(original,cached);
+  }
+  patch.mask=cached.mask;patch.maskOffset={...cached.offset};
+  patch.maskGeometryId=cached.geometryId;
+  if(patch.request?.mask===original)patch.request.mask=patch.mask;
+  invalidateDisplayedMask(patch,{geometryChanged:false});
+  return patch.mask;
+}
+function compactAllOptionMasks(){
+  if(state.drawing||state.maskVertexDrag||state.maskMoveDrag)return;
+  let converted=false;
+  for(const patch of state.patches.values())if(!patch.maskOffset){
+    const old=patch.mask;
+    compactPatchMask(patch);
+    if(patch.mask!==old)converted=true;
+  }
+  // Do not recompare all Option alpha pixels on every sidebar redraw.
+  if(converted)shareSavedOptionMasks();
+}
 // A material-only Option reuses the same immutable mask object as an existing
 // Option with identical alpha geometry. Shape/Create variants keep their own
 // silhouettes; edits to shared masks must detach before changing pixels.
@@ -208,10 +285,13 @@ function shareMaterialOptionMask(patch,group){
   for(const id of group.patchIds){
     const candidate=state.patches.get(id);
     if(!candidate||candidate===patch||!candidate.mask)continue;
+    if((patch.maskOffset?.x||0)!==(candidate.maskOffset?.x||0)||
+      (patch.maskOffset?.y||0)!==(candidate.maskOffset?.y||0))continue;
     if(!sameMaskGeometry(original,candidate.mask))continue;
     patch.mask=candidate.mask;
+    patch.maskGeometryId=candidate.maskGeometryId||patch.maskGeometryId;
     if(patch.request?.mask===original)patch.request.mask=patch.mask;
-    if(original!==patch.mask)invalidateDisplayedMask(patch);
+    if(original!==patch.mask)invalidateDisplayedMask(patch,{geometryChanged:false});
     return patch.mask;
   }
   return patch.mask;
@@ -226,11 +306,31 @@ function detachSharedOptionMask(patch){
   if(!patch?.mask)return null;
   const original=patch.mask;
   if([...state.patches.values()].some(other=>other!==patch&&other.mask===original)){
-    patch.mask=cloneMask(original);
+    const detached=makeCanvas(original.width,original.height);
+    detached.getContext('2d').drawImage(original,0,0);
+    patch.mask=detached;patch.maskGeometryId=uid('mask_geometry');
     if(patch.request?.mask===original)patch.request.mask=patch.mask;
-    invalidateDisplayedMask(patch);
+    invalidateDisplayedMask(patch,{geometryChanged:false});
   }
   return patch.mask;
+}
+const groupCropCache=new WeakMap();
+function groupMaskCrop(group){
+  if(!group)return null;
+  if(!group.active&&!group.objectOriginal&&!group.footprint&&group.maskCrop)
+    return group.maskCrop;
+  const active=state.patches.get(group.active);
+  if(active?.maskOffset&&!active.corners&&!active.geometryObjectMask)
+    return {mask:active.mask,x:active.maskOffset.x,y:active.maskOffset.y};
+  const cached=groupCropCache.get(group);
+  if(cached&&cached.patchId===group.active)return cached.crop;
+  const mask=groupMask(group),bounds=group.area||exactMaskBoundingBox(mask);
+  if(!bounds?.w||!bounds?.h)return null;
+  const cropped=makeCanvas(bounds.w,bounds.h);
+  cropped.getContext('2d').drawImage(mask,-bounds.x,-bounds.y);
+  const crop={mask:cropped,x:bounds.x,y:bounds.y};
+  groupCropCache.set(group,{patchId:group.active,crop});
+  return crop;
 }
 function groupMask(group){
   // A region reuses the *visible, transformed* mask of its active option.
@@ -269,7 +369,9 @@ function groupLabel(group){
 function newGroup(mask,category='Region'){
   const group={id:uid('group'),category,manualName:false,manualCategory:false,patchIds:[],active:null,
     footprint:cloneMask(mask),area:maskBoundingBox(mask),classificationPending:false};
-  state.groups.push(group);group.name=groupLabel(group);return group;
+  state.groups.push(group);group.name=groupLabel(group);
+  window.MosaicObjectMap?.invalidateHitIndex?.();
+  return group;
 }
 // Imported Object IDs start with an already-cropped mask. Never expand and
 // immediately re-crop hundreds of full-resolution object masks during hydration.
@@ -374,10 +476,20 @@ function assignGroup(patch,targetGroupId=state.draftGroupId){
 }
 function refreshGroupFootprint(group){
   groupThumbCache.delete(group);
+  sidebarGroupRevisions.set(group,(sidebarGroupRevisions.get(group)||0)+1);
+  groupCropCache.delete(group);
+  window.MosaicObjectMap?.invalidateHitIndex?.();
   const patches=group.patchIds.map(id=>state.patches.get(id)).filter(Boolean);
-  if(!patches.length&&group.mapPrepared){group.area=maskBoundingBox(groupMask(group));return}
+  if(!patches.length&&group.mapPrepared){
+    const crop=group.maskCrop;
+    group.area=crop?{x:crop.x,y:crop.y,w:crop.mask.width,h:crop.mask.height}:group.area;return;
+  }
   const union=makeCanvas(canvas.width,canvas.height),c=union.getContext('2d');
-  for(const patch of patches)c.drawImage(displayedPatchMask(patch),0,0);
+  for(const patch of patches){
+    if(patch.maskOffset&&!patch.corners&&!patch.geometryObjectMask)
+      c.drawImage(patch.mask,patch.maskOffset.x,patch.maskOffset.y);
+    else c.drawImage(displayedPatchMask(patch),0,0);
+  }
   // Drop the persistent full-image footprint after recomputation. A prepared
   // Object Map already owns the original crop, which must survive "Master"
   // selection; manual Groups keep the union as a new cropped footprint.
@@ -390,7 +502,7 @@ function refreshGroupFootprint(group){
     }else group.maskCrop=null;
   }
   group.footprint=null;
-  group.area=maskBoundingBox(groupMask(group));
+  group.area=exactMaskBoundingBox(union)||group.area;
   if(group.objectOriginal)window.MosaicObjects?.scheduleRepair();
 }
 function moveOptionToGroup(patchId,targetGroupId){
@@ -409,14 +521,18 @@ function selectGroupMask(group,{showOutline=false,append=false}={}){
   if(append){appendGroupSelection(group);return}
   if(!group||!state.master||state.busy||window.MosaicPremium?.isPreviewing())return;
   if(state.editingPatchId){toast('Finish editing the current mask first.');return}
-  const mask=groupMask(group);
-  if(!maskBoundingBox(mask)){toast('No saved selection for this group.');return}
-  resetSelection();state.selectionMask.getContext('2d').drawImage(mask,0,0);
+  const crop=groupMaskCrop(group);
+  if(!crop?.mask){toast('No saved selection for this group.');return}
+  resetSelection(true);
+  // Ordinary click: Object ID + cropped geometry; no full selection raster.
+  state.selectionGeometry={groupId:group.id,crop,
+    bounds:{x:crop.x,y:crop.y,w:crop.mask.width,h:crop.mask.height}};
   const active=state.patches.get(group.active);
-  setSelectionPaths(active?patchSelectionPaths(active):group.maskPaths?.length?group.maskPaths:maskPathsFromRaster(mask));
+  setSelectionPaths(active?patchSelectionPaths(active):group.maskPaths?.length?group.maskPaths:maskPathsFromCrop(crop));
   state.selectionTargetPatchId=state.pendingSourceId?null:active?.id||null;
   state.draftGroupId=group.id;state.selectedPatchId=active?.id||null;state.selectionOverlayHidden=!showOutline;
-  if(window.MosaicObjectManager)window.MosaicObjectMap?.adoptSelection([window.MosaicObjectManager.partForObject(group)]);
+  window.MosaicObjectMap?.adoptIdentity?.(group);
+  if(state.pendingSourceId)ensureSelectionMask();
   setMode('new');selectTool('select');state.pendingRevealOnly=Boolean(state.pendingSourceId);updateSelectionOutline();updateApplyButton();renderGroups();render();
   message('Ready to edit '+group.name+'. '+(state.pendingSourceId?'Click Apply to keep this area from the imported image.':'Ctrl+click another object to multi-select, or use AI Edit.'));
   if(!showOutline)window.MosaicRegions?.clearHover?.();
@@ -449,7 +565,7 @@ async function chooseGroupOption(group,patchId,{showPrompt=false,showOutline=fal
   optionChoiceVersions.set(group,groupChoiceVersion(group)+1);
   state.editingPatchId=null;group.active=patchId;group.objectRemoved=patch?.editMode==='remove';refreshGroupFootprint(group);window.MosaicObjects?.scheduleRepair();
   selectGroupMask(group,{showOutline});
-  if(showPrompt)showQuickPrompt(state.lastCanvasPointer,true);
+  if(showPrompt)showQuickPrompt(state.lastCanvasPointer,true,false);
   renderGroups();render();
   window.MosaicDiskCache?.schedule?.();
   return true;
@@ -470,7 +586,7 @@ function refreshQuickOptions(){
     const thumb=patch&&patchThumbnail(patch);
     if(thumb){const image=document.createElement('img');image.src=thumb;image.alt='';button.append(image)}
     const label=document.createElement('span');label.textContent=patch?String(index+(group.hasHarmonizedMaster?1:0)):'Original';button.append(label);
-    button.onclick=()=>chooseGroupOption(group,patch?.id||null,{showPrompt:true,showOutline:!state.selectionOverlayHidden});
+    button.onclick=()=>chooseGroupOption(group,patch?.id||null,{showPrompt:true,showOutline:false});
     rail.append(button);
   });
 }
@@ -479,6 +595,7 @@ function refreshQuickOptions(){
 function appendGroupSelection(group){
   if(window.MosaicObjectMap?.selectObject){window.MosaicObjectMap.selectObject(group,{append:true});return}
   if(!group||!state.master||state.busy||state.pendingSourceId||state.editingPatchId)return;
+  ensureSelectionMask();
   const additional=groupMask(group);
   if(!maskBoundingBox(additional))return;
   const current=state.selectionMask;
@@ -534,8 +651,10 @@ function optionNameFromPrompt(prompt,fallback='New option'){
 const patchTextures = new WeakMap();
 const visibleMaskCache = new WeakMap();
 const maskHandleCache = new WeakMap();
-function invalidateDisplayedMask(patch){
-  window.MosaicObjects?.invalidated(patch);
+const sidebarPatchRevisions=new WeakMap();
+function invalidateDisplayedMask(patch,{geometryChanged=true}={}){
+  sidebarPatchRevisions.set(patch,(sidebarPatchRevisions.get(patch)||0)+1);
+  if(geometryChanged){if(patch?.mask)fullFrameMaskCache.delete(patch.mask);window.MosaicObjects?.invalidated(patch)}
   visibleMaskCache.delete(patch);
   patchTextures.delete(patch);
   maskHandleCache.delete(patch);
@@ -548,7 +667,7 @@ function renderedPatchLayer(patch){
   return output;
 }
 function displayedPatchMask(patch){
-  if(!patch.corners?.length)return patch.mask;
+  if(!patch.corners?.length)return fullPatchMask(patch);
   const signature=[patch.bbox.x,patch.bbox.y,patch.bbox.w,patch.bbox.h,
     ...patch.corners.flatMap(p=>[p.x,p.y])].join('/');
   const cached=visibleMaskCache.get(patch);
@@ -556,8 +675,8 @@ function displayedPatchMask(patch){
   const result=makeCanvas(canvas.width,canvas.height);
   // Use the SAME affine / four-corner mesh as the visible option. The stored
   // source mask remains non-destructive and can always be reset or undone.
-  const surrogate={bbox:patch.bbox,mask:patch.mask,corners:patch.corners};
-  drawPatch(result.getContext('2d'),surrogate,{canvas:patch.mask});
+  const world=fullPatchMask(patch),surrogate={bbox:patch.bbox,mask:world,corners:patch.corners};
+  drawPatch(result.getContext('2d'),surrogate,{canvas:world});
   visibleMaskCache.set(patch,{mask:patch.mask,signature,canvas:result});
   return result;
 }
@@ -585,7 +704,7 @@ function patchControlPoints(patch){
       // Older projects contain raster masks only. Recover handles on their
       // actual boundary instead of displaying the bounding rectangle.
       const b=patch.bbox,q=[{x:b.x,y:b.y},{x:b.x+b.w,y:b.y},{x:b.x+b.w,y:b.y+b.h},{x:b.x,y:b.y+b.h}];
-      const d=patch.mask.getContext('2d',{willReadFrequently:true}).getImageData(0,0,canvas.width,canvas.height).data;
+      const d=fullPatchMask(patch).getContext('2d',{willReadFrequently:true}).getImageData(0,0,canvas.width,canvas.height).data;
       const distances=q.map(()=>Infinity);points=[];
       for(let y=Math.max(0,Math.floor(b.y));y<Math.min(canvas.height,Math.ceil(b.y+b.h));y++)for(let x=Math.max(0,Math.floor(b.x));x<Math.min(canvas.width,Math.ceil(b.x+b.w));x++){
         if(d[(y*canvas.width+x)*4+3]<=80)continue;
@@ -606,10 +725,11 @@ function patchTexture(patch, source) {
   const image=makeCanvas(Math.max(1,right-x),Math.max(1,bottom-y)),tc=image.getContext('2d');
   tc.drawImage(source.canvas,(source.crop?.x||0)-x,(source.crop?.y||0)-y);
   tc.globalCompositeOperation='destination-in';
-  if(!state.featherEnabled||source.canvas===patch.mask||patch.isMasterVersion){tc.drawImage(patch.mask,-x,-y)}
+  const maskX=(patch.maskOffset?.x||0)-x,maskY=(patch.maskOffset?.y||0)-y;
+  if(!state.featherEnabled||source.canvas===patch.mask||patch.isMasterVersion){tc.drawImage(patch.mask,maskX,maskY)}
   else{
     const feather=makeCanvas(image.width,image.height),fc=feather.getContext('2d',{willReadFrequently:true});
-    fc.drawImage(patch.mask,-x,-y);
+    fc.drawImage(patch.mask,maskX,maskY);
     const pixels=fc.getImageData(0,0,feather.width,feather.height);
     const radius=Math.min(24,Math.max(4,Math.max(canvas.width,canvas.height)*.006),Math.min(b.w,b.h)/3);
     const alpha=window.MozMaskFeather.featherAlpha(pixels.data,feather.width,feather.height,radius);
@@ -849,10 +969,15 @@ function drawVectorPaths(layer,paths,{color='#fff',fill='none',width=.95,dashed=
   if(dashed){attributes.stroke='#fff';attributes['stroke-dasharray']='4 6'}
   layer.append(svgNode('path',attributes));
 }
-function updateSelectionOutline(){window.MosaicObjects?.selectionChanged();state.boundaryCanvas=!state.selectionOverlayHidden&&state.selectionMask&&maskBoundingBox(state.selectionMask)?state.selectionMask:null;drawOverlay()}
+function updateSelectionOutline(){
+  if(!state.selectionGeometry)window.MosaicObjects?.selectionChanged();
+  state.boundaryCanvas=!state.selectionOverlayHidden&&selectionBounds()?
+    state.selectionGeometry?.crop.mask||state.selectionMask:null;
+  drawOverlay();
+}
 // Keep the object selected while browsing Options; reveal its guides only on returning to a prompt.
 function showSelectionHighlightForPrompt(){
-  if(!state.selectionOverlayHidden||!state.master||!state.selectionMask||!maskBoundingBox(state.selectionMask)||state.before||window.MosaicPremium?.isPreviewing())return;
+  if(!state.selectionOverlayHidden||!state.master||!selectionBounds()||state.before||window.MosaicPremium?.isPreviewing())return;
   state.selectionOverlayHidden=false;
   updateSelectionOutline();
 }
@@ -907,13 +1032,14 @@ function patchThumbnail(patch){
   const src=state.sources.get(patch.sourceId),cached=optionThumbCache.get(patch);
   // Keep the tiny cutout preview visible without decoding an inactive full-size source.
   if(!src?.canvas)return cached?.data||'';
-  const mask=displayedPatchMask(patch);
+  const mask=patch.corners?.length?displayedPatchMask(patch):patch.mask;
   if(!mask||patch.awaitingResult)return '';
   const signature=[patch.bbox?.x,patch.bbox?.y,patch.bbox?.w,patch.bbox?.h,
     ...(patch.corners||[]).flatMap(p=>[p.x,p.y])].join('/');
   if(cached&&cached.source===src.canvas&&cached.mask===patch.mask&&cached.signature===signature)return cached.data;
   const image=patch.corners?.length?renderedPatchLayer(patch):src.canvas;
-  const data=cutoutThumbnail(image,mask,null,patch.corners?.length?null:src.crop);
+  const data=cutoutThumbnail(image,mask,patch.corners?.length?null:patch.maskOffset,
+    patch.corners?.length?null:src.crop);
   optionThumbCache.set(patch,{source:src.canvas,mask:patch.mask,signature,data});
   return data;
 }
@@ -931,6 +1057,94 @@ function releaseSourceTexture(sourceId){
     if(patch.sourceId===sourceId)releasePatchTexture(patch);
 }
 const groupThumbCache=new WeakMap();
+const sidebarGroupRevisions=new WeakMap();
+let sidebarSnapshot=null,sidebarSemanticKey='',sidebarQuickKey='';
+const sidebarIdentityRefs=new WeakMap();let sidebarIdentitySerial=0;
+function sidebarIdentity(value){
+  if(!value||typeof value!=='object')return 0;
+  if(!sidebarIdentityRefs.has(value))sidebarIdentityRefs.set(value,++sidebarIdentitySerial);
+  return sidebarIdentityRefs.get(value);
+}
+function sidebarSemanticSignature(){
+  return JSON.stringify([
+    state.groups.map(g=>[g.id,g.name,g.objectName,g.collectionId,g.autoGroupExcluded,g.mergedInto,g.objectRemoved]),
+    (state.objectCollections||[]).map(c=>[c.id,c.name])
+  ]);
+}
+function sidebarGroupRecord(g){
+  const expanded=state.expandedObjectId===g.id;
+  const ready=g.patchIds.map(id=>state.patches.get(id)).filter(p=>p&&!p.hideUntilReady);
+  const structure=JSON.stringify([expanded,g.hasHarmonizedMaster||false,g.patchIds.length,expanded?ready.map(p=>p.id):[]]);
+  const content=JSON.stringify([
+    g.name,g.category,g.active,g.classificationPending||false,g.objectRemoved||false,
+    state.draftGroupId===g.id,sidebarGroupRevisions.get(g)||0,
+    sidebarIdentity(state.master),sidebarIdentity(g.maskCrop?.mask),sidebarIdentity(g.footprint),
+    ready.map(p=>[
+      p.id,p.name,p.generating||false,p.awaitingResult||false,p.aiProgress?.status,
+      p.aiProgress?.value,p.aiProgress?.detail,p.sourceId,p.hideUntilReady||false,
+      state.maskEditOnly&&state.selectionTargetPatchId===p.id,
+      expanded&&state.expandedOptionId===p.id,sidebarPatchRevisions.get(p)||0,
+      sidebarIdentity(p.mask),sidebarIdentity(state.sources.get(p.sourceId)?.canvas)
+    ])
+  ]);
+  return {structure,content};
+}
+function syncSidebarGroupNode(section,g){
+  section.classList.toggle('region-focused',state.draftGroupId===g.id);
+  const head=section.querySelector('.group-head');
+  if(head)head.title='Click to reuse '+g.name+' selection on the current image';
+  const title=section.querySelector('.group-name');
+  if(title&&!title.querySelector('.region-rename-input'))title.textContent=g.name||g.objectName||'Unnamed Object';
+  const category=section.querySelector('.group-category');
+  if(category&&category.value!==g.category)category.value=g.category||'Region';
+  const ready=g.patchIds.map(id=>state.patches.get(id)).filter(p=>p&&!p.hideUntilReady);
+  const count=section.querySelector('.group-count');if(count)count.textContent=ready.length||'';
+  const url=groupThumbnail(g),icon=section.querySelector('.group-icon');
+  if(icon){
+    const image=icon.querySelector('img');
+    if(url){
+      if(image){if(image.getAttribute('src')!==url)image.src=url}
+      else{const img=document.createElement('img');img.className='group-cutout';img.src=url;img.alt='';icon.replaceChildren(img)}
+    }else if(image)icon.textContent='▧';
+  }
+  for(const row of section.querySelectorAll('.variant-row[data-patch]')){
+    const id=row.dataset.patch,p=id==='master'?null:state.patches.get(id);
+    row.classList.toggle('selected',g.active===(p?.id||null));
+    if(!p)continue;
+    const open=state.expandedOptionId===p.id;
+    row.classList.toggle('option-expanded',open);
+    row.classList.toggle('mask-editing',Boolean(state.maskEditOnly&&state.selectionTargetPatchId===p.id));
+    row.setAttribute('aria-expanded',String(open));
+    const actions=row.querySelector('.option-actions');
+    if(actions)actions.classList.toggle('is-open',open);
+    const label=row.querySelector('.variant-text');
+    if(label&&!label.querySelector('.region-rename-input'))label.textContent=p.name||'Untitled option';
+    const thumb=patchThumbnail(p),imageHost=row.querySelector('.option-image');
+    if(imageHost){
+      const image=imageHost.querySelector('img');
+      if(thumb){
+        if(image){if(image.getAttribute('src')!==thumb)image.src=thumb}
+        else{const img=document.createElement('img');img.className='option-cutout';img.src=thumb;img.alt='';img.loading='lazy';imageHost.replaceChildren(img)}
+      }else if(image)imageHost.textContent='◻';
+    }
+    const edit=row.querySelector('[data-action="edit-mask"]');
+    if(edit)edit.setAttribute('aria-pressed',String(state.maskEditOnly&&state.selectionTargetPatchId===p.id));
+    const regen=row.querySelector('[data-region-action="regen-option"]');
+    if(regen){regen.textContent=p.generating?'…':'↻';regen.disabled=Boolean(p.generating)}
+  }
+}
+function syncSidebarCategoryNodes(list,collapsed){
+  for(const section of list.querySelectorAll('.object-category[data-collection]')){
+    const id=section.dataset.collection,isCollapsed=id===UNNAMED_OBJECTS?!state.expandedUnnamedObjects:collapsed.has(id);
+    const btn=section.querySelector('.object-category-head');
+    if(btn)btn.setAttribute('aria-expanded',String(!isCollapsed));
+    const chevron=section.querySelector('.category-chevron');
+    if(chevron)chevron.textContent=isCollapsed?'▸':'▾';
+    const items=section.querySelector('.object-category-items');
+    if(items)items.hidden=isCollapsed;
+  }
+}
+
 function groupThumbnail(group){
   const active=state.patches.get(group.active);
   if(active){
@@ -951,6 +1165,17 @@ const objectLabel=g=>String(g.name||g.objectName||'').trim();
 const unnamedObject=g=>!objectLabel(g)||/^(?:unnamed(?: object)?|object\s*#?\d+|region\s*#?\d+|new object|untitled)(?:\s*\d+)?$/i.test(objectLabel(g));
 const sortObjectNames=(a,b)=>objectLabel(a).localeCompare(objectLabel(b),undefined,{numeric:true,sensitivity:'base'})||String(a.id).localeCompare(String(b.id));
 function renderGroups(){
+  // Keep storage work out of selection-only redraws: only rasterize/compact
+  // when the underlying mask references or generation status have changed.
+  const storageKey=JSON.stringify([state.drawing,state.maskMoveDrag!==null,state.maskVertexDrag!==null,
+    ...[...state.patches].map(([id,p])=>[id,sidebarIdentity(p.mask),Boolean(p.generating),
+      Boolean(p.awaitingResult),p.maskOffset?.x,p.maskOffset?.y])]);
+  if(renderGroups.lastStorageKey!==storageKey){
+    compactAllOptionMasks();
+    renderGroups.lastStorageKey=JSON.stringify([state.drawing,state.maskMoveDrag!==null,state.maskVertexDrag!==null,
+      ...[...state.patches].map(([id,p])=>[id,sidebarIdentity(p.mask),Boolean(p.generating),
+        Boolean(p.awaitingResult),p.maskOffset?.x,p.maskOffset?.y])]);
+  }
   const list=$('groupList');
   // Async AI status/semantic naming refreshes the Groups panel while people
   // type an inline prompt. Preserve the actual form node, its attached files,
@@ -960,8 +1185,11 @@ function renderGroups(){
   const liveFocus=liveForm?.contains(document.activeElement)?document.activeElement:null;
   const caret=liveFocus&&typeof liveFocus.selectionStart==='number'
     ?[liveFocus.selectionStart,liveFocus.selectionEnd]:null;
-  if(liveForm)liveForm.remove();
-  window.MosaicObjectManager?.groupSimilarNames();
+  const semanticKey=sidebarSemanticSignature();
+  if(sidebarSemanticKey!==semanticKey){
+    window.MosaicObjectManager?.groupSimilarNames();
+    sidebarSemanticKey=sidebarSemanticSignature();
+  }
   const visibleGroups=state.groups.filter(group=>!group.objectMapBatch&&!group.mergedInto&&!group.objectRemoved);
   const collections=state.objectCollections||[];
   const categories=new Map(collections.slice().sort((a,b)=>String(a.name||'').localeCompare(String(b.name||''),undefined,{numeric:true,sensitivity:'base'})).map(group=>[group.id,[]]));
@@ -974,8 +1202,9 @@ function renderGroups(){
   $('pendingBanner').classList.toggle('hidden',!state.pendingSourceId);
   if(state.pendingSourceId){const source=state.sources.get(state.pendingSourceId);$('pendingName').textContent='● Editing: '+(source?.name||'New variation')}
   if(!visibleGroups.length&&!collections.length){
-    list.innerHTML='<div class="empty-groups"><span>◌</span><strong>No objects yet</strong><p>Continue with Base to prepare objects, or draw a mask. Use + to create a Group.</p></div>';
-    return;
+    if(!list.querySelector('.empty-groups'))
+      list.innerHTML='<div class="empty-groups"><span>◌</span><strong>No objects yet</strong><p>Continue with Base to prepare objects, or draw a mask. Use + to create a Group.</p></div>';
+    sidebarSnapshot=null;sidebarQuickKey='';return;
   }
   const renderGroup=g=>{
     const readyIds=g.patchIds.filter(id=>state.patches.get(id)&&!state.patches.get(id).hideUntilReady);
@@ -993,19 +1222,45 @@ function renderGroups(){
     return `<div class="region-group ${expanded?'object-expanded':''}" data-group="${g.id}"><div class="group-head" data-action="focus" data-group="${g.id}" aria-expanded="${expanded}"><span class="group-icon">${groupThumb?`<img class="group-cutout" src="${groupThumb}" alt="" loading="lazy">`:'▧'}</span><span class="group-heading-copy"><span class="group-name">${escapeHTML(g.name||g.objectName||'Unnamed Object')}</span></span><span class="group-count">${readyIds.length||''}</span><span class="object-chevron" aria-hidden="true">${expanded?'⌄':'›'}</span><span class="group-head-actions"><button type="button" class="variant-action group-add-option" data-region-action="add-option" title="Add an option to this object" aria-label="Add option">＋</button></span></div><div class="group-options" ${expanded?'':'hidden'}>${optionCategories}${originalRow}${readyIds.length?'':`<small class="group-pending-options">${g.patchIds.length?'Generating edit…':'No options yet'}</small>`}</div></div>`;
   };
   const collapsed=new Set(state.collapsedCategories||[]);
-  list.innerHTML=[...categories].sort((a,b)=>{
+  const arranged=[...categories].sort((a,b)=>{
     const rank=id=>id===UNNAMED_OBJECTS?2:id===''?1:0,delta=rank(a[0])-rank(b[0]);
     if(delta)return delta;
     const label=id=>collections.find(g=>g.id===id)?.name||'';
     return label(a[0]).localeCompare(label(b[0]),undefined,{numeric:true,sensitivity:'base'});
-  }).map(([id,groups])=>{
+  });
+  const snapshot={layout:JSON.stringify([state.selectionGeneration,...arranged.map(([id,groups])=>[
+    id,collections.find(c=>c.id===id)?.name||'',groups.slice().sort(sortObjectNames).map(g=>g.id)
+  ])]),groups:new Map(visibleGroups.map(g=>[g.id,sidebarGroupRecord(g)]))};
+  const plan=planSidebarRender(sidebarSnapshot,snapshot);
+  const movingForm=Boolean(liveForm&&(plan.full||plan.replace.includes(liveGroup)));
+  if(movingForm)liveForm.remove();
+  if(plan.full){
+    list.innerHTML=arranged.map(([id,groups])=>{
     const collection=collections.find(g=>g.id===id),isUnnamed=id===UNNAMED_OBJECTS;
     const isCollapsed=isUnnamed?!state.expandedUnnamedObjects:collapsed.has(id);
     const objects=groups.slice().sort(sortObjectNames);
     const label=isUnnamed?'Unnamed Objects':collection?collection.name:'Ungrouped Objects';
     return `<section class="object-category ${isUnnamed?'unnamed-category':''}" data-collection="${escapeHTML(id)}"><div class="object-collection-heading"><button type="button" class="object-category-head" data-action="toggle-category" data-category="${escapeHTML(id)}" aria-expanded="${!isCollapsed}"><span class="category-chevron" aria-hidden="true">${isCollapsed?'&#9656;':'&#9662;'}</span><strong>${escapeHTML(label)}</strong><span>${groups.length}</span></button>${collection?`<input class="collection-name" aria-label="Group name" data-collection-name="${collection.id}" value="${escapeHTML(collection.name)}"><button type="button" class="collection-rename" data-action="rename-collection" aria-label="Rename group" title="Rename group">✎</button><button type="button" class="remove-collection" data-remove-collection="${collection.id}" title="Remove group; keep its objects">&#215;</button>`:''}</div><div class="object-category-items" ${isCollapsed?'hidden':''}>${objects.map(renderGroup).join('')}${objects.length?'':'<small class="empty-collection">No objects</small>'}</div></section>`;
   }).join('');
-  if(liveForm&&liveGroup){
+  }else{
+    // Keyed object-level updates: changing one Option never destroys the list
+    // or the other objects, and selection-only changes preserve focused forms.
+    const nodes=new Map([...list.querySelectorAll('.region-group[data-group]')]
+      .map(node=>[node.dataset.group,node]));
+    for(const id of plan.replace){
+      const group=visibleGroups.find(g=>g.id===id),node=nodes.get(id);
+      if(!group||!node){sidebarSnapshot=null;return renderGroups()}
+      const template=document.createElement('template');
+      template.innerHTML=renderGroup(group);
+      node.replaceWith(template.content.firstElementChild);
+    }
+    for(const id of plan.update){
+      const group=visibleGroups.find(g=>g.id===id),node=nodes.get(id);
+      if(group&&node)syncSidebarGroupNode(node,group);
+    }
+  }
+  syncSidebarCategoryNodes(list,collapsed);
+  if(movingForm&&liveForm&&liveGroup){
     const section=[...list.querySelectorAll('.region-group[data-group]')]
       .find(group=>group.dataset.group===liveGroup);
     const slot=section?.querySelector('.group-options');
@@ -1017,8 +1272,24 @@ function renderGroups(){
       }
     }
   }
-  window.MosaicRegions?.decorate();window.MosaicObjectManager?.decorate();window.MosaicPremium?.decorateActive?.();updateSourceActions();
-  refreshQuickOptions();
+  if(plan.full||plan.replace.length){
+    window.MosaicRegions?.decorate();window.MosaicObjectManager?.decorate();
+  }
+  if(plan.full||plan.replace.length||plan.update.length)
+    window.MosaicPremium?.decorateActive?.();
+  sidebarSnapshot=snapshot;
+  // The floating Option rail is separate from the sidebar. Refresh it only
+  // when the selected group's Options change, not on unrelated UI redraws.
+  const quickGroup=state.groups.find(group=>group.id===state.draftGroupId||
+    group.patchIds.includes(state.selectionTargetPatchId));
+  const quickKey=JSON.stringify([state.selectionGeneration,quickGroup?.id,quickGroup?.active,
+    quickGroup?.hasHarmonizedMaster,quickGroup?.patchIds.map(id=>{
+      const patch=state.patches.get(id);
+      return [id,patch?.hideUntilReady,patch?.name,patch?.sourceId,
+        sidebarPatchRevisions.get(patch)||0,sidebarIdentity(state.sources.get(patch?.sourceId)?.canvas)];
+    })]);
+  if(sidebarQuickKey!==quickKey){sidebarQuickKey=quickKey;refreshQuickOptions()}
+  updateSourceActions();
 }
 function editExisting(pid){if(state.pendingSourceId){toast('Apply or discard your new image before editing saved variants.');return}const patch=state.patches.get(pid);if(!patch)return;state.editingPatchId=pid;state.selectedPatchId=pid;resetSelection();state.selectionPoints=patchControlPoints(patch).map(({x,y})=>({x,y}));state.selectionMask.getContext('2d').drawImage(displayedPatchMask(patch),0,0);setMode('add');selectTool('lasso');updateSelectionOutline();updateApplyButton();message('Editing a saved mask. Refine it, then click Update mask to commit changes.')}
 function groupEvent(e){if(window.MosaicRegions?.handleGroupEvent(e))return;if(window.MosaicPremium?.handleGroupEvent(e))return;const target=e.target.closest('[data-action]');if(!target)return;const action=target.dataset.action,group=state.groups.find(g=>g.id===target.dataset.group),pid=target.dataset.patch;
@@ -1042,7 +1313,9 @@ function groupEvent(e){if(window.MosaicRegions?.handleGroupEvent(e))return;if(wi
     chooseGroupOption(group,pid==='master'?null:pid);renderGroups();return;
   }
   if(action==='delete'&&group){if(state.pendingSourceId){toast('Finish the new image before removing variants.');return}group.patchIds=group.patchIds.filter(x=>x!==pid);state.patches.delete(pid);if(group.active===pid)group.active=group.patchIds.at(-1)||null;if(state.editingPatchId===pid)state.editingPatchId=null;if(state.selectedPatchId===pid)state.selectedPatchId=null;if(!group.patchIds.length)state.groups=state.groups.filter(g=>g.id!==group.id);else refreshGroupFootprint(group);resetSelection();renderGroups();render();toast('Variant removed.')}}
-function selectTool(tool){if(window.MosaicSourceEditor?.isEditing())return;clearHover();clearDraft();hideQuickPrompt();state.tool=tool;if(state.pendingSourceId&&tool==='reveal'){state.pendingRevealOnly=true;render()}$('resetTransformBtn').classList.toggle('hidden',tool!=='transform'||!activeTransformPatch());
+function selectTool(tool){if(window.MosaicSourceEditor?.isEditing())return;
+  if(state.selectionGeometry&&['lasso','rect','ellipse','wand','reveal','erase','cut','transform'].includes(tool))ensureSelectionMask();
+  clearHover();clearDraft();hideQuickPrompt();state.tool=tool;if(state.pendingSourceId&&tool==='reveal'){state.pendingRevealOnly=true;render()}$('resetTransformBtn').classList.toggle('hidden',tool!=='transform'||!activeTransformPatch());
   $('viewport').classList.toggle('is-selecting',['lasso','rect','ellipse','wand','reveal','erase'].includes(tool));
   $('wandOptions').classList.toggle('hidden',tool!=='wand');
   const modes=document.querySelector('.selection-modes');
@@ -1092,6 +1365,14 @@ function maskPathsFromRaster(mask,points=[]){
     return Math.abs((point.x-before.x)*(after.y-point.y)-(point.y-before.y)*(after.x-point.x))>1e-8;
   })).filter(path=>path.length>=3);
 }
+function maskPathsFromCrop(crop){
+  if(!crop?.mask)return [];
+  const {mask,x,y}=crop;
+  const pixels=mask.getContext('2d',{willReadFrequently:true})
+    .getImageData(0,0,mask.width,mask.height).data;
+  return MaskGeometry.traceMask(pixels,mask.width,mask.height,1,1,0)
+    .map(path=>path.map(point=>({x:point.x+x,y:point.y+y})));
+}
 function setSelectionPaths(paths){
   state.selectionPaths=MaskGeometry.copyPaths(paths);state.selectionPoints=state.selectionPaths.flat();
   activeMaskVertex=null;hoverMaskEdge=null;maskEditVersion++;
@@ -1101,7 +1382,7 @@ function ensureSelectionPaths(){
   return state.selectionPaths||[];
 }
 function patchSelectionPaths(patch){
-  if(!patch.maskPaths?.length)patch.maskPaths=maskPathsFromRaster(patch.mask,patch.maskPoints||[]);
+  if(!patch.maskPaths?.length)patch.maskPaths=maskPathsFromRaster(fullPatchMask(patch),patch.maskPoints||[]);
   return patch.maskPaths.map(path=>path.map(point=>displayedMaskPoint(point,patch)));
 }
 function selectionVertexAt(point){
@@ -1126,7 +1407,12 @@ function attachGeneratedSelection(patch,group){
   for(let i=3;i<a.length;i+=4)if((a[i]>0)!==(b[i]>0))return;
   state.selectionTargetPatchId=patch.id;state.draftGroupId=group.id;
 }
-function placementSnapshot(patch){return {sourceId:patch.sourceId,mask:cloneMask(patch.mask),maskPaths:MaskGeometry.copyPaths(patch.maskPaths),maskPoints:copyCorners(patch.maskPoints),bbox:{...patch.bbox},corners:copyCorners(patch.corners)}}
+function placementSnapshot(patch){
+  const local=makeCanvas(patch.mask.width,patch.mask.height);
+  local.getContext('2d').drawImage(patch.mask,0,0);
+  return {sourceId:patch.sourceId,mask:local,maskOffset:patch.maskOffset?{...patch.maskOffset}:null,
+    maskPaths:MaskGeometry.copyPaths(patch.maskPaths),maskPoints:copyCorners(patch.maskPoints),bbox:{...patch.bbox},corners:copyCorners(patch.corners)};
+}
 function snapshotPlacement(patch){state.undo.push({type:'placement',patchId:patch.id,placement:placementSnapshot(patch)});trimUndo();state.redo=[]}
 function warpImagePaths(layer,fromPaths,toPaths,mask=state.selectionMask){
   const output=makeCanvas(canvas.width,canvas.height),target=output.getContext('2d');
@@ -1150,7 +1436,7 @@ function deformSelectionMask(mask,fromPaths,toPaths,paths){
 }
 function commitImagePlacement(patch,layer){
   const source=state.sources.get(patch.sourceId),id=uid('placed_source');
-  patch.mask=cloneMask(state.selectionMask);patch.maskPaths=MaskGeometry.copyPaths(state.selectionPaths);patch.maskPoints=patch.maskPaths.flat();
+  patch.mask=cloneMask(state.selectionMask);patch.maskOffset=null;patch.maskPaths=MaskGeometry.copyPaths(state.selectionPaths);patch.maskPoints=patch.maskPaths.flat();
   patch.bbox=exactMaskBoundingBox(patch.mask)||patch.bbox;patch.corners=null;invalidateDisplayedMask(patch);
   const pad=Math.max(48,Math.ceil(Math.max(patch.bbox.w,patch.bbox.h)*.15));
   state.sources.set(id,{id,name:source?.name||patch.name,...compactOptionSource(layer,patch.bbox,pad)});
@@ -1160,7 +1446,7 @@ function commitImagePlacement(patch,layer){
 function saveSelectionGeometry(pixels=true){
   const patch=state.patches.get(state.selectionTargetPatchId);
   if(patch){
-    if(pixels)patch.mask=unwarpPatchSelection(state.selectionMask,patch);
+    if(pixels){patch.mask=unwarpPatchSelection(state.selectionMask,patch);patch.maskOffset=null}
     patch.maskPaths=state.selectionPaths.map(path=>path.map(point=>pointToOriginalMask(point,patch)));patch.maskPoints=patch.maskPaths.flat();
     if(!patch.corners&&pixels)patch.bbox=exactMaskBoundingBox(patch.mask)||patch.bbox;
     invalidateDisplayedMask(patch);const group=state.groups.find(g=>g.patchIds.includes(patch.id));if(group)refreshGroupFootprint(group);
@@ -1338,6 +1624,7 @@ function drawDraftPreview(){
 }
 
 function applyWandMask(region, coverage=0){
+  ensureSelectionMask();
   if(!state.selectionMask||!region||!region.width||!region.height){
     toast('AI Wand could not select that object. Try pointing farther inside it.');return;
   }
@@ -1384,7 +1671,7 @@ function trimUndo(){
     const entry=state.undo[i];
     bytes+=entry.image?.data?.byteLength||0;
     for(const part of entry.objectSelection||[]){
-      if(retainedMasks.has(part.mask))continue;
+      if(!part.mask||retainedMasks.has(part.mask))continue;
       retainedMasks.add(part.mask);
       bytes+=part.mask.width*part.mask.height*4;
     }
@@ -1393,8 +1680,8 @@ function trimUndo(){
     }
   }
 }
-function snapshotSelection(){if(!state.selectionMask)return;state.undo.push({type:'selection',objectSelection:window.MosaicObjectMap?.snapshotSelection(),paths:MaskGeometry.copyPaths(state.selectionPaths),points:copyCorners(state.selectionPoints),...captureMaskUndo(state.selectionMask)});trimUndo();state.redo=[]}
-function snapshotPatch(p){state.undo.push({type:'patch',patchId:p.id,paths:MaskGeometry.copyPaths(p.maskPaths),points:copyCorners(p.maskPoints),...captureMaskUndo(p.mask)});trimUndo();state.redo=[];detachSharedOptionMask(p)}
+function snapshotSelection(){ensureSelectionMask();if(!state.selectionMask)return;state.undo.push({type:'selection',objectSelection:window.MosaicObjectMap?.snapshotSelection(),paths:MaskGeometry.copyPaths(state.selectionPaths),points:copyCorners(state.selectionPoints),...captureMaskUndo(state.selectionMask)});trimUndo();state.redo=[]}
+function snapshotPatch(p){state.undo.push({type:'patch',patchId:p.id,paths:MaskGeometry.copyPaths(p.maskPaths),points:copyCorners(p.maskPoints),...captureMaskUndo(fullPatchMask(p))});trimUndo();state.redo=[];detachSharedOptionMask(p)}
 function finishMaskSelection(){
   window.MosaicObjectMap?.selectionCompleted();
   void window.MosaicAccount?.track('selection_created');
@@ -1407,6 +1694,7 @@ function editExistingCreateMask(patch,shape){
   const input=patch.corners?.length?unwarpPatchSelection(shape,patch):shape;
   // Explicit Add/Subtract is a geometry change: this Option owns its mask.
   detachSharedOptionMask(patch);
+  expandPatchMask(patch);
   const previous=cloneMask(patch.mask),ctx=patch.mask.getContext('2d');
   if(state.selectionMode==='subtract')ctx.globalCompositeOperation='destination-out';
   else ctx.globalCompositeOperation='source-over';
@@ -1505,12 +1793,13 @@ function exactMaskBoundingBox(mask){
   return maxX<0?null:{x:minX,y:minY,w:maxX-minX+1,h:maxY-minY+1};
 }
 function maskBoundingBox(mask){const w=Math.min(250,mask.width),h=Math.max(1,Math.round(w*mask.height/mask.width)),t=makeCanvas(w,h),tx=t.getContext('2d',{willReadFrequently:true});tx.drawImage(mask,0,0,w,h);const d=tx.getImageData(0,0,w,h).data;let minX=w,minY=h,maxX=-1,maxY=-1;for(let i=0;i<w*h;i++)if(d[i*4+3]>0){const x=i%w,y=Math.floor(i/w);minX=Math.min(minX,x);minY=Math.min(minY,y);maxX=Math.max(maxX,x);maxY=Math.max(maxY,y)}return maxX<0?null:{x:minX/w*canvas.width,y:minY/h*canvas.height,w:(maxX-minX+1)/w*canvas.width,h:(maxY-minY+1)/h*canvas.height}}
-function applySelection(){if(state.lasso.length){if(!updateMaskWithLasso()){toast('Add at least three line points, then click the first point or double-click to close.');return}}if(!state.selectionMask)return;const bbox=maskBoundingBox(state.selectionMask);if(!bbox){toast('Draw or brush a selection first.');return}
+function applySelection(){ensureSelectionMask();if(state.lasso.length){if(!updateMaskWithLasso()){toast('Add at least three line points, then click the first point or double-click to close.');return}}if(!state.selectionMask)return;const bbox=maskBoundingBox(state.selectionMask);if(!bbox){toast('Draw or brush a selection first.');return}
   if(state.pendingSourceId){const src=state.sources.get(state.pendingSourceId),mask=makeCanvas(canvas.width,canvas.height);mask.getContext('2d').drawImage(state.selectionMask,0,0);const patch={id:uid('patch'),sourceId:src.id,mask,bbox,maskPaths:MaskGeometry.copyPaths(state.selectionPaths),maskPoints:copyCorners(state.selectionPoints),name:optionNameFromPrompt(src.name,src.name),manualName:false},group=assignGroup(patch);state.pendingSourceId=null;state.editingPatchId=null;resetSelection();state.undo=[];state.redo=[];toast(`Saved as ${group.name}. Masks need 85% overlap to share a Group.`);message('Selection saved. Upload another image or switch options in Groups.');renderGroups();render();window.MosaicPremium?.onPatchApplied();loadNextVariant();return}
   if(state.editingPatchId){
     const patch=state.patches.get(state.editingPatchId);if(!patch)return;
     snapshotPatch(patch);
     const sourceMask=unwarpPatchSelection(state.selectionMask,patch);
+    expandPatchMask(patch);
     const t=patch.mask.getContext('2d');t.clearRect(0,0,canvas.width,canvas.height);
     t.drawImage(sourceMask,0,0);
     patch.maskPaths=state.selectionPaths.map(path=>path.map(point=>pointToOriginalMask(point,patch)));
@@ -1577,7 +1866,7 @@ function paint(e,first){
   const visiblePoint=canvasPoint(e),r=+$('brushSize').value;
   const patch=state.pendingSourceId||state.editingPatchId?null:state.patches.get(state.brushTargetId||state.selectedPatchId);
   // Brush changes geometry and must never modify sibling Material Options.
-  if(patch&&first)detachSharedOptionMask(patch);
+  if(patch&&first){detachSharedOptionMask(patch);expandPatchMask(patch)}
   const mask=patch?.mask||state.selectionMask;
   if(!mask){if(first)toast('Upload a variation or select a saved region first.');return}
   const point=patch?pointToOriginalMask(visiblePoint,patch):visiblePoint;
@@ -1623,7 +1912,7 @@ function historyStep(from,to){
   // Undo/redo uses putImageData, which mutates in place. Restore on a private
   // copy if another Option still references the old mask.
   if(entry.type==='patch')detachSharedOptionMask(state.patches.get(entry.patchId));
-  const mask=entry.type==='selection'?state.selectionMask:state.patches.get(entry.patchId)?.mask;
+  const mask=entry.type==='selection'?state.selectionMask:expandPatchMask(state.patches.get(entry.patchId));
   if(!mask)return;
   const points=entry.type==='selection'?state.selectionPoints:state.patches.get(entry.patchId)?.maskPoints;
   const paths=entry.type==='selection'?state.selectionPaths:state.patches.get(entry.patchId)?.maskPaths;
@@ -1754,7 +2043,7 @@ function pointerUp(e){
       if(maskBoundingBox(state.selectionMask))showQuickPrompt({clientX:e.clientX,clientY:e.clientY});
       else toast('No object found in the rectangle. Try a larger box.');
     }else{
-      const point=end,group=findRegionAt(point);
+      const point=end,group=window.MosaicObjectMap?.hitTest?.(point)||(!state.objectMap?.raster?findRegionAt(point):null);
       if(group){if(mods.append)appendGroupSelection(group);else selectGroupMask(group,{showOutline:true});
         focusGroupInSidebar(group);showQuickPrompt({clientX:e.clientX,clientY:e.clientY});}
       else if(state.objectMap?.raster)window.MosaicSlimWand?.selectAt?.(point,mods);
@@ -1807,7 +2096,7 @@ function onKeys(e){if(e.key==='Escape'&&state.before){e.preventDefault();toggleC
     if(state.lasso.length>=3){e.preventDefault();updateMaskWithLasso();return}
     // Enter closes a draft shape; only clicking Apply commits an imported image.
     if(state.pendingSourceId||state.editingPatchId){e.preventDefault();message('Selection ready. Click Apply to commit the patch.');return}
-    if(maskBoundingBox(state.selectionMask||makeCanvas(1,1))){e.preventDefault();showQuickPrompt()}
+    if(selectionBounds()){e.preventDefault();showQuickPrompt()}
   }
   else if(e.key==='Escape'){e.preventDefault();if(state.lasso.length||state.shapeStart){clearDraft();drawOverlay();message('Unfinished shape canceled.')}else{resetSelection();render();message('Selection cleared.')}}
   else if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='z'){e.preventDefault();historyStep(state.undo,state.redo)}
@@ -1922,7 +2211,8 @@ simplifyButton.id='simplifySelectionBtn';simplifyButton.type='button';simplifyBu
 simplifyButton.textContent='Simplify';simplifyButton.title='Straighten noisy selection edges (Undo available)';
 $('clearSelectionBtn').before(simplifyButton);
 simplifyButton.addEventListener('click',()=>{
-  if(!state.master||!state.selectionMask||!maskBoundingBox(state.selectionMask)||state.busy||state.before||window.MosaicPremium?.isPreviewing()||window.MosaicSourceEditor?.isEditing())return;
+  if(!state.master||!selectionBounds()||state.busy||state.before||window.MosaicPremium?.isPreviewing()||window.MosaicSourceEditor?.isEditing())return;
+  ensureSelectionMask();
   const original=ensureSelectionPaths(),tolerance=Math.max(2,Math.min(12,Math.max(canvas.width,canvas.height)*.004));
   const paths=original.map(path=>MaskGeometry.simplify(path,tolerance));
   if(paths.every((path,i)=>path.length===original[i].length)){toast('Selection edges are already simple.');return}
@@ -2023,6 +2313,6 @@ viewport.addEventListener('wheel',event=>{
   if(state.shapeStart)state.shapeEnd=canvasPoint(event,false);drawOverlay();
 },{passive:false});
 window.addEventListener('mosaic:keyconnected',()=>state.groups.forEach(autoClassifyGroup));
-window.MosaicCore = {compactOptionSource,expandOptionSource,sameMaskGeometry,shareMaterialOptionMask,shareSavedOptionMasks,detachSharedOptionMask,groupContainsPoint,appendGroupSelection,newGroup,newGroupFromCrop,matchingGroup,applyWandMask,svgNode,vectorLayer,drawVectorPaths,maskPathsFromRaster,state,canvas,overlay,ctx,makeCanvas,uid,setProjectTitle,toast,message,promptText,loadFileToCanvas,setMaster,continueWithBase,upgradeBaseDraft,setSourcePreview,updateSourceActions,render,composeApprovedCanvas,renderGroups,drawPatch,selectTool,setMode,updateApplyButton,maskBoundingBox,assignGroup,resetSelection,updateSelectionOutline,updateMaskWithLasso,updateZoomFit,escapeHTML,categoryFromText,updateGroupCategory,optionNameFromPrompt,prepareSelectionGroup,groupMask,selectGroupMask,CATEGORIES,showQuickPrompt,hideQuickPrompt,createBlankRegion,moveOptionToGroup,displayedPatchMask,renderedPatchLayer,refreshGroupFootprint,invalidateDisplayedMask,attachGeneratedSelection,patchSelectionPaths,exactMaskBoundingBox,unwarpPatchSelection,patchControlPoints,displayedMaskPoint};
+window.MosaicCore = {compactPatchMask,compactAllOptionMasks,fullPatchMask,expandPatchMask,selectionBounds,ensureSelectionMask,selectionContainsPoint,groupMaskCrop,compactOptionSource,expandOptionSource,sameMaskGeometry,shareMaterialOptionMask,shareSavedOptionMasks,detachSharedOptionMask,groupContainsPoint,appendGroupSelection,newGroup,newGroupFromCrop,matchingGroup,applyWandMask,svgNode,vectorLayer,drawVectorPaths,maskPathsFromRaster,state,canvas,overlay,ctx,makeCanvas,uid,setProjectTitle,toast,message,promptText,loadFileToCanvas,setMaster,continueWithBase,upgradeBaseDraft,setSourcePreview,updateSourceActions,render,composeApprovedCanvas,renderGroups,drawPatch,selectTool,setMode,updateApplyButton,maskBoundingBox,assignGroup,resetSelection,updateSelectionOutline,updateMaskWithLasso,updateZoomFit,escapeHTML,categoryFromText,updateGroupCategory,optionNameFromPrompt,prepareSelectionGroup,groupMask,selectGroupMask,CATEGORIES,showQuickPrompt,hideQuickPrompt,createBlankRegion,moveOptionToGroup,displayedPatchMask,renderedPatchLayer,refreshGroupFootprint,invalidateDisplayedMask,attachGeneratedSelection,patchSelectionPaths,exactMaskBoundingBox,unwarpPatchSelection,patchControlPoints,displayedMaskPoint};
 Object.assign(window.MosaicCore,{focusGroupInSidebar,chooseGroupOption,groupChoiceVersion,toggleComparison,canCreateSelection,releaseSourceTexture,releasePatchTexture});
 promptText();

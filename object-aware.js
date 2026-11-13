@@ -63,7 +63,7 @@ function currentGroup(){return state.groups.find(g=>g.id===state.draftGroupId||g
 function reset(){clearSmartProgress();clearSmartStatus();clearTimeout(timer);clearTimeout(repairTimer);revision++;repairRevision++;selection=null;preview=null;cancelAnimationFrame(previewFrame);maskCache.clear();intentCache.clear();inflight.clear();failures.clear();if(worker){worker.terminate();worker=null}for(const job of jobs.values())job.reject(Error('Project changed'));jobs.clear()}
 function cancelSelection(){window.MosaicObjectMap?.cancelSelection();clearSmartProgress();clearSmartStatus();revision++;clearTimeout(timer);cancelAnimationFrame(previewFrame);selection=null;preview=null}
 function selectionChanged(){
-  if(applying)return;
+  if(applying||state.selectionGeometry)return;
   const mask=state.selectionMask;
   if(!mask||!state.master)return;
   const hash=signature(data(mask));
@@ -215,9 +215,9 @@ function capture(patch,group,objectSelection){
 function generationMask(patch){
   const visual=core.displayedPatchMask(patch);
   if(!smartSelectEnabled||!patch.objectId||patch.geometryIntent==='appearance'||patch.corners?.length)return visual;
-  const bits=data(visual),box=bounds(bits,patch.mask.width,patch.mask.height,Math.max(12,Math.round(Math.max(patch.bbox.w,patch.bbox.h)*.12)));
-  if(!box)return patch.mask;
-  const mask=makeCanvas(patch.mask.width,patch.mask.height),x=mask.getContext('2d');x.fillStyle='#fff';x.fillRect(box.x,box.y,box.w,box.h);
+  const bits=data(visual),box=bounds(bits,visual.width,visual.height,Math.max(12,Math.round(Math.max(patch.bbox.w,patch.bbox.h)*.12)));
+  if(!box)return visual;
+  const mask=makeCanvas(visual.width,visual.height),x=mask.getContext('2d');x.fillStyle='#fff';x.fillRect(box.x,box.y,box.w,box.h);
   const group=state.groups.find(g=>g.id===patch.groupId);for(const item of foreground(group)){x.globalCompositeOperation='destination-out';x.drawImage(item.mask,0,0)}
   return mask;
 }
@@ -279,12 +279,12 @@ function drawOriginal(target,group){
   }
   target.drawImage(original.image,original.x,original.y);
 }
-function drawOptionRepairs(target,group,patch){if(!patch?.objectRepairs?.length||patch.corners?.length)return;const support=patch.objectSupport||patch.mask,valid=patch.objectValid||patch.mask;let cached=repairClipCache.get(patch);if(!cached||cached.support!==support||cached.valid!==valid){cached={support,valid,canvas:raster(combine(data(support),data(valid),'subtract'))};repairClipCache.set(patch,cached)}drawRepairs(target,patch,cached.canvas)}
+function drawOptionRepairs(target,group,patch){if(!patch?.objectRepairs?.length||patch.corners?.length)return;const support=patch.objectSupport||core.fullPatchMask(patch),valid=patch.objectValid||core.fullPatchMask(patch);let cached=repairClipCache.get(patch);if(!cached||cached.support!==support||cached.valid!==valid){cached={support,valid,canvas:raster(combine(data(support),data(valid),'subtract'))};repairClipCache.set(patch,cached)}drawRepairs(target,patch,cached.canvas)}
 function invalidated(patch){
   if(!patch?.objectId)return;
   binaryCache.delete(patch.mask);repairClipCache.delete(patch);
   const group=state.groups.find(g=>g.id===patch.groupId);if(group?.objectOriginal)repairClipCache.delete(group.objectOriginal);
-  const key=signature(data(patch.mask));if(patch.geometryId!==key){patch.geometryId=key;patch.objectMaskUncertain=true;patch.objectSupport=copy(patch.mask)}
+  const full=core.fullPatchMask(patch),key=signature(data(full));if(patch.geometryId!==key){patch.geometryId=key;patch.objectMaskUncertain=true;patch.objectSupport=copy(full)}
   scheduleRepair();
 }
 function drawComposition(target,base,groups,patches,sources){
