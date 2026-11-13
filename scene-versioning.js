@@ -60,7 +60,7 @@ async function apply(image,{type='ai-edit',prompt='',onStatus=()=>{},preserveEdi
   // Full-image generations should never request a second object map or SAM.
   // If the initial map is still preparing, hold this generated image in memory
   // until its original objects are available, instead of creating Entire image.
-  if(window.MosaicObjectMap?.whenReady){
+  if(window.MosaicObjectMap?.whenReady&&!window.MosaicObjectMap?.hasPreparedObjects?.()){
     const status='Waiting for the original Object Map before splitting…';
     const progress=window.MosaicMaskProgress;
     onStatus(status);
