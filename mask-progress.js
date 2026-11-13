@@ -15,7 +15,7 @@ shimmer.className='mask-processing-shimmer hidden';
 shimmer.setAttribute('aria-hidden','true');
 canvasWrap.append(shimmer);
 const jobs=new Map();
-const priority=owner=>owner==='scene-segmentation'?4:owner.startsWith('generation:')?3:({preload:0,image:0,wand:1,auto:2,'smart-select':2}[owner]??0);
+const priority=owner=>owner.startsWith('generation:')?3:({preload:0,image:0,wand:1,auto:2,'smart-select':2}[owner]??0);
 const highlights=new Map();
 
 function drawProgress(){
