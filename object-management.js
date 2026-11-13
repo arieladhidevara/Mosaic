@@ -14,10 +14,16 @@ function moveObjects(ids,collectionId){
   for(const object of objects())if(ids.includes(object.id)){object.collectionId=collectionId||null;object.autoGroupExcluded=!collectionId;}
   core.renderGroups();refreshActions();
 }
-function ensureObjects(map,maskForIds){
+function ensureObjects(map,maskForIds,maskCropForEntry){
   for(const entry of map.entries){
     let object=state.groups.find(g=>g.objectMapKey===map.sourceKey&&g.objectMapObjectKey===entry.key);
-    if(!object){const mask=maskForIds([entry.id]);object=core.newGroup(mask,entry.category);object.objectMapKey=map.sourceKey;object.objectMapObjectKey=entry.key;object.objectMapInstanceId=entry.id;object.objectMapCategory=entry.category;object.mapPrepared=true;object.maskPaths=entry.paths.map(path=>path.map(p=>({x:p.x*canvas.width/map.raster.width,y:p.y*canvas.height/map.raster.height})))}
+    if(!object){
+      const crop=maskCropForEntry?.(entry);
+      // Legacy maps without an entry box retain the full-mask fallback.
+      object=crop?core.newGroupFromCrop(crop,entry.category):core.newGroup(maskForIds([entry.id]),entry.category);
+      object.objectMapKey=map.sourceKey;object.objectMapObjectKey=entry.key;object.objectMapInstanceId=entry.id;object.objectMapCategory=entry.category;object.mapPrepared=true;
+      object.maskPaths=entry.paths.map(path=>path.map(p=>({x:p.x*canvas.width/map.raster.width,y:p.y*canvas.height/map.raster.height})));
+    }
     if(object.footprint&&!object.active&&!object.objectOriginal){
       const bounds=core.exactMaskBoundingBox(object.footprint);
       if(bounds){
