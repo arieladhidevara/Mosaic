@@ -103,14 +103,17 @@ function unpack(value,images,depth=0){
 }
 function projectState(){
   const fields=[
-    'reference','master','rawBase','masterIsBase','alignmentTransforms',
+    'reference','rawBase','masterIsBase','alignmentTransforms',
     'sources','groups','patches','pendingSourceId','editingPatchId','selectedPatchId',
     'selectionMask','selectionPoints','selectionPaths','selectionTargetPatchId','selectionMode','tool','pendingRevealOnly','serial',
     'draftGroupId','queuedGroupId','selectionGeneration','brushTargetId',
     'undo','redo','zoom','fitZoom','projectTitle','projectTitleManual','brushSize','brushIntensity','maskEditOnly',
     'markups','chatMessages','copilotSession','chatResult','objectMap','objectMaps','autoObjectSelect','featherEnabled','collapsedCategories','objectCollections','objectSelectionParts','objectReconstruction','cutHistory','sceneVersionCounters','sceneVersionHistory','sceneTargetSelections','objectMapLocked'
   ];
-  return Object.fromEntries(fields.map(name=>[name,state[name]]));
+  const result=Object.fromEntries(fields.map(name=>[name,state[name]]));
+  // The working canvas is reconstructed from Base; never serialize Base twice.
+  result.baseWorkingSize=state.master?{width:state.master.width,height:state.master.height}:null;
+  return result;
 }
 async function encodeQueue(pack){
   const output=[];
@@ -227,7 +230,7 @@ async function loadProjectFile(file,{recovery=false}={}){
     if(!saved.master&&!saved.reference)throw Error('Project contains no images.');
     window.MosaicObjects?.reset();
     window.MosaicWorkspace?.reset();
-    Object.assign(state,saved);
+    Object.assign(state,{master:null,rawMaster:null},saved);
     // Older .moz versions stored a separate identical mask for every
     // appearance Option. Consolidate them on load without changing geometry.
     core.shareSavedOptionMasks?.();
@@ -240,8 +243,8 @@ async function loadProjectFile(file,{recovery=false}={}){
     state.brushTargetId=null;state.hoveredGroupId=null;
     const originalBase=state.reference||state.master;
     if(originalBase){
-      const w=state.master?.width||Math.min(2400,originalBase.width);
-      const h=state.master?.height||Math.max(1,Math.round(originalBase.height*w/originalBase.width));
+      const w=saved.baseWorkingSize?.width||state.master?.width||Math.min(2400,originalBase.width);
+      const h=saved.baseWorkingSize?.height||state.master?.height||Math.max(1,Math.round(originalBase.height*w/originalBase.width));
       const working=makeCanvas(w,h);
       working.getContext('2d').drawImage(originalBase,0,0,w,h);
       state.reference=originalBase;state.rawBase=originalBase;

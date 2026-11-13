@@ -71,3 +71,16 @@ test('Base upload enters editor directly and no result replaces Base',()=>{
   assert.equal(scene.includes('state.master=fullImage'),false);
   assert.equal(premium.includes('function copyGraph('),false);
 });
+
+test('Saving .moz keeps Base once and reconstructs its working dimensions',()=>{
+  const source=fs.readFileSync('project-file.js','utf8');
+  const base=image(4000,3000),working=image(2400,1800);
+  const sandbox=vm.createContext({state:{reference:base,master:working}});
+  vm.runInContext(section(source,'function projectState(){','async function encodeQueue('),sandbox);
+  const saved=sandbox.projectState();
+  assert.equal(Object.hasOwn(saved,'master'),false);
+  assert.equal(saved.reference,base);
+  assert.equal(saved.baseWorkingSize.width,2400);
+  assert.equal(saved.baseWorkingSize.height,1800);
+  assert.ok(source.includes('Object.assign(state,{master:null,rawMaster:null},saved)'));
+});
