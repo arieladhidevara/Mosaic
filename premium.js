@@ -624,7 +624,12 @@ async function generateRegion(patchId,regenerate=false){
       }
       // Commit only after all validation. Full-frame alignment output is
       // temporary; persist just the returned region, including Reveal context.
-      const compact=core.compactOptionSource(result,region);
+      // A skewed Option is unwarped back into its original mask coordinates.
+      // Crop in that coordinate system, not its transformed on-screen region.
+      const originalBounds=submittedPatch.corners?.length?submittedPatch.bbox:region;
+      const originalPadding=submittedPatch.corners?.length?
+        Math.max(48,Math.ceil(Math.max(originalBounds.w,originalBounds.h)*.15)):0;
+      const compact=core.compactOptionSource(result,originalBounds,originalPadding);
       if(regenerate){
         const id=uid('ai_source');
         state.sources.set(id,{id,name:'Regenerated '+existing.name,...compact,revealComplete:true});
