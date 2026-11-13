@@ -41,7 +41,7 @@ test('Harmonize preserves Base and earlier Options',async()=>{
   assert.ok(group.patchIds.length>=2);
   assert.ok(group.patchIds.includes('old'),'earlier approved Option stays available');
   assert.equal(state.patches.has('old'),true);
-  const added=state.patches.get(group.patchIds[1]);
+  const added=state.patches.get(group.patchIds.at(-1));
   assert.equal(state.sources.get(added.sourceId).canvas,result);
   assert.equal(state.sources.size,3,'existing Option plus original cropped appearance plus Harmonized Option');
   await context.apply(image(),{type:'harmonize'});
