@@ -79,23 +79,6 @@ test('image generation request contract',async t=>{
     assert.match(sent.prompt,/x=200, y=100, width=256, height=256/);
     assert.match(sent.prompt,/output only the crop in Image 1/);
   });
-  await t.test('opt-in material cutouts return PNG with real transparency, without JPEG compression',async()=>{
-    const result=await generate(request({transparentLayer:true,targetObject:'Wall with two door openings'}),true);
-    assert.equal(result.mimeType,'image/png');
-    assert.equal(sent.background,'transparent');
-    assert.equal(sent.output_format,'png');
-    assert.equal(sent.output_compression,undefined);
-    assert.deepEqual(sent.mask,{image_url:mask});
-    assert.match(sent.prompt,/TRANSPARENT OUTPUT CONTRACT/);
-    assert.match(sent.prompt,/true RGBA|true transparency|TRUE transparent/i);
-    assert.match(sent.prompt,/UNSELECTED/);
-  });
-  await t.test('full-image edits remain opaque even if transparency was requested',async()=>{
-    const result=await generate(request({transparentLayer:true}),false);
-    assert.equal(result.mimeType,'image/jpeg');
-    assert.equal(sent.output_format,'jpeg');
-    assert.equal(sent.background,undefined);
-  });
   await t.test('invalid scene crops fail before a provider request',async()=>{
     await assert.rejects(generate(request({context:base,crop:{x:500,y:0,width:256,height:256,imageWidth:512,imageHeight:384}}),true),/Invalid crop context/);
   });

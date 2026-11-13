@@ -1,7 +1,7 @@
 name: Object-aware editing tests
 on:
   push:
-    branches: [feature/object-aware-shape-editing, feature/transparent-material-alpha-alignment]
+    branches: [feature/object-aware-shape-editing]
   pull_request:
     paths:
       - 'workspace-mobile.js'
@@ -43,7 +43,6 @@ jobs:
       - run: node --check scene-targeting.js
       - run: node --check scene-versioning.js
       - run: node --check canvas-workspace.js
-      - run: node --check transparent-material-align.mjs
       - run: node --check geometry-edit.js
       - run: node --check premium.js
       - run: node --check object-aware.js
