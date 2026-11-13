@@ -476,6 +476,7 @@ function assignGroup(patch,targetGroupId=state.draftGroupId){
 }
 function refreshGroupFootprint(group){
   groupThumbCache.delete(group);
+  sidebarGroupRevisions.set(group,(sidebarGroupRevisions.get(group)||0)+1);
   groupCropCache.delete(group);
   window.MosaicObjectMap?.invalidateHitIndex?.();
   const patches=group.patchIds.map(id=>state.patches.get(id)).filter(Boolean);
