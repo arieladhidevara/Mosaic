@@ -8,7 +8,7 @@ const MaskGeometry=window.MozMaskGeometry;
 const state = {
   reference: null, master: null, rawBase: null, rawMaster: null, masterIsBase: false, alignmentTransforms: null, sources: new Map(), groups: [], patches: new Map(),
   pendingSourceId: null, queue: [], editingPatchId: null, selectedPatchId: null,
-  selectionMask: null, boundaryCanvas: null, selectionPoints: [], selectionPaths: [], selectionTargetPatchId: null, maskVertexDrag: null, maskMoveDrag: null, maskEditOnly: false, selectionMode: 'new', lasso: [], drawing: false,
+  selectionMask: null, selectionGeometry: null, boundaryCanvas: null, selectionPoints: [], selectionPaths: [], selectionTargetPatchId: null, maskVertexDrag: null, maskMoveDrag: null, maskEditOnly: false, selectionMode: 'new', lasso: [], drawing: false,
   pointerStart: null, dragFreehand: false, hoverPoint: null, shapeStart: null, shapeEnd: null,
   tool: 'select', lastPoint: null, lastCanvasPointer: null, pendingRevealOnly: false, brushTargetId: null, before: false, zoom: 1, fitZoom: 1, busy: false,
   undo: [], redo: [], serial: 1, panAnchor: null, transformDrag: null, draftGroupId: null, queuedGroupId: null, hoveredGroupId: null, selectionGeneration: 0, selectionOverlayHidden: false, forceNewSelectionGroup: false,
@@ -107,7 +107,7 @@ function clearHover(){window.MosaicRegions?.clearHover()}
 function hideQuickPrompt(){document.getElementById('quickAreaPromptForm')?.classList.add('hidden')}
 function showQuickPrompt(point=state.lastCanvasPointer,keepText=false){
   if(window.MosaicWorkspace?.isSelectingResult())return;
-  if(!state.master||!state.selectionMask||!maskBoundingBox(state.selectionMask)||state.pendingSourceId||state.editingPatchId)return;
+  if(!state.master||!selectionBounds()||state.pendingSourceId||state.editingPatchId)return;
   const form=$('quickAreaPromptForm'),vp=$('viewport'),r=vp.getBoundingClientRect();
   refreshQuickOptions();
   // The prompt is position:fixed, so work in actual screen coordinates.
@@ -123,7 +123,7 @@ function showQuickPrompt(point=state.lastCanvasPointer,keepText=false){
   const bounds=form.getBoundingClientRect(),w=bounds.width,h=bounds.height;
   // Keyboard completion and programmatic selection fall back to the actual
   // selection on canvas rather than an arbitrary corner of the viewport.
-  const selection=maskBoundingBox(state.selectionMask);
+  const selection=selectionBounds();
   const canvasRect=overlay.getBoundingClientRect();
   const selectedX=canvasRect.left+(selection.x+selection.w/2)/canvas.width*canvasRect.width;
   const selectedY=canvasRect.top+(selection.y+selection.h/2)/canvas.height*canvasRect.height;
@@ -160,10 +160,10 @@ function updateSourceActions(){
   if(state.master){$('welcome').classList.add('hidden');$('canvasWrap').classList.remove('hidden')}
   window.MosaicSources?.refresh?.();
 }
-function resetSelection(){window.MosaicObjects?.cancelSelection?.();$('selectionOutlineVectors')?.replaceChildren();state.selectionPaths=[];state.maskMoveDrag=null;state.maskEditOnly=false;activeMaskVertex=null;hoverMaskEdge=null;maskEditVersion++;state.selectionPoints=[];state.selectionTargetPatchId=null;state.maskVertexDrag=null;state.selectionMask=state.master?makeCanvas(canvas.width,canvas.height):null;state.boundaryCanvas=null;state.draftGroupId=null;state.selectionOverlayHidden=false;state.forceNewSelectionGroup=false;state.pendingRevealOnly=false;hideQuickPrompt();clearDraft();updateApplyButton();clearHover()}
+function resetSelection(deferMask=false){window.MosaicObjects?.cancelSelection?.();$('selectionOutlineVectors')?.replaceChildren();state.selectionPaths=[];state.maskMoveDrag=null;state.maskEditOnly=false;activeMaskVertex=null;hoverMaskEdge=null;maskEditVersion++;state.selectionPoints=[];state.selectionTargetPatchId=null;state.maskVertexDrag=null;state.selectionGeometry=null;state.selectionMask=state.master&&!deferMask?makeCanvas(canvas.width,canvas.height):null;state.boundaryCanvas=null;state.draftGroupId=null;state.selectionOverlayHidden=false;state.forceNewSelectionGroup=false;state.pendingRevealOnly=false;hideQuickPrompt();clearDraft();updateApplyButton();clearHover()}
 function updateApplyButton(){
   const pending=Boolean(state.pendingSourceId),editing=Boolean(state.editingPatchId),btn=$('commitBtn');
-  btn.disabled=!(pending||editing)||!Boolean(state.selectionMask&&maskBoundingBox(state.selectionMask));
+  btn.disabled=!(pending||editing)||!Boolean(selectionBounds());
   btn.classList.toggle('hidden',!(pending||editing));
   btn.textContent=editing?'✓ Update mask':'✓ Apply';
 }
@@ -186,6 +186,31 @@ function categoryFromText(value){
     ['Millwork',/\b(millwork|cabinet|counter|joinery)\b/],['Lighting',/\b(light|lighting|downlight|luminaire)\b/],
     ['Structure',/\b(column|beam|truss|structural)\b/],['Landscape',/\b(tree|plant|landscape)\b/],['Stairs',/\b(stairs|staircase|tread|steps)\b/]];
   return lookups.find(([,regex])=>regex.test(valueLower))?.[0]||null;
+}
+// Select by an Object ID and world-positioned crop. Full-frame rasterization
+// is delayed until an operation actually edits or submits pixels.
+function selectionBounds(){
+  return state.selectionGeometry?.bounds||(state.selectionMask?maskBoundingBox(state.selectionMask):null);
+}
+function ensureSelectionMask(){
+  if(!state.selectionMask&&state.selectionGeometry?.crop?.mask){
+    const {mask,x,y}=state.selectionGeometry.crop;
+    state.selectionMask=makeCanvas(canvas.width,canvas.height);
+    state.selectionMask.getContext('2d').drawImage(mask,x,y);
+    state.selectionGeometry=null;
+  }
+  return state.selectionMask;
+}
+function selectionContainsPoint(point){
+  const crop=state.selectionGeometry?.crop;
+  if(crop){
+    const x=Math.floor(point.x)-crop.x,y=Math.floor(point.y)-crop.y;
+    return x>=0&&y>=0&&x<crop.mask.width&&y<crop.mask.height&&
+      crop.mask.getContext('2d',{willReadFrequently:true}).getImageData(x,y,1,1).data[3]>0;
+  }
+  const mask=state.selectionMask;
+  return !!mask&&point.x>=0&&point.y>=0&&point.x<mask.width&&point.y<mask.height&&
+    mask.getContext('2d',{willReadFrequently:true}).getImageData(Math.floor(point.x),Math.floor(point.y),1,1).data[3]>0;
 }
 function cloneMask(mask){const c=makeCanvas(canvas.width,canvas.height);c.getContext('2d').drawImage(mask,0,0);return c}
 // A material-only Option reuses the same immutable mask object as an existing
@@ -428,14 +453,18 @@ function selectGroupMask(group,{showOutline=false,append=false}={}){
   if(append){appendGroupSelection(group);return}
   if(!group||!state.master||state.busy||window.MosaicPremium?.isPreviewing())return;
   if(state.editingPatchId){toast('Finish editing the current mask first.');return}
-  const mask=groupMask(group);
-  if(!maskBoundingBox(mask)){toast('No saved selection for this group.');return}
-  resetSelection();state.selectionMask.getContext('2d').drawImage(mask,0,0);
+  const crop=groupMaskCrop(group);
+  if(!crop?.mask){toast('No saved selection for this group.');return}
+  resetSelection(true);
+  // Ordinary click: Object ID + cropped geometry; no full selection raster.
+  state.selectionGeometry={groupId:group.id,crop,
+    bounds:{x:crop.x,y:crop.y,w:crop.mask.width,h:crop.mask.height}};
   const active=state.patches.get(group.active);
-  setSelectionPaths(active?patchSelectionPaths(active):group.maskPaths?.length?group.maskPaths:maskPathsFromRaster(mask));
+  setSelectionPaths(active?patchSelectionPaths(active):group.maskPaths?.length?group.maskPaths:[]);
   state.selectionTargetPatchId=state.pendingSourceId?null:active?.id||null;
   state.draftGroupId=group.id;state.selectedPatchId=active?.id||null;state.selectionOverlayHidden=!showOutline;
-  if(window.MosaicObjectManager)window.MosaicObjectMap?.adoptSelection([window.MosaicObjectManager.partForObject(group)]);
+  window.MosaicObjectMap?.adoptIdentity?.(group);
+  if(state.pendingSourceId)ensureSelectionMask();
   setMode('new');selectTool('select');state.pendingRevealOnly=Boolean(state.pendingSourceId);updateSelectionOutline();updateApplyButton();renderGroups();render();
   message('Ready to edit '+group.name+'. '+(state.pendingSourceId?'Click Apply to keep this area from the imported image.':'Ctrl+click another object to multi-select, or use AI Edit.'));
   if(!showOutline)window.MosaicRegions?.clearHover?.();
@@ -498,6 +527,7 @@ function refreshQuickOptions(){
 function appendGroupSelection(group){
   if(window.MosaicObjectMap?.selectObject){window.MosaicObjectMap.selectObject(group,{append:true});return}
   if(!group||!state.master||state.busy||state.pendingSourceId||state.editingPatchId)return;
+  ensureSelectionMask();
   const additional=groupMask(group);
   if(!maskBoundingBox(additional))return;
   const current=state.selectionMask;
@@ -868,10 +898,15 @@ function drawVectorPaths(layer,paths,{color='#fff',fill='none',width=.95,dashed=
   if(dashed){attributes.stroke='#fff';attributes['stroke-dasharray']='4 6'}
   layer.append(svgNode('path',attributes));
 }
-function updateSelectionOutline(){window.MosaicObjects?.selectionChanged();state.boundaryCanvas=!state.selectionOverlayHidden&&state.selectionMask&&maskBoundingBox(state.selectionMask)?state.selectionMask:null;drawOverlay()}
+function updateSelectionOutline(){
+  if(!state.selectionGeometry)window.MosaicObjects?.selectionChanged();
+  state.boundaryCanvas=!state.selectionOverlayHidden&&selectionBounds()?
+    state.selectionGeometry?.crop.mask||state.selectionMask:null;
+  drawOverlay();
+}
 // Keep the object selected while browsing Options; reveal its guides only on returning to a prompt.
 function showSelectionHighlightForPrompt(){
-  if(!state.selectionOverlayHidden||!state.master||!state.selectionMask||!maskBoundingBox(state.selectionMask)||state.before||window.MosaicPremium?.isPreviewing())return;
+  if(!state.selectionOverlayHidden||!state.master||!selectionBounds()||state.before||window.MosaicPremium?.isPreviewing())return;
   state.selectionOverlayHidden=false;
   updateSelectionOutline();
 }
@@ -1061,7 +1096,9 @@ function groupEvent(e){if(window.MosaicRegions?.handleGroupEvent(e))return;if(wi
     chooseGroupOption(group,pid==='master'?null:pid);renderGroups();return;
   }
   if(action==='delete'&&group){if(state.pendingSourceId){toast('Finish the new image before removing variants.');return}group.patchIds=group.patchIds.filter(x=>x!==pid);state.patches.delete(pid);if(group.active===pid)group.active=group.patchIds.at(-1)||null;if(state.editingPatchId===pid)state.editingPatchId=null;if(state.selectedPatchId===pid)state.selectedPatchId=null;if(!group.patchIds.length)state.groups=state.groups.filter(g=>g.id!==group.id);else refreshGroupFootprint(group);resetSelection();renderGroups();render();toast('Variant removed.')}}
-function selectTool(tool){if(window.MosaicSourceEditor?.isEditing())return;clearHover();clearDraft();hideQuickPrompt();state.tool=tool;if(state.pendingSourceId&&tool==='reveal'){state.pendingRevealOnly=true;render()}$('resetTransformBtn').classList.toggle('hidden',tool!=='transform'||!activeTransformPatch());
+function selectTool(tool){if(window.MosaicSourceEditor?.isEditing())return;
+  if(state.selectionGeometry&&['lasso','rect','ellipse','wand','reveal','erase','cut','transform'].includes(tool))ensureSelectionMask();
+  clearHover();clearDraft();hideQuickPrompt();state.tool=tool;if(state.pendingSourceId&&tool==='reveal'){state.pendingRevealOnly=true;render()}$('resetTransformBtn').classList.toggle('hidden',tool!=='transform'||!activeTransformPatch());
   $('viewport').classList.toggle('is-selecting',['lasso','rect','ellipse','wand','reveal','erase'].includes(tool));
   $('wandOptions').classList.toggle('hidden',tool!=='wand');
   const modes=document.querySelector('.selection-modes');
@@ -1357,6 +1394,7 @@ function drawDraftPreview(){
 }
 
 function applyWandMask(region, coverage=0){
+  ensureSelectionMask();
   if(!state.selectionMask||!region||!region.width||!region.height){
     toast('AI Wand could not select that object. Try pointing farther inside it.');return;
   }
@@ -1412,7 +1450,7 @@ function trimUndo(){
     }
   }
 }
-function snapshotSelection(){if(!state.selectionMask)return;state.undo.push({type:'selection',objectSelection:window.MosaicObjectMap?.snapshotSelection(),paths:MaskGeometry.copyPaths(state.selectionPaths),points:copyCorners(state.selectionPoints),...captureMaskUndo(state.selectionMask)});trimUndo();state.redo=[]}
+function snapshotSelection(){ensureSelectionMask();if(!state.selectionMask)return;state.undo.push({type:'selection',objectSelection:window.MosaicObjectMap?.snapshotSelection(),paths:MaskGeometry.copyPaths(state.selectionPaths),points:copyCorners(state.selectionPoints),...captureMaskUndo(state.selectionMask)});trimUndo();state.redo=[]}
 function snapshotPatch(p){state.undo.push({type:'patch',patchId:p.id,paths:MaskGeometry.copyPaths(p.maskPaths),points:copyCorners(p.maskPoints),...captureMaskUndo(p.mask)});trimUndo();state.redo=[];detachSharedOptionMask(p)}
 function finishMaskSelection(){
   window.MosaicObjectMap?.selectionCompleted();
@@ -1524,7 +1562,7 @@ function exactMaskBoundingBox(mask){
   return maxX<0?null:{x:minX,y:minY,w:maxX-minX+1,h:maxY-minY+1};
 }
 function maskBoundingBox(mask){const w=Math.min(250,mask.width),h=Math.max(1,Math.round(w*mask.height/mask.width)),t=makeCanvas(w,h),tx=t.getContext('2d',{willReadFrequently:true});tx.drawImage(mask,0,0,w,h);const d=tx.getImageData(0,0,w,h).data;let minX=w,minY=h,maxX=-1,maxY=-1;for(let i=0;i<w*h;i++)if(d[i*4+3]>0){const x=i%w,y=Math.floor(i/w);minX=Math.min(minX,x);minY=Math.min(minY,y);maxX=Math.max(maxX,x);maxY=Math.max(maxY,y)}return maxX<0?null:{x:minX/w*canvas.width,y:minY/h*canvas.height,w:(maxX-minX+1)/w*canvas.width,h:(maxY-minY+1)/h*canvas.height}}
-function applySelection(){if(state.lasso.length){if(!updateMaskWithLasso()){toast('Add at least three line points, then click the first point or double-click to close.');return}}if(!state.selectionMask)return;const bbox=maskBoundingBox(state.selectionMask);if(!bbox){toast('Draw or brush a selection first.');return}
+function applySelection(){ensureSelectionMask();if(state.lasso.length){if(!updateMaskWithLasso()){toast('Add at least three line points, then click the first point or double-click to close.');return}}if(!state.selectionMask)return;const bbox=maskBoundingBox(state.selectionMask);if(!bbox){toast('Draw or brush a selection first.');return}
   if(state.pendingSourceId){const src=state.sources.get(state.pendingSourceId),mask=makeCanvas(canvas.width,canvas.height);mask.getContext('2d').drawImage(state.selectionMask,0,0);const patch={id:uid('patch'),sourceId:src.id,mask,bbox,maskPaths:MaskGeometry.copyPaths(state.selectionPaths),maskPoints:copyCorners(state.selectionPoints),name:optionNameFromPrompt(src.name,src.name),manualName:false},group=assignGroup(patch);state.pendingSourceId=null;state.editingPatchId=null;resetSelection();state.undo=[];state.redo=[];toast(`Saved as ${group.name}. Masks need 85% overlap to share a Group.`);message('Selection saved. Upload another image or switch options in Groups.');renderGroups();render();window.MosaicPremium?.onPatchApplied();loadNextVariant();return}
   if(state.editingPatchId){
     const patch=state.patches.get(state.editingPatchId);if(!patch)return;
@@ -1826,7 +1864,7 @@ function onKeys(e){if(e.key==='Escape'&&state.before){e.preventDefault();toggleC
     if(state.lasso.length>=3){e.preventDefault();updateMaskWithLasso();return}
     // Enter closes a draft shape; only clicking Apply commits an imported image.
     if(state.pendingSourceId||state.editingPatchId){e.preventDefault();message('Selection ready. Click Apply to commit the patch.');return}
-    if(maskBoundingBox(state.selectionMask||makeCanvas(1,1))){e.preventDefault();showQuickPrompt()}
+    if(selectionBounds()){e.preventDefault();showQuickPrompt()}
   }
   else if(e.key==='Escape'){e.preventDefault();if(state.lasso.length||state.shapeStart){clearDraft();drawOverlay();message('Unfinished shape canceled.')}else{resetSelection();render();message('Selection cleared.')}}
   else if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='z'){e.preventDefault();historyStep(state.undo,state.redo)}
@@ -1941,7 +1979,8 @@ simplifyButton.id='simplifySelectionBtn';simplifyButton.type='button';simplifyBu
 simplifyButton.textContent='Simplify';simplifyButton.title='Straighten noisy selection edges (Undo available)';
 $('clearSelectionBtn').before(simplifyButton);
 simplifyButton.addEventListener('click',()=>{
-  if(!state.master||!state.selectionMask||!maskBoundingBox(state.selectionMask)||state.busy||state.before||window.MosaicPremium?.isPreviewing()||window.MosaicSourceEditor?.isEditing())return;
+  if(!state.master||!selectionBounds()||state.busy||state.before||window.MosaicPremium?.isPreviewing()||window.MosaicSourceEditor?.isEditing())return;
+  ensureSelectionMask();
   const original=ensureSelectionPaths(),tolerance=Math.max(2,Math.min(12,Math.max(canvas.width,canvas.height)*.004));
   const paths=original.map(path=>MaskGeometry.simplify(path,tolerance));
   if(paths.every((path,i)=>path.length===original[i].length)){toast('Selection edges are already simple.');return}
@@ -2042,6 +2081,6 @@ viewport.addEventListener('wheel',event=>{
   if(state.shapeStart)state.shapeEnd=canvasPoint(event,false);drawOverlay();
 },{passive:false});
 window.addEventListener('mosaic:keyconnected',()=>state.groups.forEach(autoClassifyGroup));
-window.MosaicCore = {groupMaskCrop,compactOptionSource,expandOptionSource,sameMaskGeometry,shareMaterialOptionMask,shareSavedOptionMasks,detachSharedOptionMask,groupContainsPoint,appendGroupSelection,newGroup,newGroupFromCrop,matchingGroup,applyWandMask,svgNode,vectorLayer,drawVectorPaths,maskPathsFromRaster,state,canvas,overlay,ctx,makeCanvas,uid,setProjectTitle,toast,message,promptText,loadFileToCanvas,setMaster,continueWithBase,upgradeBaseDraft,setSourcePreview,updateSourceActions,render,composeApprovedCanvas,renderGroups,drawPatch,selectTool,setMode,updateApplyButton,maskBoundingBox,assignGroup,resetSelection,updateSelectionOutline,updateMaskWithLasso,updateZoomFit,escapeHTML,categoryFromText,updateGroupCategory,optionNameFromPrompt,prepareSelectionGroup,groupMask,selectGroupMask,CATEGORIES,showQuickPrompt,hideQuickPrompt,createBlankRegion,moveOptionToGroup,displayedPatchMask,renderedPatchLayer,refreshGroupFootprint,invalidateDisplayedMask,attachGeneratedSelection,patchSelectionPaths,exactMaskBoundingBox,unwarpPatchSelection,patchControlPoints,displayedMaskPoint};
+window.MosaicCore = {selectionBounds,ensureSelectionMask,selectionContainsPoint,groupMaskCrop,compactOptionSource,expandOptionSource,sameMaskGeometry,shareMaterialOptionMask,shareSavedOptionMasks,detachSharedOptionMask,groupContainsPoint,appendGroupSelection,newGroup,newGroupFromCrop,matchingGroup,applyWandMask,svgNode,vectorLayer,drawVectorPaths,maskPathsFromRaster,state,canvas,overlay,ctx,makeCanvas,uid,setProjectTitle,toast,message,promptText,loadFileToCanvas,setMaster,continueWithBase,upgradeBaseDraft,setSourcePreview,updateSourceActions,render,composeApprovedCanvas,renderGroups,drawPatch,selectTool,setMode,updateApplyButton,maskBoundingBox,assignGroup,resetSelection,updateSelectionOutline,updateMaskWithLasso,updateZoomFit,escapeHTML,categoryFromText,updateGroupCategory,optionNameFromPrompt,prepareSelectionGroup,groupMask,selectGroupMask,CATEGORIES,showQuickPrompt,hideQuickPrompt,createBlankRegion,moveOptionToGroup,displayedPatchMask,renderedPatchLayer,refreshGroupFootprint,invalidateDisplayedMask,attachGeneratedSelection,patchSelectionPaths,exactMaskBoundingBox,unwarpPatchSelection,patchControlPoints,displayedMaskPoint};
 Object.assign(window.MosaicCore,{focusGroupInSidebar,chooseGroupOption,groupChoiceVersion,toggleComparison,canCreateSelection,releaseSourceTexture,releasePatchTexture});
 promptText();
