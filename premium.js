@@ -174,7 +174,7 @@ function onSourceEdited(kind,raster){
       for(const patch of state.patches.values()){
         if(!patch.isMasterVersion||patch.masterVersion!==latest.number||updated.has(patch.sourceId))continue;
         const source=state.sources.get(patch.sourceId);
-        if(source){source.canvas=cloneCanvas(raster);updated.add(patch.sourceId)}
+        if(source){source.canvas=cloneCanvas(raster);source.crop=null;updated.add(patch.sourceId)}
       }
     }
     refreshMasterBrowser();
