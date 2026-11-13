@@ -27,23 +27,7 @@ const cloneCanvas = input => {
   output.getContext('2d').drawImage(input, 0, 0);
   return output;
 };
-function copyGraph(groups, patches, sources) {
-  // Preserve sharing *inside* an archive snapshot while keeping it isolated
-  // from the live editable graph. Old behavior cloned the same mask per Option.
-  const maskCopies=new WeakMap();
-  const copyMask=mask=>{
-    if(!mask)return mask;
-    if(!maskCopies.has(mask))maskCopies.set(mask,cloneCanvas(mask));
-    return maskCopies.get(mask);
-  };
-  return {
-    groups: groups.map(g => ({...g, objectBehind:g.objectBehind?[...g.objectBehind]:undefined,objectOriginal:g.objectOriginal?{...g.objectOriginal,repairs:[...g.objectOriginal.repairs]}:undefined,patchIds: [...g.patchIds],footprint: g.footprint?cloneCanvas(g.footprint):null})),
-    patches: new Map([...patches].map(([id,p]) => [id, {...p, objectRepairs:p.objectRepairs?[...p.objectRepairs]:undefined,mask: copyMask(p.mask),request:p.request?{...p.request,mask:copyMask(p.request.mask)}:p.request, corners: p.corners?.map(q=>({...q}))||null}])),
-    // Archived branches may reference lossless images already stored on disk.
-    // Keep their disk pointers rather than decoding all inactive options here.
-    sources: new Map([...sources].map(([id,s]) => [id, {...s, canvas: s.canvas?cloneCanvas(s.canvas):null}]))
-  };
-}
+// Harmonize never clones a complete project graph.
 function drawComposition(context, base, groups, patches, sources) {
   if(window.MosaicObjects){window.MosaicObjects.drawComposition(context,base,groups,patches,sources);return}
   context.clearRect(0, 0, canvas.width, canvas.height);
@@ -57,10 +41,7 @@ function drawComposition(context, base, groups, patches, sources) {
   }
 }
 function currentComposite(){return core.composeApprovedCanvas()}
-function findHistory(id, node = premium.root) {
-  for (let n = node; n; n = n.parent) if (n.id === id) return n;
-  return null;
-}
+// Archived project snapshot traversal removed.
 function showDialog(id) {
   const dialog = $(id);
   if (!dialog.open) dialog.showModal();
@@ -139,64 +120,28 @@ welcomeGenerateButton.removeAttribute('tabindex');welcomeGenerateButton.removeAt
 // Keep the submit action below the prompt; references stay beside its text field.
 $('welcomeBasePromptForm').append(welcomeGenerateButton);
 function onReferenceLoaded() {
-  // A Base upload is only a reference. Never silently promote it to Master.
-  if(state.reference&&state.master){
-    premium.originalMaster=cloneCanvas(state.reference);
-  }else{
-    premium.projectPrompt='';
-    premium.originalMaster=null;
-    updateIntent();
-    message('Base uploaded. Enter a prompt beneath Base to generate Master, or upload Master on the right.');
-  }
+  premium.projectPrompt='';
+  premium.originalMaster=null;
+  premium.initialMaster=null;
+  premium.masterVersions=[];
+  updateIntent();
+  message('Base uploaded. Select objects and create Options.');
 }
 function refreshMasterBrowser(){window.MosaicSources?.refresh?.()}
-function addMasterVersion(image,kind='Harmonized',prompt='',from=null){
-  const number=(premium.masterVersions.at(-1)?.number||0)+1;
-  premium.masterVersions.push({number,image:cloneCanvas(image),kind,prompt,from});
-  refreshMasterBrowser();
-  return number;
-}
-function onMasterLoaded(image,name='Master'){
-  premium.initialMaster=cloneCanvas(image);
-  if(state.reference)premium.originalMaster=cloneCanvas(state.reference);
-  addMasterVersion(image,name.includes('AI')?'AI generated':name.includes('Base')?'Base placeholder':'Uploaded');
-}
-function onBaseContinue(working){
-  // Continue is a deliberate manual draft, not a Master upload or generation.
+function addMasterVersion(){return null;} // Legacy API intentionally disabled.
+function onMasterLoaded(){/* No independent Master is created. */}
+function onBaseContinue(){
   premium.masterVersions=[];
-  premium.initialMaster=cloneCanvas(working);
-  premium.originalMaster=state.reference?cloneCanvas(state.reference):cloneCanvas(working);
+  premium.initialMaster=null;
+  premium.originalMaster=null;
   refreshMasterBrowser();
 }
-function onSourceEdited(kind,raster){
-  if(kind==='base'){premium.originalMaster=cloneCanvas(raster);window.MosaicObjectMap?.invalidateBase()}
-  if(kind==='master'){
-    // Editing Master 3 must not overwrite the immutable Original Master / Master 1 snapshot.
-    if(premium.masterVersions.length<=1)premium.initialMaster=cloneCanvas(raster);
-    const latest=premium.masterVersions.at(-1);
-    if(latest){
-      latest.image=cloneCanvas(raster);
-      // The active Master may also appear as shared per-region Master N options.
-      // Update only the matching latest version, not older Masters/material alternatives.
-      const updated=new Set();
-      for(const patch of state.patches.values()){
-        if(!patch.isMasterVersion||patch.masterVersion!==latest.number||updated.has(patch.sourceId))continue;
-        const source=state.sources.get(patch.sourceId);
-        if(source){source.canvas=cloneCanvas(raster);source.crop=null;updated.add(patch.sourceId)}
-      }
-    }
-    refreshMasterBrowser();
-  }
+function onSourceEdited(kind){
+  if(kind==='base')window.MosaicObjectMap?.invalidateBase();
+  // Background changes through Master edits are unsupported.
   core.promptText();
 }
-function onSourcesAligned(base,master){
-  premium.initialMaster=cloneCanvas(master);
-  premium.originalMaster=cloneCanvas(base);
-  if(premium.masterVersions.length===1)premium.masterVersions[0].image=cloneCanvas(master);
-  refreshMasterBrowser();
-  core.promptText();
-}
-
+function onSourcesAligned(){core.promptText();}
 function onMasterReset() {
   $('canvasGenerationProgress')?.replaceChildren();
   $('canvasWrap').querySelector('.master-image-transition')?.remove();
@@ -217,14 +162,8 @@ function onMasterReset() {
 function canSelectArea() {
   return core.canCreateSelection();
 }
-function isPreviewing() { return Boolean(premium.previewNode); }
-function drawArchivePreview(context) {
-  if (!premium.previewNode) return false;
-  const node = findHistory(premium.previewNode);
-  if (!node) {premium.previewNode = null; return false;}
-  drawComposition(context, node.base, node.groups, node.patches, node.sources);
-  return true;
-}
+function isPreviewing(){return false;}
+function drawArchivePreview(){return false;}
 function activePatchMarkup(){
   // Keep the four option controls stable even when a generation is pending.
   for(const patch of state.patches.values()){
@@ -243,134 +182,14 @@ function activePatchMarkup(){
     bar.append(progressFill);box.append(meta,bar);row.append(box);
   }
 }
-function groupMarkup(group, node) {
-  let html = '<div class="archived-region"><div class="archived-region-name">▧ ' + esc(group.name) +
-    ' <span>' + group.patchIds.length + ' options</span></div>';
-  const option = (pid, label) => '<button type="button" class="archived-option ' +
-    (group.active === pid ? 'selected' : '') + '" data-history-action="option" data-node="' +
-    node.id + '" data-history-group="' + group.id + '" data-history-patch="' + (pid || 'master') +
-    '"><span class="variant-dot"></span><span>' + esc(label) + '</span></button>';
-  html += option(null, 'Original / off');
-  for (const pid of group.patchIds) {
-    const p = node.patches.get(pid);
-    if (p) html += option(pid, p.name + (p.awaitingResult ? ' · awaiting image' : ''));
-  }
-  return html + '</div>';
-}
-function nodeMarkup(node, depth = 0) {
-  const open = premium.expanded.has(node.id);
-  const preview = premium.previewNode === node.id;
-  const safeTitle = 'Harmonized ' + node.number;
-  let html = '<section class="archive-node ' + (preview ? 'archive-previewing' : '') +
-    '" style="--history-depth:' + Math.min(depth, 6) + '"><button class="archive-head" type="button" data-history-action="toggle" data-node="' +
-    node.id + '"><span>' + (open ? '▾' : '▸') + '</span><span class="archive-icon">▣</span><span class="archive-title">' +
-    safeTitle + '<small>Archived · ' + (node.aiGenerated?'AI output':'Local snapshot') + ' · ' + node.groups.length +
-    ' groups</small></span><span class="archive-lock">◎</span></button>';
-  if (open) {
-    html += '<div class="archive-body"><div class="archive-actions">' +
-      '<button type="button" class="small-action ' + (preview ? 'active-action' : '') +
-      '" data-history-action="preview" data-node="' + node.id + '">' +
-      (preview ? 'Close preview' : 'Preview collage') + '</button>' +
-      '<button type="button" class="small-action" data-history-action="restore" data-node="' + node.id +
-      '">Branch from edits</button><button type="button" class="small-action" data-history-action="result" data-node="' +
-      node.id + '">Use flattened</button></div>';
-    html += '<p class="archive-note">Snapshot keeps masks, options and prompts. Select an old option to preview it, then branch to edit.</p>';
-    html += node.groups.map(g => groupMarkup(g, node)).join('');
-    if (node.parent) html += nodeMarkup(node.parent, depth + 1);
-    html += '</div>';
-  }
-  return html + '</section>';
-}
-function renderHistory(list) { activePatchMarkup(); /* Versions now live inside their Regions. */ }
-async function workFromNode(node, useFlattened) {
-  if (state.pendingSourceId || state.editingPatchId) {toast('Finish or discard your current mask first.');return;}
-  if (state.groups.length && !window.confirm('Switch working version? Your current unharmonized patches will be replaced. Harmonized snapshots remain in history.')) return;
-  const masterAtStart=state.master,projectAtStart=state.selectionGeneration;
-  try {
-    await window.MosaicDiskCache?.hydrateArchive?.(node,{all:!useFlattened,flattened:useFlattened});
-  }catch(error){
-    toast('Archived images unavailable: '+error.message);
-    return;
-  }
-  if(masterAtStart!==state.master || projectAtStart!==state.selectionGeneration)return;
-  premium.previewNode = null;
-  state.pendingSourceId = null;
-  state.queue = [];
-  state.selectedPatchId = null;
-  state.editingPatchId = null;
-  state.undo = [];
-  state.redo = [];
-  if (useFlattened) {
-    state.master = cloneCanvas(node.output);
-    state.groups = [];
-    state.patches = new Map();
-    state.sources = new Map();
-  } else {
-    const graph = copyGraph(node.groups, node.patches, node.sources);
-    state.master = cloneCanvas(node.base);
-    state.groups = graph.groups;
-    state.patches = graph.patches;
-    state.sources = graph.sources;
-  }
-  premium.branchFrom = node.id;
-  state.before = false;
-  resetSelection();
-  core.setProjectTitle('Branch · Harmonized ' + node.number);
-  $('masterTitle').textContent = useFlattened ? 'Harmonized ' + node.number : 'Restored edit composition';
-  renderGroups();
-  render();
-  message(useFlattened ? 'Editing a previous harmonized result. Existing history is preserved.' :
-    'Restored the archived editable collage. Change alternatives and harmonize again.');
-  toast('Branch created. Earlier harmonizations are still available.');
-  window.MosaicDiskCache?.schedule?.();
-}
-let archiveLoadToken=0;
-function handleGroupEvent(event) {
-  const ai = event.target.closest('[data-ai-action]');
-  if (ai) {
-    if(ai.dataset.aiAction === 'generate')void generateRegion(ai.dataset.patch);
-    if (ai.dataset.aiAction === 'upload') {
-      premium.uploadPatch = ai.dataset.patch;
-      $('aiResultInput').click();
-    }
-    return true;
-  }
-  const control = event.target.closest('[data-history-action]');
-  if (!control) return false;
-  const node = findHistory(control.dataset.node);
-  if (!node) return true;
-  if (state.pendingSourceId) {toast('Finish the imported variation first.');return true;}
-  const action = control.dataset.historyAction;
-  if(action==='toggle'){
-    premium.expanded.has(node.id) ? premium.expanded.delete(node.id) : premium.expanded.add(node.id);
-  }else if(action==='preview'||action==='option'){
-    const ticket=++archiveLoadToken;
-    const group=action==='option'?node.groups.find(g=>g.id===control.dataset.historyGroup):null;
-    const id=action==='option'?control.dataset.historyPatch:null;
-    if(action==='preview'&&premium.previewNode===node.id){
-      premium.previewNode=null;renderGroups();render();
-      window.MosaicDiskCache?.schedule?.();return true;
-    }
-    void (async()=>{
-      try{
-        if(group)group.active=id==='master'?null:id;
-        await window.MosaicDiskCache?.hydrateArchive?.(node);
-        if(ticket!==archiveLoadToken)return;
-        premium.previewNode=node.id;
-        renderGroups();render();
-      }catch(error){toast('Cannot open archived image: '+error.message);}
-    })();
-    return true;
-  }else if(action==='restore'||action==='result'){
-    ++archiveLoadToken;
-    void workFromNode(node,action==='result');
-    return true;
-  }
-  renderGroups();
-  render();
+function renderHistory(){activePatchMarkup();}
+function handleGroupEvent(event){
+  const ai=event.target.closest('[data-ai-action]');
+  if(!ai)return false;
+  if(ai.dataset.aiAction==='generate')void generateRegion(ai.dataset.patch);
+  if(ai.dataset.aiAction==='upload'){premium.uploadPatch=ai.dataset.patch;$('aiResultInput').click();}
   return true;
 }
-
 const REGION_COLORS=['#f59e60','#4eb8eb','#cb86e8','#7dd1ab','#e4bc4f','#ff7d9f','#8d9bf4','#b1d278'];
 function activeAIRegions(){return state.groups.map(g=>state.patches.get(g.active)).filter(p=>p?.color)}
 function drawRegionGuides(){
@@ -940,119 +759,76 @@ async function attachAIResult(file) {
     toast('Generated result updated in the background. Current mask stays editable.');
   } catch (error) {toast('Could not attach result: ' + error.message);}
 }
-async function openHarmonize() {
-  premium.regenerateFrom=null;
-  if (!state.master) {toast('Upload Base or Master first.');return;}
-  if (state.pendingSourceId || state.editingPatchId) {toast('Apply or discard the current mask first.');return;}
-  if (premium.previewNode) {toast('Close the archive preview or branch from it before harmonizing.');return;}
-  if (state.groups.some(g => g.active && state.patches.get(g.active)?.awaitingResult)) {
-    toast('An active masked AI request is still waiting for its result image.');return;
+async function openHarmonize(){
+  if(!state.master){toast('Upload Base first.');return;}
+  if(state.pendingSourceId||state.editingPatchId){toast('Apply or discard your current edit first.');return;}
+  if(state.groups.some(g=>g.active&&state.patches.get(g.active)?.awaitingResult)){
+    toast('Finish pending object edits before Harmonize.');return;
   }
   if(!await window.MosaicAuth.ensure())return;
   clearReferenceFiles('harmonize');
-  $('harmonizePromptInput').value = core.promptText();
-  $('harmonizeDialog').querySelector('h2').textContent='Flatten & harmonize';
+  $('harmonizePromptInput').value=core.promptText();
+  $('harmonizeDialog').querySelector('h2').textContent='Harmonize object options';
   showDialog('harmonizeDialog');
 }
-async function harmonizeWithAI(prompt,sourceVersion=null) {
+async function harmonizeWithAI(prompt){
   if(!await window.MosaicAuth.ensure())return;
-  if(state.pendingSourceId||state.editingPatchId){toast('Apply or discard your unfinished patch before generating.');return}
-  if(state.groups.some(g=>state.patches.get(g.active)?.awaitingResult)){toast('Finish pending region edits first.');return}
-  const a=$('harmonizeBtn'),b=$('harmonizeSidebarBtn');a.disabled=true;b.disabled=true;
-  const progress=beginAIProgress(
-    sourceVersion?'Regenerate Master '+sourceVersion.number:'Harmonize Master',
-    'Preparing the approved composition…'
-  );
-  const flattened = currentComposite();
+  if(!state.master){toast('Upload Base first.');return;}
+  if(state.pendingSourceId||state.editingPatchId){toast('Apply or discard your current edit first.');return;}
+  if(state.groups.some(g=>state.patches.get(g.active)?.awaitingResult)){
+    toast('Finish pending object edits first.');return;
+  }
+  const a=$('harmonizeBtn'),b=$('harmonizeSidebarBtn');
+  a.disabled=true;b.disabled=true;
+  const progress=beginAIProgress('Harmonizing Options','Preparing the approved composition…',{scope:'canvas'});
   const baseAtRequest=state.master;
+  const referenceAtRequest=state.reference;
   const generationAtRequest=state.selectionGeneration;
-  // Freeze the approved graph at submission time for accurate archive history.
-  // Any painting after this point belongs to the active working session.
-  const submittedGraph=copyGraph(state.groups,state.patches,state.sources);
+  const choices=state.groups.map(g=>[g.id,g.active,g.patchIds.length]);
   let finalImage;
   try{
-    message(sourceVersion?'Regenerating from Master '+sourceVersion.number+'…':'Generating harmonized architecture image with OpenAI…');
     progress.update(16,'Preparing reference images…');
     const references=await prepareReferenceImages(getReferenceFiles('harmonize'));
-    progress.update(30,'OpenAI is generating the full image…');
-    const answer=await window.MosaicAuth.request('/api/ai/harmonize',encodeRequest(prompt,null,sourceVersion?.image,references));
-    progress.update(82,'Image received. Decoding result…');
+    progress.update(30,'OpenAI is harmonizing the current composition…');
+    const answer=await window.MosaicAuth.request('/api/ai/harmonize',encodeRequest(prompt,null,null,references));
+    progress.update(82,'Decoding harmonized result…');
     finalImage=await fromGeneratedJPEG(answer.image);
-    progress.update(92,'Applying the new Master…');
-  }catch(error){progress.fail(error.message||'Harmonize failed.');toast('Harmonize failed: '+error.message);message('Your original collage is unchanged. Please retry.');return}
-  finally{a.disabled=false;b.disabled=false}
-  clearReferenceFiles('harmonize');
-  if(state.selectionGeneration!==generationAtRequest||state.master!==baseAtRequest){
-    // A different Master/project was loaded while the request was processing.
-    // Never overwrite its layers, masks or history with a stale AI result.
-    toast('Harmonize finished, but Master changed during generation. The current work was kept.');
-    progress.done('Finished; current Master was kept.');
-    return;
-  }
-  const editingInProgress=Boolean(state.pendingSourceId||state.editingPatchId
-    ||state.drawing||state.lasso.length
-    ||(state.selectionMask&&maskBoundingBox(state.selectionMask)));
-  const graph = submittedGraph;
-  const number = ++premium.serial;
-  const masterVersion=addMasterVersion(finalImage,sourceVersion?'Regenerated':'Harmonized',prompt,sourceVersion?.number||null);
-  const node = {
-    id: uid('harmonized'), number, base: cloneCanvas(baseAtRequest),
-    groups: graph.groups, patches: graph.patches, sources: graph.sources,
-    output: cloneCanvas(finalImage), prompt, parent: premium.root,
-    branchedFrom: premium.branchFrom, aiGenerated: true
-  };
-  premium.root = node;
-  premium.expanded.add(node.id);
-  if(!editingInProgress)premium.previewNode = null;
-  premium.lastRequest = {
-    originalBase: state.reference||premium.initialMaster||state.master, collage: cloneCanvas(sourceVersion?.image||flattened),
-    prompt, snapshotId: node.id
-  };
-  // Every Harmonize result becomes its own named option on EACH persistent object.
-  // SAM 3 resegments the full generated scene and spatially matches candidates
-  // to the existing Object IDs. Unmatched objects retain their previous masks.
-  let versionResult;
-  try{
-    versionResult=await window.MosaicSceneVersions.apply(finalImage,{
+    if(state.selectionGeneration!==generationAtRequest||state.master!==baseAtRequest
+      ||state.reference!==referenceAtRequest
+      ||choices.some(([id,active,length])=>{
+        const g=state.groups.find(g=>g.id===id);
+        return !g||g.active!==active||g.patchIds.length!==length;
+      })||state.groups.length!==choices.length){
+      progress.done('Project changed during generation; existing Options were kept.');
+      toast('Harmonize finished but the project changed. Generate again for the latest design.');
+      return;
+    }
+    progress.update(92,'Adding the result as object Options…');
+    const editingInProgress=Boolean(state.drawing||state.maskVertexDrag||state.maskMoveDrag);
+    const result=await window.MosaicSceneVersions.apply(finalImage,{
       type:'harmonize',prompt,preserveEditing:editingInProgress,
       onStatus:detail=>progress.update(94,detail)
     });
-  }catch(error){progress.fail(error.message);toast('Harmonize versioning failed: '+error.message);return}
-  // Preserve pending imports, selection canvas, in-progress lasso, mask editor,
-  // undo/redo stack, tool and keyboard focus across the background Master update.
-  premium.branchFrom = node.id;
-  $('masterTitle').textContent = 'Master ' + masterVersion + ' · AI';
-  $('masterInfo').textContent = canvas.width + ' × ' + canvas.height + ' · working image';core.setSourcePreview('masterPreview',finalImage);
-  core.setProjectTitle('Harmonized ' + number + ' · AI render');
-  renderGroups();
-  render();
-  message(editingInProgress
-    ?'Master '+masterVersion+' updated in the background. Your mask editing remains active.'
-    :'Master '+masterVersion+' is active. Earlier Masters remain available in the expandable source list.');
-  refreshMasterBrowser();toast('Master '+masterVersion+' saved. Current mask and earlier region options are preserved.');
-  progress.done('Master '+masterVersion+' is ready.');
+    // Only lightweight prompt metadata remains. No archived graph or collage.
+    premium.lastRequest={prompt};
+    message('Harmonize saved as '+result.objectCount+' object Options. Base stays unchanged.');
+    toast('Harmonize complete. Base image unchanged; old Options remain available.');
+    progress.done('New object Options ready.');
+  }catch(error){
+    progress.fail(error.message||'Harmonize failed.');
+    toast('Harmonize failed: '+error.message);
+  }finally{
+    a.disabled=false;b.disabled=false;clearReferenceFiles('harmonize');
+  }
 }
-function getMasterVersions(){return [...premium.masterVersions]}
-function initialMasterImage(){return premium.masterVersions[0]?.image||premium.initialMaster}
-async function regenerateMaster(number){
-  const version=premium.masterVersions.find(item=>item.number===Number(number));
-  if(!version){toast('This Master version is no longer available.');return}
-  try{await window.MosaicDiskCache?.ensure?.(version,'image');}
-  catch(error){toast('Cannot load Master version: '+error.message);return}
-  if(state.pendingSourceId||state.editingPatchId){toast('Apply or discard the unfinished patch first.');return}
-  if(state.groups.some(g=>g.active&&state.patches.get(g.active)?.awaitingResult)){toast('Complete the pending AI region first.');return}
-  if(!await window.MosaicAuth.ensure())return;
-  premium.regenerateFrom=version;
-  clearReferenceFiles('harmonize');
-  $('harmonizePromptInput').value=version.prompt||'Regenerate Master '+version.number+' into a refined architectural rendering. Preserve the camera, geometry, approved design, and material intent.';
-  $('harmonizeDialog').querySelector('h2').textContent='Regenerate Master '+version.number+' → new Master';
-  showDialog('harmonizeDialog');
-}
+function getMasterVersions(){return [];}
+function initialMasterImage(){return state.reference||state.master;}
+async function regenerateMaster(){toast('Use Harmonize again to add new object Options.');}
 function exportPrompt() {
   return premium.lastRequest?.prompt || null;
 }
 function originalImage() {
-  return premium.originalMaster||premium.initialMaster;
+  return state.reference||state.master;
 }
 /* Per-request visual references: optional, capped, compressed, and never persisted in browser storage. */
 /* Every AI prompt accepts images from file picker, clipboard or drag/drop. */
@@ -1210,106 +986,14 @@ async function prepareReferenceImages(files){
   }
   return output;
 }
-function encodeMasterRequest(prompt,referenceImages){
-  const base=state.reference;
-  if(!base)throw Error('Upload Base before generating Master.');
-  for(const maxSize of [1280,1080,900]){
-    const factor=Math.min(1,maxSize/Math.max(base.width,base.height));
-    const w=Math.max(128,Math.round(base.width*factor)),h=Math.max(128,Math.round(base.height*factor));
-    const encoded=resizedFrame(base,w,h);
-    const payload={base:encoded,collage:encoded,quality:'high',projectPrompt:prompt,prompt,references:referenceImages,regions:[]};
-    if(JSON.stringify(payload).length<3550000)return payload;
-  }
-  throw Error('Base and references are too large. Try smaller images.');
-}
-async function openMasterGenerate(){
-  if(!state.reference){toast('Upload a Base image to generate Master.');return}
-  if(premium.masterJob?.generation===state.selectionGeneration){toast('Master is generating. You can keep editing the canvas.');return}
-  if(!await window.MosaicAuth.ensure())return;
-  clearReferenceFiles('master');
-  $('masterGeneratePromptInput').value=premium.projectPrompt;
-  showDialog('masterGenerateDialog');
-}
+// Legacy Master entrypoints route to the Base-only Harmonize flow.
+async function openMasterGenerate(){return openHarmonize();}
 async function createMasterFromBase(prompt,files,button,afterSuccess){
-  if(!state.reference||state.busy)return;
-  if(premium.masterJob?.generation===state.selectionGeneration)return;
-  prompt=String(prompt||'').trim();
-  if(!prompt)return toast('Describe your desired Master image first.');
-  const job={generation:state.selectionGeneration};premium.masterJob=job;
-  // Generating a replacement Master must never delete the existing region work.
-  // The new Master is composited behind the user's live Groups and mask.
-  const baseAtRequest=state.reference;
-  const masterAtRequest=state.master;
-  const firstMaster=!state.master||state.masterIsBase;
-  let progress;
-  if(button){button.disabled=true;button.dataset.originalLabel=button.textContent;button.textContent='Generating…'}
-  try{
-    if(!await window.MosaicAuth.ensure())return;
-    // Enter the editor immediately. Base is a working draft until the first
-    // generated Master arrives, so its preview never creates a Master version.
-    const masterTarget=window.MozMasterResolution.target(state.reference.width,state.reference.height);
-    if(!state.master)core.continueWithBase(false,masterTarget);else core.upgradeBaseDraft(masterTarget);
-    job.generation=state.selectionGeneration;
-    if(firstMaster)core.setProjectTitle('Base');
-    core.updateSourceActions();
-    if($('masterGenerateDialog').open)$('masterGenerateDialog').close();
-    if(firstMaster)canvasProgressHost().replaceChildren();
-    progress=beginAIProgress('Generating Master','Preparing Base and references…',{scope:firstMaster?'canvas':'master'});
-    progress.update(16,'Preparing reference images…');
-    const images=await prepareReferenceImages(files);
-    const request=encodeMasterRequest(prompt,images);
-    // Never keep a modal blocking canvas tools while a full Master generates.
-    if($('masterGenerateDialog').open)$('masterGenerateDialog').close();
-    message('Generating Master in the background. You can keep editing masks.');
-    progress.update(30,'OpenAI is generating the Master image…');
-    const reply=await window.MosaicAuth.request('/api/ai/master',request);
-    progress.update(82,'Image received. Decoding result…');
-    if(state.reference!==baseAtRequest
-      ||(state.master!==masterAtRequest&&!state.masterIsBase)){
-      toast('The working project changed during generation; the current work was preserved.');
-      progress.done('Finished; current project was kept.');
-      return;
-    }
-    const working=state.master;
-    const sameAspect=working
-      && Math.abs(working.width/working.height-baseAtRequest.width/baseAtRequest.height)<.02;
-    const generated=await fromGeneratedJPEG(reply.image,sameAspect?working:baseAtRequest);
-    progress.update(92,'Applying the generated Master…');
-    premium.projectPrompt=prompt;
-    if(working){
-      if(generated.width!==canvas.width||generated.height!==canvas.height){
-        addMasterVersion(generated,'AI generated · not applied',prompt);
-        toast('New Master saved in versions, but aspect ratio differs. Current mask is preserved.');
-      }else{
-        const isFirstMaster=state.masterIsBase||!premium.masterVersions.length;
-        if(firstMaster)revealMaster(currentComposite());
-        state.master=generated;state.rawMaster=generated;state.masterIsBase=false;
-        if(!state.objectMap?.raster)window.MosaicObjectMap?.imageReady?.(generated);
-        const version=addMasterVersion(generated,'AI generated',prompt);
-        if(isFirstMaster)premium.initialMaster=cloneCanvas(generated);
-        premium.originalMaster=cloneCanvas(baseAtRequest);
-        core.setSourcePreview('masterPreview',generated);
-        $('masterTitle').textContent='Master '+version+' · AI';
-        $('masterInfo').textContent=generated.width+' × '+generated.height+' · AI generated';
-        $('masterStatus').textContent='✓';
-        $('masterZone').classList.add('ready');
-        core.setProjectTitle('Master '+version+' · AI');
-        renderGroups();render();
-        message('Master '+version+' updated behind your existing Groups and active mask.');
-        toast('Generated Master in the background; masking stays available.');
-      }
-    }else{
-      core.setMaster(generated,'Master · AI');
-      premium.originalMaster=cloneCanvas(baseAtRequest);
-      message('AI Master ready. Select regions to edit, or add another image.');
-      toast('Generated Master from Base.');
-    }
-    updateIntent();
-    afterSuccess?.();
-    core.updateSourceActions();render();
-    progress.done('Master is ready.');
-  }catch(error){progress?.fail(error.message||'Master generation failed.');toast('Master generation: '+error.message);message('Base image preserved. Retry when ready.')}
-  finally{if(premium.masterJob===job)premium.masterJob=null;if(button){button.disabled=false;button.textContent=button.dataset.originalLabel||'✦ Generate Master'}core.updateSourceActions()}
+  if(!state.master&&state.reference)core.continueWithBase(false);
+  if(!state.master){toast('Upload Base first.');return;}
+  premium.projectPrompt=String(prompt||'').trim()||premium.projectPrompt;
+  await harmonizeWithAI(premium.projectPrompt||core.promptText());
+  afterSuccess?.();
 }
 async function generateMaster(event){
   event.preventDefault();
@@ -1338,15 +1022,8 @@ function exportProjectState(){
   return {
     settings:{...premium.settings},
     projectPrompt:premium.projectPrompt,
-    root:premium.root,
     serial:premium.serial,
-    expanded:premium.expanded,
-    previewNode:premium.previewNode,
-    lastRequest:premium.lastRequest,
-    originalMaster:premium.originalMaster,
-    initialMaster:premium.initialMaster,
-    masterVersions:premium.masterVersions,
-    branchFrom:premium.branchFrom,
+    lastRequest:premium.lastRequest?.prompt?{prompt:premium.lastRequest.prompt}:null,
     regionSerial:premium.regionSerial,
     showGuides:premium.showGuides
   };
@@ -1359,16 +1036,11 @@ function restoreProjectState(snapshot){
   premium.settings=generationSettings(data.settings);
   syncGenerationSettings();
   premium.projectPrompt=String(data.projectPrompt||'');
-  premium.root=data.root||null;
+  premium.root=null;premium.expanded.clear();premium.previewNode=null;
   premium.serial=Number(data.serial)||0;
-  premium.expanded=data.expanded instanceof Set?data.expanded:new Set();
-  premium.previewNode=data.previewNode||null;
-  premium.lastRequest=data.lastRequest||null;
-  premium.originalMaster=data.originalMaster||null;
-  premium.initialMaster=data.initialMaster||null;
-  premium.masterVersions=Array.isArray(data.masterVersions)?data.masterVersions:[];
-  premium.branchFrom=data.branchFrom||null;
-  premium.regionSerial=Number(data.regionSerial)||0;
+  premium.lastRequest=data.lastRequest?.prompt?{prompt:String(data.lastRequest.prompt)}:null;
+  premium.originalMaster=null;premium.initialMaster=null;premium.masterVersions=[];
+  premium.branchFrom=null;premium.regionSerial=Number(data.regionSerial)||0;
   premium.showGuides=Boolean(data.showGuides);
   premium.regenerateFrom=null;premium.uploadPatch=null;
   $('regionGuidesBtn').setAttribute('aria-pressed',String(premium.showGuides));

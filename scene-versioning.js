@@ -69,23 +69,13 @@ async function apply(image,{type='ai-edit',prompt='',onStatus=()=>{},preserveEdi
   const category=(kind==='harmonize'?'Harmonize ':'AI Edit ')+number;
   state.sceneVersionCounters??={harmonize:0,'ai-edit':0};
   state.sceneVersionCounters[kind]=number;
-  const sourceId=core.uid('full_scene_source'),oldSourceId=core.uid('previous_scene_source');
-  const fullImage=clone(image);
+  const sourceId=core.uid('full_scene_source');
+  const fullImage=image;
   state.sources.set(sourceId,{id:sourceId,name:category,canvas:fullImage});
-  // Keep the previous visible image once, shared by original options.
-  const needPrevious=snapshots.some(({group})=>!group.patchIds.some(id=>state.patches.get(id)?.isOriginalMaster));
-  if(needPrevious)state.sources.set(oldSourceId,{id:oldSourceId,name:'Previous scene',canvas:clone(before)});
   const records=[];
   for(const {group,mask,choice} of snapshots){
-    if(needPrevious&&!group.patchIds.some(id=>state.patches.get(id)?.isOriginalMaster)){
-      const oldId=core.uid('scene_before');
-      const paths=core.maskPathsFromRaster(mask);
-      state.patches.set(oldId,{id:oldId,groupId:group.id,sourceId:oldSourceId,mask:clone(mask),
-        bbox:core.exactMaskBoundingBox(mask),maskPaths:paths,maskPoints:paths.flat(),
-        name:'Before full image',manualName:true,isOriginalMaster:true,versionCategory:'Original'});
-      group.patchIds.unshift(oldId);
-      core.shareMaterialOptionMask(state.patches.get(oldId),group);
-    }
+    // Old Options already preserve previous looks; avoid synthetic full-scene
+    // rollback sources or a cloned 'Before' image.
     // Apply at most one small perspective correction from long matching image
     // lines. Uncertain correspondence leaves RGB and the original mask alone.
     let aligned={image:fullImage,aligned:false,status:'locked-mask'};
@@ -119,13 +109,13 @@ async function apply(image,{type='ai-edit',prompt='',onStatus=()=>{},preserveEdi
   // Full Image AI Edit respects saved Object IDs. With existing groups,
   // keep the previous Master as the immutable outside-mask background.
   // Harmonize is intentionally allowed to replace the complete background.
-  if(kind==='harmonize'||!groups.length){state.master=fullImage;state.masterIsBase=false;}
+  // Base is immutable: Harmonize and AI Edit never replace it.
   state.objectMapLocked=Boolean(groups.length)||state.objectMapLocked;
   (state.sceneVersionHistory??=[]).push({type:kind,number,category,sourceId,
     prompt,createdAt:new Date().toISOString(),segmentationStatus:'locked-original',
     records});
   // If no original Object Map exists, at least keep the generated options usable.
-  if(!groups.length)window.MosaicObjectMap?.imageReady?.(fullImage);
+  // The original Base Object ID map remains valid.
   renderGroups();render();
   return {category,objectCount:records.length,matched:records.filter(v=>v.matched).length,
     segmentationStatus:'locked-original'};

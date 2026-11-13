@@ -103,7 +103,7 @@ function unpack(value,images,depth=0){
 }
 function projectState(){
   const fields=[
-    'reference','master','rawBase','rawMaster','masterIsBase','alignmentTransforms',
+    'reference','master','rawBase','masterIsBase','alignmentTransforms',
     'sources','groups','patches','pendingSourceId','editingPatchId','selectedPatchId',
     'selectionMask','selectionPoints','selectionPaths','selectionTargetPatchId','selectionMode','tool','pendingRevealOnly','serial',
     'draftGroupId','queuedGroupId','selectionGeneration','brushTargetId',
@@ -153,7 +153,7 @@ async function saveProject(){
     const url=URL.createObjectURL(blob),a=document.createElement('a');
     a.href=url;a.download=name+'.moz';document.body.appendChild(a);a.click();a.remove();void window.MosaicAccount?.track('project_saved');
     setTimeout(()=>URL.revokeObjectURL(url),20000);
-    toast('Saved '+a.download+' with editable images, masks, Groups and Master history.');
+    toast('Saved '+a.download+' with Base and editable object Options.');
     window.MosaicRecovery?.markSaved?.();
     return true;
   }catch(error){toast('Save project failed: '+error.message);return false}
@@ -170,7 +170,7 @@ async function reviveQueue(data,images){
   return output;
 }
 function restoreUI(saved,ui){
-  const hasMaster=Boolean(state.master),hasBase=Boolean(state.reference),realMaster=hasMaster&&!state.masterIsBase;
+  const hasMaster=Boolean(state.master),hasBase=Boolean(state.reference),realMaster=false;
   canvas.width=overlay.width=hasMaster?state.master.width:hasBase?state.reference.width:1;
   canvas.height=overlay.height=hasMaster?state.master.height:hasBase?state.reference.height:1;
   $('selectionDraft').setAttribute('viewBox','0 0 '+canvas.width+' '+canvas.height);
@@ -185,7 +185,7 @@ function restoreUI(saved,ui){
   $('masterInfo').textContent=realMaster?state.master.width+' × '+state.master.height:hasMaster?'Base-only working draft':'Working canvas';
   $('basePreview').classList.add('hidden');$('welcomeBaseThumb').classList.add('hidden');$('masterPreview').classList.add('hidden');
   if(hasBase){core.setSourcePreview('basePreview',state.reference);core.setSourcePreview('welcomeBaseThumb',state.reference)}
-  if(realMaster)core.setSourcePreview('masterPreview',state.master);
+  // No independent Master preview.
   state.projectTitle=String(saved.projectTitle||ui?.projectName||'Untitled composition');state.projectTitleManual=Boolean(saved.projectTitleManual);core.setProjectTitle(state.projectTitle);
   state.brushSize=Number(saved.brushSize)||36;state.brushIntensity=Number.isFinite(saved.brushIntensity)?saved.brushIntensity:100;
   $('brushSize').value=state.brushSize;$('brushValue').textContent=state.brushSize;
@@ -238,11 +238,21 @@ async function loadProjectFile(file,{recovery=false}={}){
     state.busy=false;state.before=false;state.transformDrag=null;state.maskVertexDrag=null;state.maskMoveDrag=null;state.maskEditOnly=Boolean(saved.maskEditOnly);state.selectionTargetPatchId=saved.selectionTargetPatchId||null;state.drawing=false;
     state.lasso=[];state.hoverPoint=null;state.pointerStart=null;
     state.brushTargetId=null;state.hoveredGroupId=null;
+    const originalBase=state.reference||state.master;
+    if(originalBase){
+      const w=state.master?.width||Math.min(2400,originalBase.width);
+      const h=state.master?.height||Math.max(1,Math.round(originalBase.height*w/originalBase.width));
+      const working=makeCanvas(w,h);
+      working.getContext('2d').drawImage(originalBase,0,0,w,h);
+      state.reference=originalBase;state.rawBase=originalBase;
+      state.master=working;state.rawMaster=null;state.masterIsBase=true;
+      state.objectMapLocked=Boolean(state.groups.length)||state.objectMapLocked;
+    }
     state.selectionMask=state.selectionMask||(state.master?makeCanvas(state.master.width,state.master.height):null);
     premium.restoreProjectState(restoredPremium);
     restoreUI(saved,data.ui);window.dispatchEvent(new Event('mosaic:projectloaded'));void window.MosaicAccount?.startProject(true,data.analytics?.projectId);void window.MosaicAccount?.track('project_opened');
     if(!recovery)window.MosaicRecovery?.markLoaded?.();
-    toast(recovery?'Recovered your temporary workspace from this device.':'Project restored, including Groups, options, selections and Master history.');
+    toast(recovery?'Recovered your temporary workspace from this device.':'Project restored with Base, Groups, and editable Options.');
     return true;
   }catch(error){toast((recovery?'Recovery failed: ':'Open project failed: ')+error.message);return false}
   finally{fileBusy=false;button.disabled=false;button.innerHTML=old}

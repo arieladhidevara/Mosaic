@@ -59,24 +59,26 @@ function labelFromPosition(b){let x=(b.x+b.w/2)/canvas.width,y=(b.y+b.h/2)/canva
 function promptText(){const p=`Create one seamless photorealistic architectural rendering using the two attached images.\n\nIMAGE 1 — BASE. Preserve its camera perspective, architectural geometry, spatial proportions and original structure where no deliberate change has been made.\n\nIMAGE 2 — MOSAIC COLLAGE. This is the primary source for approved material finishes, furniture, ornaments, lighting fixtures, and intentional geometry changes.\n\nINSTRUCTIONS:\n- Preserve the appearance and deliberate object changes selected in Image 2, even if they differ from Image 1.\n- Preserve Image 1's geometry in unchanged regions.\n- Harmonize collage seams, material transitions, shadows, reflections and color grading.\n- Do not add unrequested objects, change the camera, alter mullion spacing, or reinterpret approved design elements.\n- Prioritize design fidelity and architectural accuracy over artistic reinterpretation.\n\nOUTPUT: One cohesive professional architectural visualization. These images are references, not pixel-locked constraints.\n\nPROJECT DESIGN INTENT:\n${window.MosaicPremium?.projectPrompt() || 'Preserve the approved original design.'}`;$('promptPreview').textContent=p;return p}
 async function loadFileToCanvas(file,maxDimension=2400){if(!file||!file.type.startsWith('image/'))throw Error('Choose an image file.');let image;try{image=await createImageBitmap(file)}catch{image=await new Promise((resolve,reject)=>{const img=new Image(),url=URL.createObjectURL(file);img.onload=()=>{URL.revokeObjectURL(url);resolve(img)};img.onerror=()=>{URL.revokeObjectURL(url);reject(Error('Cannot open this image'))};img.src=url})}
   const scale=Math.min(1,maxDimension/Math.max(image.width,image.height)),c=makeCanvas(Math.round(image.width*scale),Math.round(image.height*scale));c.getContext('2d').drawImage(image,0,0,c.width,c.height);image.close?.();return c}
-async function importMaster(file){if(!file)return;if(state.rawMaster&&!state.masterIsBase){toast('Master is already uploaded. Open its preview or generate a new version.');return}
-  if(state.masterIsBase&&state.groups.length&&!window.confirm('Upload Master and replace the current Base-only draft and its Groups?'))return;
-  try{const c=await loadFileToCanvas(file);setMaster(c,fileName(file));void window.MosaicAccount?.track('master_uploaded');toast('Master ready. Add another image and select a region to keep.')}catch(e){toast(e.message)}}
-function setMaster(c,name,prepareObjects=true){if(!prepareObjects)window.MosaicObjectMap?.holdImage(c);window.MosaicWorkspace?.reset();window.MosaicObjects?.reset();void window.MosaicAccount?.startProject(!state.reference);window.MosaicPremium?.onMasterReset();state.master=c;state.sceneVersionCounters={harmonize:0,'ai-edit':0};state.sceneVersionHistory=[];state.sceneTargetSelections=[];state.objectMapLocked=false;state.before=false;state.focusedGroupId=null;window.MosaicAutoRegions?.reset?.();window.MosaicSlimWand?.reset?.();state.rawMaster=c;state.masterIsBase=false;state.alignmentTransforms=null;state.sources.clear();state.groups=[];state.objectCollections=[];state.patches.clear();state.pendingSourceId=null;state.queue=[];state.editingPatchId=null;state.selectedPatchId=null;state.undo=[];state.redo=[];state.selectionGeneration++;state.hoveredGroupId=null;state.queuedGroupId=null;
-  canvas.width=overlay.width=c.width;canvas.height=overlay.height=c.height;setSourcePreview('masterPreview',c);window.MosaicPremium?.onMasterLoaded?.(c,name);$('selectionDraft').setAttribute('viewBox',`0 0 ${c.width} ${c.height}`);resetSelection();
+async function importMaster(file){
+  if(!file)return;
+  if(!state.reference)return importReference(file);
+  toast('Base is locked. Use Add variation to explore another image.');
+}
+function setMaster(c,name,prepareObjects=true){if(!prepareObjects)window.MosaicObjectMap?.holdImage(c);window.MosaicWorkspace?.reset();window.MosaicObjects?.reset();void window.MosaicAccount?.startProject(!state.reference);window.MosaicPremium?.onMasterReset();state.master=c;state.sceneVersionCounters={harmonize:0,'ai-edit':0};state.sceneVersionHistory=[];state.sceneTargetSelections=[];state.objectMapLocked=false;state.before=false;state.focusedGroupId=null;window.MosaicAutoRegions?.reset?.();window.MosaicSlimWand?.reset?.();state.rawMaster=null;state.masterIsBase=true;state.alignmentTransforms=null;state.sources.clear();state.groups=[];state.objectCollections=[];state.patches.clear();state.pendingSourceId=null;state.queue=[];state.editingPatchId=null;state.selectedPatchId=null;state.undo=[];state.redo=[];state.selectionGeneration++;state.hoveredGroupId=null;state.queuedGroupId=null;
+  canvas.width=overlay.width=c.width;canvas.height=overlay.height=c.height;window.MosaicPremium?.onBaseContinue?.(c);$('selectionDraft').setAttribute('viewBox',`0 0 ${c.width} ${c.height}`);resetSelection();
   $('welcome').classList.add('hidden');$('canvasWrap').classList.remove('hidden');setProjectTitle(name);$('projectSize').textContent=`${c.width} × ${c.height}`;
-  $('masterTitle').textContent='Master';$('masterInfo').textContent=`${name} · ${c.width} × ${c.height}`;$('masterStatus').textContent='✓';$('masterZone').classList.add('ready');updateZoomFit();renderGroups();render();updateSourceActions();message('Upload a variation, select the area you want, then click Apply.');
+  updateZoomFit();renderGroups();render();updateSourceActions();message('Upload a variation, select the area you want, then click Apply.');
   // Generate the object map when a Base or Master enters the editor.
   // Internal Master swaps may opt out via prepareObjects=false.
   if(prepareObjects)window.MosaicObjectMap?.imageReady(c);
 }
-async function importReference(file){if(!file)return;if(state.reference){toast('Base is locked. Click Base to preview it.');return}try{state.reference=await loadFileToCanvas(file,4000);state.rawBase=state.reference;void window.MosaicAccount?.startProject(true);void window.MosaicAccount?.track('base_uploaded');state.alignmentTransforms=null;setSourcePreview('basePreview',state.reference);setSourcePreview('welcomeBaseThumb',state.reference);$('referenceTitle').textContent='Base';$('referenceInfo').textContent=`${fileName(file)} · ${state.reference.width} × ${state.reference.height}`;$('referenceStatus').textContent='✓';$('referenceZone').classList.add('ready');toast('Base image saved locally.');window.MosaicPremium?.onReferenceLoaded(file);updateSourceActions()}catch(e){toast(e.message)}}
+async function importReference(file){if(!file)return;if(state.reference){toast('Base is locked. Click Base to preview it.');return}try{state.reference=await loadFileToCanvas(file,4000);state.rawBase=state.reference;void window.MosaicAccount?.startProject(true);void window.MosaicAccount?.track('base_uploaded');state.alignmentTransforms=null;setSourcePreview('basePreview',state.reference);setSourcePreview('welcomeBaseThumb',state.reference);$('referenceTitle').textContent='Base';$('referenceInfo').textContent=`${fileName(file)} · ${state.reference.width} × ${state.reference.height}`;$('referenceStatus').textContent='✓';$('referenceZone').classList.add('ready');toast('Base image saved locally.');window.MosaicPremium?.onReferenceLoaded(file);setProjectTitle(fileName(file));continueWithBase(false);updateSourceActions()}catch(e){toast(e.message)}}
 function continueWithBase(notify=true,targetSize=null){
   if(!state.reference||state.master)return;
   const base=state.reference,max=2400,scale=Math.min(1,max/Math.max(base.width,base.height));
   const working=makeCanvas(targetSize?.width||Math.max(1,Math.round(base.width*scale)),targetSize?.height||Math.max(1,Math.round(base.height*scale)));
   working.getContext('2d').drawImage(base,0,0,working.width,working.height);
-  setMaster(working,'Base · Working Draft',!(notify===false&&targetSize));
+  setMaster(working,state.projectTitle||'Base',!(notify===false&&targetSize));
   state.masterIsBase=true;
   state.rawMaster=null;
   $('masterZone').classList.remove('ready');
@@ -85,7 +87,7 @@ function continueWithBase(notify=true,targetSize=null){
   $('masterPreview').classList.add('hidden');
   window.MosaicPremium?.onBaseContinue?.(working);
   updateSourceActions();
-  message('Base-only editor ready. Select an area to edit.');
+  message('Base ready. Select an object or area to edit.');
   if(notify)toast('Editing with Base only.');
 }
 function upgradeBaseDraft(target){
@@ -142,20 +144,13 @@ function showQuickPrompt(point=state.lastCanvasPointer,keepText=false){
 }
 function setSourcePreview(id,source){const img=$(id);if(!img||!source)return;img.src=source.toDataURL('image/jpeg',.75);img.classList.remove('hidden')}
 function updateSourceActions(){
-  const firstImageOnly=Boolean(state.reference&&!state.master);
-  const needsRealMaster=Boolean(state.reference&&(!state.master||state.masterIsBase));
-  $('generateMasterBtn').classList.toggle('hidden',!needsRealMaster);
-  const generating=Boolean(window.MosaicPremium?.isMasterGenerating?.());
-  $('generateMasterBtn').disabled=generating;
-  $('generateMasterBtn').textContent=generating?'Generating Master…':'✦ Generate Master from Base';
-  $('welcomeBasePromptForm').classList.toggle('hidden',!firstImageOnly);
-  $('welcomeContinueBtn').classList.toggle('hidden',!firstImageOnly);
-  $('welcomeTitle').textContent=firstImageOnly?'Base uploaded. What next?':'Start with an image.';
-  $('welcomeDescription').textContent=firstImageOnly
-    ?'Generate a Master from this Base, or choose Use Base to edit directly.'
-     :'Upload one Base image to start.';
+  // Base is the only background. Legacy Master controls stay hidden so
+  // historical .moz markup can still be parsed without creating new Masters.
+  $('generateMasterBtn').classList.add('hidden');
+  $('welcomeBasePromptForm').classList.add('hidden');
+  $('welcomeContinueBtn').classList.add('hidden');
+  $('editMasterBtn').classList.add('hidden');
   $('editBaseBtn').classList.toggle('hidden',!state.reference);
-  $('editMasterBtn').classList.toggle('hidden',!state.master);
   $('editPendingBtn').disabled=!state.pendingSourceId;
   if(state.master){$('welcome').classList.add('hidden');$('canvasWrap').classList.remove('hidden')}
   window.MosaicSources?.refresh?.();
@@ -1830,7 +1825,7 @@ async function exportImage(){
 $('referenceInput').addEventListener('change',async e=>{await importReference(e.target.files[0]);e.target.value=''});
 $('masterInput').addEventListener('change',async e=>{await importMaster(e.target.files[0]);e.target.value=''});
 $('variantInput').addEventListener('change',async e=>{await importVariants(e.target.files);e.target.value=''});
-$('newVariantBtn').addEventListener('click',()=>{if(!state.master){toast('Upload Master first.');return}if(state.draftGroupId)state.queuedGroupId=state.draftGroupId;$('variantInput').click()});
+$('newVariantBtn').addEventListener('click',()=>{if(!state.master){toast('Upload Base first.');return}if(state.draftGroupId)state.queuedGroupId=state.draftGroupId;$('variantInput').click()});
 $('addRegionBtn').addEventListener('click',createBlankRegion);
 $('quickMasterBtn').addEventListener('click',()=>$('masterInput').click());$('quickRevitBtn').addEventListener('click',()=>$('referenceInput').click());
 $('welcomeStart').addEventListener('click',()=>$('referenceInput').click());$('welcomeRevit').addEventListener('click',()=>$('masterInput').click());
