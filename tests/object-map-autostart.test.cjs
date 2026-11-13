@@ -10,10 +10,10 @@ test('Object Map startup mounts on currently rendered Create toolbar',()=>{
   assert.match(map,/querySelector\('\.selection-toolset'\)/);
   assert.doesNotMatch(map,/querySelector\('\[aria-label="Selection tools"\]'\)/);
 });
-test('Use Base enters editor with automatic Object Map preparation',()=>{
+test('Base upload enters editor automatically and prepares Object Map',()=>{
   const app=source('app.js'),map=source('object-map.js');
-  assert.match(app,/welcomeContinueBtn'\)\.addEventListener\('click',continueWithBase\)/);
-  assert.match(app,/setMaster\(working,'Base · Working Draft',!\(notify===false&&targetSize\)\)/);
+  assert.ok(app.includes('onReferenceLoaded(file);setProjectTitle(fileName(file));continueWithBase(false)'));
+  assert.ok(app.includes("setMaster(working,state.projectTitle||'Base'"));
   assert.match(app,/if\(prepareObjects\)window\.MosaicObjectMap\?\.imageReady\(c\)/);
   assert.match(map,/state\.objectMap=null;void prepareBase\(\)/);
   assert.match(map,/addEventListener\('mosaic:keyconnected',\(\)=>void prepareBase\(\)\)/);
