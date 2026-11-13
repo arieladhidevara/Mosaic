@@ -12,8 +12,13 @@ test('spatial lookup sees only overlapping edited objects in front-to-back order
 test('crop-only alpha hit respects offset, holes and transparent margins',()=>{
   const rgba=new Uint8ClampedArray(5*4*4);
   rgba[(2*5+3)*4+3]=255;rgba[(1*5+2)*4+3]=0;
-  const crop={x:100,y:40,mask:{width:5,height:4,
-    getContext:()=>({getImageData(x,y){return{data:rgba.slice((y*5+x)*4,(y*5+x)*4+4)}})}}};
+  const mask={width:5,height:4,getContext(){
+    return {getImageData(x,y){
+      const i=(y*5+x)*4;
+      return {data:rgba.slice(i,i+4)};
+    }};
+  }};
+  const crop={x:100,y:40,mask};
   assert.equal(cropContainsPoint(crop,{x:103.7,y:42.8}),true);
   assert.equal(cropContainsPoint(crop,{x:102,y:41}),false);
   assert.equal(cropContainsPoint(crop,{x:99,y:42}),false);
