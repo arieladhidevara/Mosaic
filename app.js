@@ -213,6 +213,51 @@ function selectionContainsPoint(point){
     mask.getContext('2d',{willReadFrequently:true}).getImageData(Math.floor(point.x),Math.floor(point.y),1,1).data[3]>0;
 }
 function cloneMask(mask){const c=makeCanvas(canvas.width,canvas.height);c.getContext('2d').drawImage(mask,0,0);return c}
+// Canonical per-Option geometry lives in a local alpha crop + world offset.
+// Rasterize the entire Master only at a legacy edit or AI boundary.
+const compactMaskCache=new WeakMap();
+function fullPatchMask(patch){
+  if(!patch?.mask)return null;
+  if(!patch.maskOffset)return patch.mask;
+  const output=makeCanvas(canvas.width,canvas.height),{x,y}=patch.maskOffset;
+  output.getContext('2d').drawImage(patch.mask,x,y);
+  return output;
+}
+function expandPatchMask(patch){
+  if(!patch?.mask)return null;
+  if(patch.maskOffset){
+    const old=patch.mask;patch.mask=fullPatchMask(patch);patch.maskOffset=null;
+    if(patch.request?.mask===old)patch.request.mask=patch.mask;
+    invalidateDisplayedMask(patch);
+  }
+  return patch.mask;
+}
+function compactPatchMask(patch){
+  if(!patch?.mask||patch.maskOffset||patch.generating||patch.awaitingResult||
+    state.drawing&&state.brushTargetId===patch.id||state.editingPatchId===patch.id)return patch?.mask;
+  // Do not crop genuinely full-image geometry.
+  const original=patch.mask;
+  let cached=compactMaskCache.get(original);
+  if(!cached){
+    const box=exactMaskBoundingBox(original);
+    if(!box||box.x===0&&box.y===0&&box.w===canvas.width&&box.h===canvas.height)return original;
+    const cropped=makeCanvas(box.w,box.h);
+    cropped.getContext('2d').drawImage(original,-box.x,-box.y);
+    cached={mask:cropped,offset:{x:box.x,y:box.y},geometryId:uid('mask_geometry')};
+    compactMaskCache.set(original,cached);
+  }
+  patch.mask=cached.mask;patch.maskOffset={...cached.offset};
+  patch.maskGeometryId=cached.geometryId;
+  if(patch.request?.mask===original)patch.request.mask=patch.mask;
+  invalidateDisplayedMask(patch);
+  return patch.mask;
+}
+function compactAllOptionMasks(){
+  if(state.drawing||state.maskVertexDrag||state.maskMoveDrag)return;
+  for(const patch of state.patches.values())if(!patch.maskOffset)compactPatchMask(patch);
+  // Material-only Options sharing exact shape also share the cropped raster.
+  shareSavedOptionMasks();
+}
 // A material-only Option reuses the same immutable mask object as an existing
 // Option with identical alpha geometry. Shape/Create variants keep their own
 // silhouettes; edits to shared masks must detach before changing pixels.
@@ -233,8 +278,11 @@ function shareMaterialOptionMask(patch,group){
   for(const id of group.patchIds){
     const candidate=state.patches.get(id);
     if(!candidate||candidate===patch||!candidate.mask)continue;
+    if((patch.maskOffset?.x||0)!==(candidate.maskOffset?.x||0)||
+      (patch.maskOffset?.y||0)!==(candidate.maskOffset?.y||0))continue;
     if(!sameMaskGeometry(original,candidate.mask))continue;
     patch.mask=candidate.mask;
+    patch.maskGeometryId=candidate.maskGeometryId||patch.maskGeometryId;
     if(patch.request?.mask===original)patch.request.mask=patch.mask;
     if(original!==patch.mask)invalidateDisplayedMask(patch);
     return patch.mask;
@@ -251,7 +299,9 @@ function detachSharedOptionMask(patch){
   if(!patch?.mask)return null;
   const original=patch.mask;
   if([...state.patches.values()].some(other=>other!==patch&&other.mask===original)){
-    patch.mask=cloneMask(original);
+    const detached=makeCanvas(original.width,original.height);
+    detached.getContext('2d').drawImage(original,0,0);
+    patch.mask=detached;patch.maskGeometryId=uid('mask_geometry');
     if(patch.request?.mask===original)patch.request.mask=patch.mask;
     invalidateDisplayedMask(patch);
   }
@@ -262,6 +312,9 @@ function groupMaskCrop(group){
   if(!group)return null;
   if(!group.active&&!group.objectOriginal&&!group.footprint&&group.maskCrop)
     return group.maskCrop;
+  const active=state.patches.get(group.active);
+  if(active?.maskOffset&&!active.corners&&!active.geometryObjectMask)
+    return {mask:active.mask,x:active.maskOffset.x,y:active.maskOffset.y};
   const cached=groupCropCache.get(group);
   if(cached&&cached.patchId===group.active)return cached.crop;
   const mask=groupMask(group),bounds=group.area||exactMaskBoundingBox(mask);
@@ -419,9 +472,16 @@ function refreshGroupFootprint(group){
   groupCropCache.delete(group);
   window.MosaicObjectMap?.invalidateHitIndex?.();
   const patches=group.patchIds.map(id=>state.patches.get(id)).filter(Boolean);
-  if(!patches.length&&group.mapPrepared){group.area=maskBoundingBox(groupMask(group));return}
+  if(!patches.length&&group.mapPrepared){
+    const crop=group.maskCrop;
+    group.area=crop?{x:crop.x,y:crop.y,w:crop.mask.width,h:crop.mask.height}:group.area;return;
+  }
   const union=makeCanvas(canvas.width,canvas.height),c=union.getContext('2d');
-  for(const patch of patches)c.drawImage(displayedPatchMask(patch),0,0);
+  for(const patch of patches){
+    if(patch.maskOffset&&!patch.corners&&!patch.geometryObjectMask)
+      c.drawImage(patch.mask,patch.maskOffset.x,patch.maskOffset.y);
+    else c.drawImage(displayedPatchMask(patch),0,0);
+  }
   // Drop the persistent full-image footprint after recomputation. A prepared
   // Object Map already owns the original crop, which must survive "Master"
   // selection; manual Groups keep the union as a new cropped footprint.
@@ -434,7 +494,7 @@ function refreshGroupFootprint(group){
     }else group.maskCrop=null;
   }
   group.footprint=null;
-  group.area=maskBoundingBox(groupMask(group));
+  group.area=exactMaskBoundingBox(union)||group.area;
   if(group.objectOriginal)window.MosaicObjects?.scheduleRepair();
 }
 function moveOptionToGroup(patchId,targetGroupId){
@@ -597,7 +657,7 @@ function renderedPatchLayer(patch){
   return output;
 }
 function displayedPatchMask(patch){
-  if(!patch.corners?.length)return patch.mask;
+  if(!patch.corners?.length)return fullPatchMask(patch);
   const signature=[patch.bbox.x,patch.bbox.y,patch.bbox.w,patch.bbox.h,
     ...patch.corners.flatMap(p=>[p.x,p.y])].join('/');
   const cached=visibleMaskCache.get(patch);
@@ -605,8 +665,8 @@ function displayedPatchMask(patch){
   const result=makeCanvas(canvas.width,canvas.height);
   // Use the SAME affine / four-corner mesh as the visible option. The stored
   // source mask remains non-destructive and can always be reset or undone.
-  const surrogate={bbox:patch.bbox,mask:patch.mask,corners:patch.corners};
-  drawPatch(result.getContext('2d'),surrogate,{canvas:patch.mask});
+  const world=fullPatchMask(patch),surrogate={bbox:patch.bbox,mask:world,corners:patch.corners};
+  drawPatch(result.getContext('2d'),surrogate,{canvas:world});
   visibleMaskCache.set(patch,{mask:patch.mask,signature,canvas:result});
   return result;
 }
@@ -634,7 +694,7 @@ function patchControlPoints(patch){
       // Older projects contain raster masks only. Recover handles on their
       // actual boundary instead of displaying the bounding rectangle.
       const b=patch.bbox,q=[{x:b.x,y:b.y},{x:b.x+b.w,y:b.y},{x:b.x+b.w,y:b.y+b.h},{x:b.x,y:b.y+b.h}];
-      const d=patch.mask.getContext('2d',{willReadFrequently:true}).getImageData(0,0,canvas.width,canvas.height).data;
+      const d=fullPatchMask(patch).getContext('2d',{willReadFrequently:true}).getImageData(0,0,canvas.width,canvas.height).data;
       const distances=q.map(()=>Infinity);points=[];
       for(let y=Math.max(0,Math.floor(b.y));y<Math.min(canvas.height,Math.ceil(b.y+b.h));y++)for(let x=Math.max(0,Math.floor(b.x));x<Math.min(canvas.width,Math.ceil(b.x+b.w));x++){
         if(d[(y*canvas.width+x)*4+3]<=80)continue;
@@ -655,10 +715,11 @@ function patchTexture(patch, source) {
   const image=makeCanvas(Math.max(1,right-x),Math.max(1,bottom-y)),tc=image.getContext('2d');
   tc.drawImage(source.canvas,(source.crop?.x||0)-x,(source.crop?.y||0)-y);
   tc.globalCompositeOperation='destination-in';
-  if(!state.featherEnabled||source.canvas===patch.mask||patch.isMasterVersion){tc.drawImage(patch.mask,-x,-y)}
+  const maskX=(patch.maskOffset?.x||0)-x,maskY=(patch.maskOffset?.y||0)-y;
+  if(!state.featherEnabled||source.canvas===patch.mask||patch.isMasterVersion){tc.drawImage(patch.mask,maskX,maskY)}
   else{
     const feather=makeCanvas(image.width,image.height),fc=feather.getContext('2d',{willReadFrequently:true});
-    fc.drawImage(patch.mask,-x,-y);
+    fc.drawImage(patch.mask,maskX,maskY);
     const pixels=fc.getImageData(0,0,feather.width,feather.height);
     const radius=Math.min(24,Math.max(4,Math.max(canvas.width,canvas.height)*.006),Math.min(b.w,b.h)/3);
     const alpha=window.MozMaskFeather.featherAlpha(pixels.data,feather.width,feather.height,radius);
@@ -961,13 +1022,14 @@ function patchThumbnail(patch){
   const src=state.sources.get(patch.sourceId),cached=optionThumbCache.get(patch);
   // Keep the tiny cutout preview visible without decoding an inactive full-size source.
   if(!src?.canvas)return cached?.data||'';
-  const mask=displayedPatchMask(patch);
+  const mask=patch.corners?.length?displayedPatchMask(patch):patch.mask;
   if(!mask||patch.awaitingResult)return '';
   const signature=[patch.bbox?.x,patch.bbox?.y,patch.bbox?.w,patch.bbox?.h,
     ...(patch.corners||[]).flatMap(p=>[p.x,p.y])].join('/');
   if(cached&&cached.source===src.canvas&&cached.mask===patch.mask&&cached.signature===signature)return cached.data;
   const image=patch.corners?.length?renderedPatchLayer(patch):src.canvas;
-  const data=cutoutThumbnail(image,mask,null,patch.corners?.length?null:src.crop);
+  const data=cutoutThumbnail(image,mask,patch.corners?.length?null:patch.maskOffset,
+    patch.corners?.length?null:src.crop);
   optionThumbCache.set(patch,{source:src.canvas,mask:patch.mask,signature,data});
   return data;
 }
@@ -1005,6 +1067,7 @@ const objectLabel=g=>String(g.name||g.objectName||'').trim();
 const unnamedObject=g=>!objectLabel(g)||/^(?:unnamed(?: object)?|object\s*#?\d+|region\s*#?\d+|new object|untitled)(?:\s*\d+)?$/i.test(objectLabel(g));
 const sortObjectNames=(a,b)=>objectLabel(a).localeCompare(objectLabel(b),undefined,{numeric:true,sensitivity:'base'})||String(a.id).localeCompare(String(b.id));
 function renderGroups(){
+  compactAllOptionMasks();
   const list=$('groupList');
   // Async AI status/semantic naming refreshes the Groups panel while people
   // type an inline prompt. Preserve the actual form node, its attached files,
@@ -1165,7 +1228,7 @@ function ensureSelectionPaths(){
   return state.selectionPaths||[];
 }
 function patchSelectionPaths(patch){
-  if(!patch.maskPaths?.length)patch.maskPaths=maskPathsFromRaster(patch.mask,patch.maskPoints||[]);
+  if(!patch.maskPaths?.length)patch.maskPaths=maskPathsFromRaster(fullPatchMask(patch),patch.maskPoints||[]);
   return patch.maskPaths.map(path=>path.map(point=>displayedMaskPoint(point,patch)));
 }
 function selectionVertexAt(point){
@@ -1190,7 +1253,12 @@ function attachGeneratedSelection(patch,group){
   for(let i=3;i<a.length;i+=4)if((a[i]>0)!==(b[i]>0))return;
   state.selectionTargetPatchId=patch.id;state.draftGroupId=group.id;
 }
-function placementSnapshot(patch){return {sourceId:patch.sourceId,mask:cloneMask(patch.mask),maskPaths:MaskGeometry.copyPaths(patch.maskPaths),maskPoints:copyCorners(patch.maskPoints),bbox:{...patch.bbox},corners:copyCorners(patch.corners)}}
+function placementSnapshot(patch){
+  const local=makeCanvas(patch.mask.width,patch.mask.height);
+  local.getContext('2d').drawImage(patch.mask,0,0);
+  return {sourceId:patch.sourceId,mask:local,maskOffset:patch.maskOffset?{...patch.maskOffset}:null,
+    maskPaths:MaskGeometry.copyPaths(patch.maskPaths),maskPoints:copyCorners(patch.maskPoints),bbox:{...patch.bbox},corners:copyCorners(patch.corners)};
+}
 function snapshotPlacement(patch){state.undo.push({type:'placement',patchId:patch.id,placement:placementSnapshot(patch)});trimUndo();state.redo=[]}
 function warpImagePaths(layer,fromPaths,toPaths,mask=state.selectionMask){
   const output=makeCanvas(canvas.width,canvas.height),target=output.getContext('2d');
@@ -1214,7 +1282,7 @@ function deformSelectionMask(mask,fromPaths,toPaths,paths){
 }
 function commitImagePlacement(patch,layer){
   const source=state.sources.get(patch.sourceId),id=uid('placed_source');
-  patch.mask=cloneMask(state.selectionMask);patch.maskPaths=MaskGeometry.copyPaths(state.selectionPaths);patch.maskPoints=patch.maskPaths.flat();
+  patch.mask=cloneMask(state.selectionMask);patch.maskOffset=null;patch.maskPaths=MaskGeometry.copyPaths(state.selectionPaths);patch.maskPoints=patch.maskPaths.flat();
   patch.bbox=exactMaskBoundingBox(patch.mask)||patch.bbox;patch.corners=null;invalidateDisplayedMask(patch);
   const pad=Math.max(48,Math.ceil(Math.max(patch.bbox.w,patch.bbox.h)*.15));
   state.sources.set(id,{id,name:source?.name||patch.name,...compactOptionSource(layer,patch.bbox,pad)});
@@ -1224,7 +1292,7 @@ function commitImagePlacement(patch,layer){
 function saveSelectionGeometry(pixels=true){
   const patch=state.patches.get(state.selectionTargetPatchId);
   if(patch){
-    if(pixels)patch.mask=unwarpPatchSelection(state.selectionMask,patch);
+    if(pixels){patch.mask=unwarpPatchSelection(state.selectionMask,patch);patch.maskOffset=null}
     patch.maskPaths=state.selectionPaths.map(path=>path.map(point=>pointToOriginalMask(point,patch)));patch.maskPoints=patch.maskPaths.flat();
     if(!patch.corners&&pixels)patch.bbox=exactMaskBoundingBox(patch.mask)||patch.bbox;
     invalidateDisplayedMask(patch);const group=state.groups.find(g=>g.patchIds.includes(patch.id));if(group)refreshGroupFootprint(group);
@@ -1459,7 +1527,7 @@ function trimUndo(){
   }
 }
 function snapshotSelection(){ensureSelectionMask();if(!state.selectionMask)return;state.undo.push({type:'selection',objectSelection:window.MosaicObjectMap?.snapshotSelection(),paths:MaskGeometry.copyPaths(state.selectionPaths),points:copyCorners(state.selectionPoints),...captureMaskUndo(state.selectionMask)});trimUndo();state.redo=[]}
-function snapshotPatch(p){state.undo.push({type:'patch',patchId:p.id,paths:MaskGeometry.copyPaths(p.maskPaths),points:copyCorners(p.maskPoints),...captureMaskUndo(p.mask)});trimUndo();state.redo=[];detachSharedOptionMask(p)}
+function snapshotPatch(p){state.undo.push({type:'patch',patchId:p.id,paths:MaskGeometry.copyPaths(p.maskPaths),points:copyCorners(p.maskPoints),...captureMaskUndo(fullPatchMask(p))});trimUndo();state.redo=[];detachSharedOptionMask(p)}
 function finishMaskSelection(){
   window.MosaicObjectMap?.selectionCompleted();
   void window.MosaicAccount?.track('selection_created');
@@ -1472,6 +1540,7 @@ function editExistingCreateMask(patch,shape){
   const input=patch.corners?.length?unwarpPatchSelection(shape,patch):shape;
   // Explicit Add/Subtract is a geometry change: this Option owns its mask.
   detachSharedOptionMask(patch);
+  expandPatchMask(patch);
   const previous=cloneMask(patch.mask),ctx=patch.mask.getContext('2d');
   if(state.selectionMode==='subtract')ctx.globalCompositeOperation='destination-out';
   else ctx.globalCompositeOperation='source-over';
@@ -1576,6 +1645,7 @@ function applySelection(){ensureSelectionMask();if(state.lasso.length){if(!updat
     const patch=state.patches.get(state.editingPatchId);if(!patch)return;
     snapshotPatch(patch);
     const sourceMask=unwarpPatchSelection(state.selectionMask,patch);
+    expandPatchMask(patch);
     const t=patch.mask.getContext('2d');t.clearRect(0,0,canvas.width,canvas.height);
     t.drawImage(sourceMask,0,0);
     patch.maskPaths=state.selectionPaths.map(path=>path.map(point=>pointToOriginalMask(point,patch)));
@@ -1642,7 +1712,7 @@ function paint(e,first){
   const visiblePoint=canvasPoint(e),r=+$('brushSize').value;
   const patch=state.pendingSourceId||state.editingPatchId?null:state.patches.get(state.brushTargetId||state.selectedPatchId);
   // Brush changes geometry and must never modify sibling Material Options.
-  if(patch&&first)detachSharedOptionMask(patch);
+  if(patch&&first){detachSharedOptionMask(patch);expandPatchMask(patch)}
   const mask=patch?.mask||state.selectionMask;
   if(!mask){if(first)toast('Upload a variation or select a saved region first.');return}
   const point=patch?pointToOriginalMask(visiblePoint,patch):visiblePoint;
@@ -1688,7 +1758,7 @@ function historyStep(from,to){
   // Undo/redo uses putImageData, which mutates in place. Restore on a private
   // copy if another Option still references the old mask.
   if(entry.type==='patch')detachSharedOptionMask(state.patches.get(entry.patchId));
-  const mask=entry.type==='selection'?state.selectionMask:state.patches.get(entry.patchId)?.mask;
+  const mask=entry.type==='selection'?state.selectionMask:expandPatchMask(state.patches.get(entry.patchId));
   if(!mask)return;
   const points=entry.type==='selection'?state.selectionPoints:state.patches.get(entry.patchId)?.maskPoints;
   const paths=entry.type==='selection'?state.selectionPaths:state.patches.get(entry.patchId)?.maskPaths;
@@ -2089,6 +2159,6 @@ viewport.addEventListener('wheel',event=>{
   if(state.shapeStart)state.shapeEnd=canvasPoint(event,false);drawOverlay();
 },{passive:false});
 window.addEventListener('mosaic:keyconnected',()=>state.groups.forEach(autoClassifyGroup));
-window.MosaicCore = {selectionBounds,ensureSelectionMask,selectionContainsPoint,groupMaskCrop,compactOptionSource,expandOptionSource,sameMaskGeometry,shareMaterialOptionMask,shareSavedOptionMasks,detachSharedOptionMask,groupContainsPoint,appendGroupSelection,newGroup,newGroupFromCrop,matchingGroup,applyWandMask,svgNode,vectorLayer,drawVectorPaths,maskPathsFromRaster,state,canvas,overlay,ctx,makeCanvas,uid,setProjectTitle,toast,message,promptText,loadFileToCanvas,setMaster,continueWithBase,upgradeBaseDraft,setSourcePreview,updateSourceActions,render,composeApprovedCanvas,renderGroups,drawPatch,selectTool,setMode,updateApplyButton,maskBoundingBox,assignGroup,resetSelection,updateSelectionOutline,updateMaskWithLasso,updateZoomFit,escapeHTML,categoryFromText,updateGroupCategory,optionNameFromPrompt,prepareSelectionGroup,groupMask,selectGroupMask,CATEGORIES,showQuickPrompt,hideQuickPrompt,createBlankRegion,moveOptionToGroup,displayedPatchMask,renderedPatchLayer,refreshGroupFootprint,invalidateDisplayedMask,attachGeneratedSelection,patchSelectionPaths,exactMaskBoundingBox,unwarpPatchSelection,patchControlPoints,displayedMaskPoint};
+window.MosaicCore = {compactPatchMask,compactAllOptionMasks,fullPatchMask,expandPatchMask,selectionBounds,ensureSelectionMask,selectionContainsPoint,groupMaskCrop,compactOptionSource,expandOptionSource,sameMaskGeometry,shareMaterialOptionMask,shareSavedOptionMasks,detachSharedOptionMask,groupContainsPoint,appendGroupSelection,newGroup,newGroupFromCrop,matchingGroup,applyWandMask,svgNode,vectorLayer,drawVectorPaths,maskPathsFromRaster,state,canvas,overlay,ctx,makeCanvas,uid,setProjectTitle,toast,message,promptText,loadFileToCanvas,setMaster,continueWithBase,upgradeBaseDraft,setSourcePreview,updateSourceActions,render,composeApprovedCanvas,renderGroups,drawPatch,selectTool,setMode,updateApplyButton,maskBoundingBox,assignGroup,resetSelection,updateSelectionOutline,updateMaskWithLasso,updateZoomFit,escapeHTML,categoryFromText,updateGroupCategory,optionNameFromPrompt,prepareSelectionGroup,groupMask,selectGroupMask,CATEGORIES,showQuickPrompt,hideQuickPrompt,createBlankRegion,moveOptionToGroup,displayedPatchMask,renderedPatchLayer,refreshGroupFootprint,invalidateDisplayedMask,attachGeneratedSelection,patchSelectionPaths,exactMaskBoundingBox,unwarpPatchSelection,patchControlPoints,displayedMaskPoint};
 Object.assign(window.MosaicCore,{focusGroupInSidebar,chooseGroupOption,groupChoiceVersion,toggleComparison,canCreateSelection,releaseSourceTexture,releasePatchTexture});
 promptText();
