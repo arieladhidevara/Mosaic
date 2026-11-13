@@ -79,16 +79,15 @@ test('image generation request contract',async t=>{
     assert.match(sent.prompt,/x=200, y=100, width=256, height=256/);
     assert.match(sent.prompt,/output only the crop in Image 1/);
   });
-  await t.test('opt-in material cutouts return PNG with real transparency, without JPEG compression',async()=>{
+  await t.test('legacy transparent cutout requests are ignored and always return opaque JPEG',async()=>{
     const result=await generate(request({transparentLayer:true,targetObject:'Wall with two door openings'}),true);
-    assert.equal(result.mimeType,'image/png');
-    assert.equal(sent.background,'transparent');
-    assert.equal(sent.output_format,'png');
-    assert.equal(sent.output_compression,undefined);
+    assert.equal(result.mimeType,'image/jpeg');
+    assert.equal(sent.background,undefined);
+    assert.equal(sent.output_format,'jpeg');
+    assert.equal(sent.output_compression,100);
     assert.deepEqual(sent.mask,{image_url:mask});
-    assert.match(sent.prompt,/TRANSPARENT OUTPUT CONTRACT/);
-    assert.match(sent.prompt,/true RGBA|true transparency|TRUE transparent/i);
-    assert.match(sent.prompt,/UNSELECTED/);
+    assert.doesNotMatch(sent.prompt,/TRANSPARENT OUTPUT CONTRACT/);
+    assert.match(sent.prompt,/Render complete, opaque scene pixels inside the edited area/);
   });
   await t.test('shape/create/remove never use transparent cutouts',async()=>{
     for(const editIntent of ['shape','create','remove']){
