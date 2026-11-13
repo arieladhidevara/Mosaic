@@ -3,6 +3,13 @@
  * flat raster directly; only overrides need bounding-box buckets.
  * No DOM/canvas allocations happen during lookup.
  */
+// Single-pixel hit testing in crop-local coordinates. No full-size mask scan.
+export function cropContainsPoint(crop,point){
+  if(!crop?.mask||!point)return false;
+  const x=Math.floor(point.x)-crop.x,y=Math.floor(point.y)-crop.y;
+  return x>=0&&y>=0&&x<crop.mask.width&&y<crop.mask.height&&
+    crop.mask.getContext('2d',{willReadFrequently:true}).getImageData(x,y,1,1).data[3]>0;
+}
 export function buildObjectHitGrid(objects,width,height,tile=128){
   const size=Math.max(16,Math.floor(tile)||128),cols=Math.ceil(width/size);
   const cells=new Map();
