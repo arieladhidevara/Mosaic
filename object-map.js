@@ -120,13 +120,13 @@ async function prepareBase(force=false){
     const target=objectMapSize(base.width,base.height),w=target.width,h=target.height;
     const sample=makeCanvas(w,h);sample.getContext('2d').drawImage(base,0,0,w,h);
     const answer=await window.MosaicAuth.request('/api/ai/object-map',{image:sample.toDataURL('image/jpeg',.94)});
-    if(ticket!==serial||state.master!==base)return;
+    if(ticket!==serial||state.master!==base||state.objectMapLocked)return;
     const image=new Image();image.src='data:image/png;base64,'+answer.image;await image.decode();
     if(image.width!==w||image.height!==h)throw Error('The object map changed image dimensions. Retry objects.');
     const map=makeCanvas(w,h),x=map.getContext('2d',{willReadFrequently:true});x.drawImage(image,0,0);
     const decoded=decodeColors(x.getImageData(0,0,w,h).data,w,h),pixels=x.createImageData(w,h);
     for(let i=0;i<decoded.labels.length;i++){pixels.data[i*4]=decoded.labels[i];pixels.data[i*4+3]=255}x.putImageData(pixels,0,0);
-    if(ticket!==serial||state.master!==base)return;
+    if(ticket!==serial||state.master!==base||state.objectMapLocked)return;
     const legend=new Map((answer.legend||[]).map(entry=>[entry.id,entry]));
     state.objectMap=prepareInstanceMap({sourceKey:sourceKey(base),raster:map,labelsAvailable:Boolean(answer.labelsAvailable),qualityWarnings:decoded.warnings,entries:decoded.ids.map(id=>{const item=legend.get(id);return {id,color:PALETTE[id-1].color,category:CATEGORIES.includes(item?.category)?item.category:'Other',group:item?.group||'',label:item?.label||'Object '+id}})},makeCanvas,window.MozMaskGeometry);
     (state.objectMaps??={})[state.objectMap.sourceKey]=state.objectMap;
@@ -411,9 +411,17 @@ function selectObject(object,{append=false}={}){
   if(!append){core.selectGroupMask(object,{showOutline:true});return}
   core.ensureSelectionMask();
   const part=compactObjectPart(object),mode=append&&state.objectSelectionParts?.length?'add':'new';operation={parts:snapshotSelection(),picked:[part]};picking=true;pickingMode=mode;state.selectionTargetPatchId=null;state.draftGroupId=null;state.selectedPatchId=null;state.maskEditOnly=false;core.setMode(mode);const selection=makeCanvas(canvas.width,canvas.height);drawPartMask(selection.getContext('2d'),part);core.applyWandMask(selection);picking=false}
+function cancelPending(){
+  if(!busy)return;
+  // A generated full-scene segmentation has replaced the pending initial map.
+  // Ignore its late response rather than appending stale duplicate Object IDs.
+  serial++;busy=false;pendingClick=null;attemptedBase=state.master;
+  window.MosaicMaskProgress?.hide('objects');
+  update('Generated objects ready');
+}
 function invalidateBase(){serial++;busy=false;pendingBase=state.master;attemptedBase=pendingBase;labels=null;state.objectMap=null;state.objectMapSelection=null;if(state.master)delete state.objectMaps?.[sourceKey(state.master)];leave();window.MosaicMaskProgress?.hide('objects');update('Image changed · prepare objects again',true)}
 function imageChanged(){if(state.objectMapLocked)return;if(state.master&&state.master!==heldImage&&state.master!==pendingBase)baseLoaded(state.master)}
-window.MosaicObjectMap={imageReady:baseLoaded,baseLoaded,prepareBase,refineMask,selectShape,selectionCompleted,cancelSelection,partsForSelection,adoptSelection,adoptIdentity,snapshotSelection,selectObject,hitTest:hitObjectAt,invalidateHitIndex,cropAt,tintCrop,hasSelection:()=>Boolean(state.objectSelectionParts?.length),hydrate,invalidateBase,drawSelection,holdImage:image=>{heldImage=image}};
+window.MosaicObjectMap={imageReady:baseLoaded,baseLoaded,prepareBase,cancelPending,refineMask,selectShape,selectionCompleted,cancelSelection,partsForSelection,adoptSelection,adoptIdentity,snapshotSelection,selectObject,hitTest:hitObjectAt,invalidateHitIndex,cropAt,tintCrop,hasSelection:()=>Boolean(state.objectSelectionParts?.length),hydrate,invalidateBase,drawSelection,holdImage:image=>{heldImage=image}};
 // Preserve the canvas tool integration while removing model downloads and all
 // SAM calls. Wand hover/click are now lookups into the saved Base index map.
 window.MosaicSlimWand={onToolChange,hoverAt,selectAt,leave,reset:()=>{active=false;pendingClick=null;leave()},preload(){},imageChanged,imageKey:()=>state.objectMap?.sourceKey};
