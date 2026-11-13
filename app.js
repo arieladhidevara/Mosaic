@@ -232,6 +232,21 @@ function detachSharedOptionMask(patch){
   }
   return patch.mask;
 }
+const groupCropCache=new WeakMap();
+function groupMaskCrop(group){
+  if(!group)return null;
+  if(!group.active&&!group.objectOriginal&&!group.footprint&&group.maskCrop)
+    return group.maskCrop;
+  const cached=groupCropCache.get(group);
+  if(cached&&cached.patchId===group.active)return cached.crop;
+  const mask=groupMask(group),bounds=group.area||exactMaskBoundingBox(mask);
+  if(!bounds?.w||!bounds?.h)return null;
+  const cropped=makeCanvas(bounds.w,bounds.h);
+  cropped.getContext('2d').drawImage(mask,-bounds.x,-bounds.y);
+  const crop={mask:cropped,x:bounds.x,y:bounds.y};
+  groupCropCache.set(group,{patchId:group.active,crop});
+  return crop;
+}
 function groupMask(group){
   // A region reuses the *visible, transformed* mask of its active option.
   // Do not reuse an original mask left behind after moving/skewing an option.
@@ -269,7 +284,9 @@ function groupLabel(group){
 function newGroup(mask,category='Region'){
   const group={id:uid('group'),category,manualName:false,manualCategory:false,patchIds:[],active:null,
     footprint:cloneMask(mask),area:maskBoundingBox(mask),classificationPending:false};
-  state.groups.push(group);group.name=groupLabel(group);return group;
+  state.groups.push(group);group.name=groupLabel(group);
+  window.MosaicObjectMap?.invalidateHitIndex?.();
+  return group;
 }
 // Imported Object IDs start with an already-cropped mask. Never expand and
 // immediately re-crop hundreds of full-resolution object masks during hydration.
@@ -374,6 +391,8 @@ function assignGroup(patch,targetGroupId=state.draftGroupId){
 }
 function refreshGroupFootprint(group){
   groupThumbCache.delete(group);
+  groupCropCache.delete(group);
+  window.MosaicObjectMap?.invalidateHitIndex?.();
   const patches=group.patchIds.map(id=>state.patches.get(id)).filter(Boolean);
   if(!patches.length&&group.mapPrepared){group.area=maskBoundingBox(groupMask(group));return}
   const union=makeCanvas(canvas.width,canvas.height),c=union.getContext('2d');
@@ -1754,7 +1773,7 @@ function pointerUp(e){
       if(maskBoundingBox(state.selectionMask))showQuickPrompt({clientX:e.clientX,clientY:e.clientY});
       else toast('No object found in the rectangle. Try a larger box.');
     }else{
-      const point=end,group=findRegionAt(point);
+      const point=end,group=window.MosaicObjectMap?.hitTest?.(point)||(!state.objectMap?.raster?findRegionAt(point):null);
       if(group){if(mods.append)appendGroupSelection(group);else selectGroupMask(group,{showOutline:true});
         focusGroupInSidebar(group);showQuickPrompt({clientX:e.clientX,clientY:e.clientY});}
       else if(state.objectMap?.raster)window.MosaicSlimWand?.selectAt?.(point,mods);
@@ -2023,6 +2042,6 @@ viewport.addEventListener('wheel',event=>{
   if(state.shapeStart)state.shapeEnd=canvasPoint(event,false);drawOverlay();
 },{passive:false});
 window.addEventListener('mosaic:keyconnected',()=>state.groups.forEach(autoClassifyGroup));
-window.MosaicCore = {compactOptionSource,expandOptionSource,sameMaskGeometry,shareMaterialOptionMask,shareSavedOptionMasks,detachSharedOptionMask,groupContainsPoint,appendGroupSelection,newGroup,newGroupFromCrop,matchingGroup,applyWandMask,svgNode,vectorLayer,drawVectorPaths,maskPathsFromRaster,state,canvas,overlay,ctx,makeCanvas,uid,setProjectTitle,toast,message,promptText,loadFileToCanvas,setMaster,continueWithBase,upgradeBaseDraft,setSourcePreview,updateSourceActions,render,composeApprovedCanvas,renderGroups,drawPatch,selectTool,setMode,updateApplyButton,maskBoundingBox,assignGroup,resetSelection,updateSelectionOutline,updateMaskWithLasso,updateZoomFit,escapeHTML,categoryFromText,updateGroupCategory,optionNameFromPrompt,prepareSelectionGroup,groupMask,selectGroupMask,CATEGORIES,showQuickPrompt,hideQuickPrompt,createBlankRegion,moveOptionToGroup,displayedPatchMask,renderedPatchLayer,refreshGroupFootprint,invalidateDisplayedMask,attachGeneratedSelection,patchSelectionPaths,exactMaskBoundingBox,unwarpPatchSelection,patchControlPoints,displayedMaskPoint};
+window.MosaicCore = {groupMaskCrop,compactOptionSource,expandOptionSource,sameMaskGeometry,shareMaterialOptionMask,shareSavedOptionMasks,detachSharedOptionMask,groupContainsPoint,appendGroupSelection,newGroup,newGroupFromCrop,matchingGroup,applyWandMask,svgNode,vectorLayer,drawVectorPaths,maskPathsFromRaster,state,canvas,overlay,ctx,makeCanvas,uid,setProjectTitle,toast,message,promptText,loadFileToCanvas,setMaster,continueWithBase,upgradeBaseDraft,setSourcePreview,updateSourceActions,render,composeApprovedCanvas,renderGroups,drawPatch,selectTool,setMode,updateApplyButton,maskBoundingBox,assignGroup,resetSelection,updateSelectionOutline,updateMaskWithLasso,updateZoomFit,escapeHTML,categoryFromText,updateGroupCategory,optionNameFromPrompt,prepareSelectionGroup,groupMask,selectGroupMask,CATEGORIES,showQuickPrompt,hideQuickPrompt,createBlankRegion,moveOptionToGroup,displayedPatchMask,renderedPatchLayer,refreshGroupFootprint,invalidateDisplayedMask,attachGeneratedSelection,patchSelectionPaths,exactMaskBoundingBox,unwarpPatchSelection,patchControlPoints,displayedMaskPoint};
 Object.assign(window.MosaicCore,{focusGroupInSidebar,chooseGroupOption,groupChoiceVersion,toggleComparison,canCreateSelection,releaseSourceTexture,releasePatchTexture});
 promptText();

@@ -3,9 +3,39 @@ import './object-management.js';
 import {PALETTE,decodeColors,idsOverlappingShape,labelAt,CATEGORIES,objectMapSize} from './object-map-utils.mjs';
 import {CLEANUP_VERSION} from './object-map-cleanup.mjs';
 import {cropObjectLabel} from './object-mask-crop.mjs';
+import {buildObjectHitGrid} from './object-hit-index.mjs';
 import {prepareInstanceMap,readInstanceLabels} from './object-map-geometry.mjs';
 const core=window.MosaicCore,{state,canvas,makeCanvas}=core;
-let labels=null,mapWidth=0,mapHeight=0,serial=0,busy=false,pendingBase=null,attemptedBase=null,picking=false,pickingIds=[],pickingMode='new',pendingClick=null,active=false,hoverId=0,heldImage=null,operation=null;
+let labels=null,mapWidth=0,mapHeight=0,serial=0,busy=false,pendingBase=null,attemptedBase=null,picking=false,pickingIds=[],pickingMode='new',pendingClick=null,active=false,hoverId=0,hoverMask=null,heldImage=null,operation=null;
+let hitIndex=null,entryById=new Map(),sourceCropCache=new Map();
+function invalidateHitIndex(){hitIndex=null;hoverId=0;hoverMask=null;preview.hidden=true}
+function indexedObjects(){
+  if(hitIndex&&hitIndex.groups===state.groups&&hitIndex.count===state.groups.length&&hitIndex.width===canvas.width&&hitIndex.height===canvas.height)return hitIndex;
+  const byId=new Map(),dynamic=[];
+  for(const [order,group] of state.groups.entries()){
+    if(group.mergedInto||group.objectMapBatch||group.objectRemoved)continue;
+    if(group.objectMapKey===state.objectMap?.sourceKey&&group.objectMapInstanceId)byId.set(group.objectMapInstanceId,group);
+    // Prepared, unedited objects belong to the flat ID raster. Index only
+    // moved, shape-edited and manually created objects as spatial overrides.
+    if(!group.mapPrepared||group.active||group.objectOriginal||group.footprint)
+      dynamic.push({group,order,bounds:group.area});
+  }
+  hitIndex={groups:state.groups,count:state.groups.length,width:canvas.width,height:canvas.height,
+    byId,grid:buildObjectHitGrid(dynamic,canvas.width,canvas.height)};
+  return hitIndex;
+}
+function hitObjectAt(point){
+  if(!point||point.x<0||point.y<0||point.x>=canvas.width||point.y>=canvas.height)return null;
+  const index=indexedObjects();
+  // Only groups in this small spatial cell are considered; never scan every
+  // full-resolution object mask on each pointer move.
+  for(const item of index.grid.candidates(point))
+    if(core.groupContainsPoint(item.group,point))return item.group;
+  const id=labels?labelAt(labels,mapWidth,mapHeight,point.x,point.y,canvas.width,canvas.height):0;
+  const mapped=index.byId.get(id);
+  // A moved object must not remain selectable at its obsolete Base pixels.
+  return mapped&&!mapped.active?mapped:null;
+}
 const controls=document.createElement('div');controls.className='object-selection-controls';
 controls.innerHTML='<span id="objectMapStatus" role="status">Preparing objects…</span><button id="objectMapRetry" type="button" hidden>Retry objects</button>';
 (document.querySelector('.selection-toolset')?.closest('.toolbar-section')||document.getElementById('tools'))?.append(controls);
@@ -56,6 +86,7 @@ function hydrate(){
     }
   }
   mapWidth=map.raster.width;mapHeight=map.raster.height;labels=readInstanceLabels(map);
+  entryById=new Map(map.entries.map(entry=>[entry.id,entry]));sourceCropCache.clear();invalidateHitIndex();
   migrateLegacyGroups(map);
   window.MosaicObjectManager.ensureObjects(map,maskForIds,maskCropForEntry);core.renderGroups();
   const needsReview=Array.isArray(map.qualityWarnings)&&map.qualityWarnings.length>0;
@@ -113,16 +144,7 @@ function maskForIds(ids){
   }
   x.putImageData(pixels,0,0);return mask;
 }
-function liveObjectAt(point){
-  if(point.x<0||point.y<0||point.x>=canvas.width||point.y>=canvas.height)return null;
-  for(const group of state.groups.slice().reverse()){
-    if(group.objectMapBatch||group.mergedInto||group.objectRemoved)continue;
-    if(!group.objectMapObjectKey&&!group.mapPrepared&&!group.objectId)continue;
-    if(core.groupContainsPoint(group,point))
-      return group;
-  }
-  return null;
-}
+function liveObjectAt(point){return hitObjectAt(point)}
 function partsOverlappingMask(mask){
   const dimension=384,scale=Math.min(1,dimension/Math.max(canvas.width,canvas.height));
   const w=Math.max(1,Math.round(canvas.width*scale)),h=Math.max(1,Math.round(canvas.height*scale));
@@ -259,21 +281,45 @@ function migrateLegacyGroups(map){
   if(changed){state.selectedPatchId=null;state.draftGroupId=null;core.renderGroups();core.render()}
 }
 function onToolChange(tool){active=tool==='wand'||tool==='select';leave();if(active&&!labels&&!state.groups.some(g=>g.mapPrepared))update(busy?'Preparing objects…':'Upload Base and connect AI to prepare objects',Boolean(attemptedBase&&!busy&&!state.objectMap))}
+// Both the hover tint and the selected-object tint are small local canvases.
+// Their CSS position maps the crop back into the Master coordinate system.
+function tintCrop(target,crop,opacity){
+  if(!crop?.mask)return;
+  const {mask,x,y}=crop;
+  if(target.width!==mask.width)target.width=mask.width;
+  if(target.height!==mask.height)target.height=mask.height;
+  const t=target.getContext('2d');
+  t.clearRect(0,0,mask.width,mask.height);t.drawImage(mask,0,0);
+  t.globalCompositeOperation='source-in';t.fillStyle='rgba(180,147,245,'+opacity+')';
+  t.fillRect(0,0,mask.width,mask.height);t.globalCompositeOperation='source-over';
+  target.style.position='absolute';target.style.inset='auto';target.style.pointerEvents='none';
+  target.style.left=(x/canvas.width*100)+'%';target.style.top=(y/canvas.height*100)+'%';
+  target.style.width=(mask.width/canvas.width*100)+'%';
+  target.style.height=(mask.height/canvas.height*100)+'%';
+  target.hidden=false;
+}
+function cropAt(point,group){
+  if(group)return core.groupMaskCrop(group);
+  const id=labels?labelAt(labels,mapWidth,mapHeight,point.x,point.y,canvas.width,canvas.height):0;
+  if(!id)return null;
+  if(!sourceCropCache.has(id)){
+    const entry=entryById.get(id);
+    sourceCropCache.set(id,entry?maskCropForEntry(entry):null);
+  }
+  return sourceCropCache.get(id);
+}
 function hoverAt(point){
   if(!active||state.before||state.busy||window.MosaicPremium?.isPreviewing())return leave();
   const live=liveObjectAt(point);
   if(!live&&(!labels||state.objectMapLocked))return leave();
-  const id=live?.id||labelAt(labels,mapWidth,mapHeight,point.x,point.y,canvas.width,canvas.height);
-  if(id===hoverId&&preview.width===canvas.width&&preview.height===canvas.height)return;leave();if(!id)return;hoverId=id;
-  const crop=live&&!live.active&&!live.objectOriginal&&!live.footprint?live.maskCrop:null;
-  const mask=crop?.mask||(live?core.groupMask(live):maskForIds([id]));
-  preview.width=canvas.width;preview.height=canvas.height;
-  const x=preview.getContext('2d');x.drawImage(mask,crop?.x||0,crop?.y||0);
-  x.globalCompositeOperation='source-in';x.fillStyle='rgba(180,147,245,0.10)';
-  x.fillRect(0,0,preview.width,preview.height);x.globalCompositeOperation='source-over';
-  preview.hidden=false;core.overlay.style.cursor='pointer';
+  const rawId=labels?labelAt(labels,mapWidth,mapHeight,point.x,point.y,canvas.width,canvas.height):0;
+  const id=live?.id||rawId;if(!id)return leave();
+  const crop=cropAt(point,live);if(!crop)return leave();
+  if(id===hoverId&&hoverMask===crop.mask&&!preview.hidden)return;
+  hoverId=id;hoverMask=crop.mask;
+  tintCrop(preview,crop,.10);core.overlay.style.cursor='pointer';
 }
-function leave(){hoverId=0;preview.hidden=true;preview.getContext('2d').clearRect(0,0,preview.width,preview.height)}
+function leave(){hoverId=0;hoverMask=null;preview.hidden=true}
 function selectAt(point,options={}){
   if(!active)return;
   const live=liveObjectAt(point);
@@ -282,7 +328,7 @@ function selectAt(point,options={}){
     else if(!options.append&&!options.subtract){core.resetSelection();core.render();}
     return;
   }
-  const id=live?.id||labelAt(labels,mapWidth,mapHeight,point.x,point.y,canvas.width,canvas.height);
+  const id=live?.id||(labels?labelAt(labels,mapWidth,mapHeight,point.x,point.y,canvas.width,canvas.height):0);
   if(!id){if(!options.append&&!options.subtract){core.resetSelection();core.render()}return}
   const hasObjects=state.objectSelectionParts?.length;
   const mode=options.append&&hasObjects?'add':options.subtract&&hasObjects?'subtract':'new';core.setMode(mode);
@@ -291,7 +337,7 @@ function selectAt(point,options={}){
 function selectObject(object,{append=false}={}){const part=window.MosaicObjectManager.partForObject(object),mode=append&&state.objectSelectionParts?.length?'add':'new';operation={parts:snapshotSelection(),picked:[part]};picking=true;pickingMode=mode;state.selectionTargetPatchId=null;state.draftGroupId=null;state.selectedPatchId=null;state.maskEditOnly=false;core.setMode(mode);core.applyWandMask(part.mask);picking=false}
 function invalidateBase(){serial++;busy=false;pendingBase=state.master;attemptedBase=pendingBase;labels=null;state.objectMap=null;state.objectMapSelection=null;if(state.master)delete state.objectMaps?.[sourceKey(state.master)];leave();window.MosaicMaskProgress?.hide('objects');update('Image changed · prepare objects again',true)}
 function imageChanged(){if(state.objectMapLocked)return;if(state.master&&state.master!==heldImage&&state.master!==pendingBase)baseLoaded(state.master)}
-window.MosaicObjectMap={imageReady:baseLoaded,baseLoaded,prepareBase,refineMask,selectShape,selectionCompleted,cancelSelection,partsForSelection,adoptSelection,snapshotSelection,selectObject,hasSelection:()=>Boolean(state.objectSelectionParts?.length),hydrate,invalidateBase,drawSelection,holdImage:image=>{heldImage=image}};
+window.MosaicObjectMap={imageReady:baseLoaded,baseLoaded,prepareBase,refineMask,selectShape,selectionCompleted,cancelSelection,partsForSelection,adoptSelection,snapshotSelection,selectObject,hitTest:hitObjectAt,invalidateHitIndex,cropAt,tintCrop,hasSelection:()=>Boolean(state.objectSelectionParts?.length),hydrate,invalidateBase,drawSelection,holdImage:image=>{heldImage=image}};
 // Preserve the canvas tool integration while removing model downloads and all
 // SAM calls. Wand hover/click are now lookups into the saved Base index map.
 window.MosaicSlimWand={onToolChange,hoverAt,selectAt,leave,reset:()=>{active=false;pendingClick=null;leave()},preload(){},imageChanged,imageKey:()=>state.objectMap?.sourceKey};
