@@ -57,7 +57,19 @@ async function apply(image,{type='ai-edit',prompt='',onStatus=()=>{},preserveEdi
   if(image.width!==canvas.width||image.height!==canvas.height)throw Error('Full image must match the current canvas dimensions.');
   const generation=state.selectionGeneration,previous=state.master;
   const before=core.composeApprovedCanvas();
-  const groups=state.groups.filter(isVisible);
+  let groups=state.groups.filter(isVisible);
+  if(!groups.length&&state.objectMap?.raster){
+    window.MosaicObjectMap?.hydrate?.();
+    groups=state.groups.filter(isVisible);
+  }
+  if(!groups.length){
+    // Without Object Map preparation, keep a reversible scene Option.
+    const mask=makeCanvas(canvas.width,canvas.height),ctx=mask.getContext('2d');
+    ctx.fillStyle='#fff';ctx.fillRect(0,0,canvas.width,canvas.height);
+    const scene=core.newGroup(mask,'Scene');
+    scene.name='Entire image';scene.objectName='Entire image';
+    groups=[scene];
+  }
   const snapshots=groups.map(group=>({group,mask:originalMask(group),choice:group.active}));
   // The original Object Map is immutable during ordinary AI Edit and
   // Harmonize. No SAM 3 calls here: every Option keeps its original mask.
@@ -106,16 +118,12 @@ async function apply(image,{type='ai-edit',prompt='',onStatus=()=>{},preserveEdi
     core.refreshGroupFootprint(group);
     records.push({groupId:group.id,patchId,matched:Boolean(aligned.aligned),alignment:aligned.status});
   }
-  // Full Image AI Edit respects saved Object IDs. With existing groups,
-  // keep the previous Master as the immutable outside-mask background.
-  // Harmonize is intentionally allowed to replace the complete background.
-  // Base is immutable: Harmonize and AI Edit never replace it.
+  // The original Base stays beneath active Options after every generation.
   state.objectMapLocked=Boolean(groups.length)||state.objectMapLocked;
   (state.sceneVersionHistory??=[]).push({type:kind,number,category,sourceId,
     prompt,createdAt:new Date().toISOString(),segmentationStatus:'locked-original',
     records});
-  // If no original Object Map exists, at least keep the generated options usable.
-  // The original Base Object ID map remains valid.
+  // Original Base and Object IDs remain unchanged; no scene archive.
   renderGroups();render();
   return {category,objectCount:records.length,matched:records.filter(v=>v.matched).length,
     segmentationStatus:'locked-original'};

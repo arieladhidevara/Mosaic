@@ -86,14 +86,7 @@ test('legacy saved Option masks consolidate within each group only',()=>{
   assert.equal(state.patches.get('a').mask,state.patches.get('b').mask);
   assert.notEqual(state.patches.get('a').mask,state.patches.get('c').mask);
 });
-test('archive snapshot retains mask aliases but not source references',()=>{
-  const h=harness(),a=canvas(16,12);mark(a,4,4);
-  const groups=[{id:'g',patchIds:['a','b'],footprint:null}];
-  const patches=new Map([['a',{id:'a',mask:a,request:{mask:a}}],['b',{id:'b',mask:a,request:{mask:a}}]]);
-  const fn=vm.createContext({makeCanvas:canvas,cloneCanvas:source=>{const out=canvas(source.width,source.height);out.getContext('2d').drawImage(source);return out;}});
-  vm.runInContext(section(premium,'function copyGraph','function drawComposition'),fn);
-  const archived=fn.copyGraph(groups,patches,new Map());
-  assert.equal(archived.patches.get('a').mask,archived.patches.get('b').mask);
-  assert.notEqual(archived.patches.get('a').mask,a);
-  assert.equal(archived.patches.get('a').request.mask,archived.patches.get('b').mask);
+test('Harmonize no longer clones a full-project snapshot',()=>{
+  assert.equal(premium.includes('function copyGraph('),false);
+  assert.equal(premium.includes('premium.root = node'),false);
 });

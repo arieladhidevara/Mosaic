@@ -1,7 +1,7 @@
 name: Object-aware editing tests
 on:
   push:
-    branches: [feature/object-aware-shape-editing]
+    branches: [feature/object-aware-shape-editing, refactor/base-only-harmonize-options]
   pull_request:
     paths:
       - 'workspace-mobile.js'
