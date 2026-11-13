@@ -39,7 +39,7 @@ function setup(){
   return {env,state,groups,oldMaster,generated,renderCount:()=>renders};
 }
 test('Harmonize keeps cropped object Options without modifying the original Base',async()=>{
-  const {env,state,groups,generated}=setup();
+  const {env,state,groups,generated,oldMaster}=setup();
   const result=await env.apply(generated,{type:'harmonize',prompt:'warm wood'});
   assert.equal(result.objectCount,2);
   assert.equal(state.master,oldMaster,'Base geometry must remain immutable');
@@ -54,7 +54,7 @@ test('Harmonize keeps cropped object Options without modifying the original Base
   assert.equal(state.sceneVersionHistory.length,0,'no parallel full-scene history metadata');
 });
 test('second Harmonize adds Options but no new original-history image',async()=>{
-  const {env,state,groups,generated}=setup();
+  const {env,state,groups,generated,oldMaster}=setup();
   await env.apply(generated,{type:'harmonize'});
   const next={width:2400,height:1600,name:'next-generation'};
   await env.apply(next,{type:'harmonize'});

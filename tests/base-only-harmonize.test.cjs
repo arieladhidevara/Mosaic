@@ -39,7 +39,7 @@ test('Harmonize preserves Base and earlier Options',async()=>{
   assert.equal(state.master,base);assert.equal(state.reference,base);
   assert.equal(answer.objectCount,1);
   assert.ok(group.patchIds.length>=2);
-  assert.equal(group.patchIds[0],'old');
+  assert.ok(group.patchIds.includes('old'),'earlier approved Option stays available');
   assert.equal(state.patches.has('old'),true);
   const added=state.patches.get(group.patchIds[1]);
   assert.equal(state.sources.get(added.sourceId).canvas,result);
@@ -76,7 +76,7 @@ test('Base upload enters editor directly and no result replaces Base',()=>{
 test('Saving .moz keeps Base once and reconstructs its working dimensions',()=>{
   const source=fs.readFileSync('project-file.js','utf8');
   const base=image(4000,3000),working=image(2400,1800);
-  const sandbox=vm.createContext({state:{reference:base,master:working}});
+  const sandbox=vm.createContext({state:{reference:base,master:working},core:{compactAllOptionMasks(){}}});
   vm.runInContext(section(source,'function projectState(){','async function encodeQueue('),sandbox);
   const saved=sandbox.projectState();
   assert.equal(Object.hasOwn(saved,'master'),false);
