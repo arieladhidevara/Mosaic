@@ -18,6 +18,8 @@ on:
       - 'tests/scene-*'
       - 'geometry-edit.js'
       - 'geometry-mask.mjs'
+      - 'transparent-corner-warp.mjs'
+      - 'tests/transparent-corner-warp.test.mjs'
       - 'geometry-edit.css'
       - 'lib/image-provider.js'
       - 'premium.js'
@@ -43,6 +45,7 @@ jobs:
       - run: node --check scene-targeting.js
       - run: node --check scene-versioning.js
       - run: node --check canvas-workspace.js
+      - run: node --check transparent-corner-warp.mjs
       - run: node --check geometry-edit.js
       - run: node --check premium.js
       - run: node --check object-aware.js
