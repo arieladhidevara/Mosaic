@@ -1517,7 +1517,7 @@ function trimUndo(){
     const entry=state.undo[i];
     bytes+=entry.image?.data?.byteLength||0;
     for(const part of entry.objectSelection||[]){
-      if(retainedMasks.has(part.mask))continue;
+      if(!part.mask||retainedMasks.has(part.mask))continue;
       retainedMasks.add(part.mask);
       bytes+=part.mask.width*part.mask.height*4;
     }
