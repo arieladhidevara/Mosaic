@@ -269,7 +269,7 @@ async function apply(image,{type='ai-edit',prompt='',onStatus=()=>{},preserveEdi
     // existing IDs may use the resegmented per-Option geometry.
     const crop=group.createdLocally||group.isMergedObject?null:segment?.crop;
     const legacyScene=group.objectName==='Entire image'||group.name==='Entire image';
-    if(legacyScene&&segmented?.background?.crop){
+    if((legacyScene||group.objectName==='Background')&&segmented?.background?.crop){
       group.name='Background';group.objectName='Background';
       register(group,segmented.background.crop,null,0,0);
     }else register(group,crop,mask,segment?.confidence||0,segment?.segmentId||null);
