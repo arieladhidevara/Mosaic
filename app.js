@@ -807,9 +807,12 @@ function escapeHTML(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':
 // Small thumbnails show an actual cutout on transparency, not a full render.
 // Cache completed option thumbs to avoid expensive full-image work during UI redraws.
 const optionThumbCache=new WeakMap();
-function cutoutThumbnail(image,mask){
+function cutoutThumbnail(image,mask,cropOrigin=null){
   if(!image||!mask)return '';
-  const b=maskBoundingBox(mask);if(!b)return '';
+  // Object Map holds the small mask and its offset; preview it directly
+  // instead of allocating a full-image intermediate for every sidebar row.
+  const b=cropOrigin?{x:cropOrigin.x,y:cropOrigin.y,w:mask.width,h:mask.height}:maskBoundingBox(mask);
+  if(!b)return '';
   const width=96,height=76,pad=5,scale=Math.min((width-pad*2)/b.w,(height-pad*2)/b.h);
   const dw=b.w*scale,dh=b.h*scale,dx=(width-dw)/2,dy=(height-dh)/2;
   const thumb=makeCanvas(width,height),t=thumb.getContext('2d');
@@ -817,7 +820,7 @@ function cutoutThumbnail(image,mask){
   t.drawImage(image,b.x,b.y,b.w,b.h,dx,dy,dw,dh);
   t.globalCompositeOperation='destination-in';
   t.filter='blur(.8px)';
-  t.drawImage(mask,b.x,b.y,b.w,b.h,dx,dy,dw,dh);
+    t.drawImage(mask,cropOrigin?0:b.x,cropOrigin?0:b.y,b.w,b.h,dx,dy,dw,dh);
   t.filter='none';t.globalCompositeOperation='source-over';
   return thumb.toDataURL('image/png');
 }
@@ -859,7 +862,9 @@ function groupThumbnail(group){
   const identity=group.footprint||group.maskCrop||group.objectOriginal?.mask;
   const cached=groupThumbCache.get(group);
   if(cached&&cached.image===state.master&&cached.mask===identity)return cached.url;
-  const url=cutoutThumbnail(state.master,groupMask(group));
+  const crop=!group.active&&!group.objectOriginal&&!group.footprint&&group.maskCrop;
+  const url=crop?cutoutThumbnail(state.master,crop.mask,{x:crop.x,y:crop.y}):
+    cutoutThumbnail(state.master,groupMask(group));
   groupThumbCache.set(group,{image:state.master,mask:identity,url});
   return url;
 }
