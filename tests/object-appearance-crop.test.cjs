@@ -78,13 +78,13 @@ test('new original appearances are cropped but render pixel-exact with holes and
   assert.equal(group.objectOriginal.appearance.height,3);
   assert.ok(group.objectOriginal.appearance.width*group.objectOriginal.appearance.height<scene.width*scene.height);
   const out=canvas(12,8);
-  context.drawOriginal(out,group);
+  context.drawOriginal(out.getContext('2d'),group);
   assert.deepEqual(out.pixels,expected(scene,mask));
 });
 test('legacy full-image original appearances remain compatible',()=>{
   const {context,scene,mask}=fixture();
   const group={active:null,objectOriginal:{mask,appearance:scene,repairs:[]}};
   const out=canvas(12,8);
-  context.drawOriginal(out,group);
+  context.drawOriginal(out.getContext('2d'),group);
   assert.deepEqual(out.pixels,expected(scene,mask));
 });
