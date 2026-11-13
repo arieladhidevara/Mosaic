@@ -110,7 +110,7 @@ function projectState(){
     'selectionMask','selectionGeometry','selectionPoints','selectionPaths','selectionTargetPatchId','selectionMode','tool','pendingRevealOnly','serial',
     'draftGroupId','queuedGroupId','selectionGeneration','brushTargetId',
     'undo','redo','zoom','fitZoom','projectTitle','projectTitleManual','brushSize','brushIntensity','maskEditOnly',
-    'markups','chatMessages','copilotSession','chatResult','objectMap','objectMaps','autoObjectSelect','featherEnabled','collapsedCategories','objectCollections','objectSelectionParts','objectReconstruction','cutHistory','sceneVersionCounters','sceneVersionHistory','sceneTargetSelections','objectMapLocked'
+    'markups','chatMessages','copilotSession','chatResult','objectMap','objectMaps','autoObjectSelect','featherEnabled','collapsedCategories','objectCollections','objectSelectionParts','objectReconstruction','cutHistory','sceneVersionCounters','sceneTargetSelections','objectMapLocked'
   ];
   return Object.fromEntries(fields.map(name=>[name,state[name]]));
 }
@@ -230,6 +230,9 @@ async function loadProjectFile(file,{recovery=false}={}){
     window.MosaicObjects?.reset();
     window.MosaicWorkspace?.reset();
     Object.assign(state,saved);
+    // Existing .moz files remain readable, but old full-scene Harmonize
+    // history metadata is not retained in the working project.
+    state.sceneVersionHistory=[];
     // Older .moz versions stored a separate identical mask for every
     // appearance Option. Consolidate them on load without changing geometry.
     core.shareSavedOptionMasks?.();
