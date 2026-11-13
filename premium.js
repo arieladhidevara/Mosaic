@@ -141,7 +141,7 @@ $('welcomeBasePromptForm').append(welcomeGenerateButton);
 function onReferenceLoaded() {
   // A Base upload is only a reference. Never silently promote it to Master.
   if(state.reference&&state.master){
-    premium.originalMaster=cloneCanvas(state.reference);
+    premium.originalMaster=state.reference;
   }else{
     premium.projectPrompt='';
     premium.originalMaster=null;
@@ -184,7 +184,8 @@ function onSourceEdited(kind,raster){
       for(const patch of state.patches.values()){
         if(!patch.isMasterVersion||patch.masterVersion!==latest.number||updated.has(patch.sourceId))continue;
         const source=state.sources.get(patch.sourceId);
-        if(source){Object.assign(source,core.compactOptionSource(raster,core.exactMaskBoundingBox(patch.mask),24));updated.add(patch.sourceId)}
+        if(source){Object.assign(source,core.compactOptionSource(raster,
+          core.exactMaskBoundingBox(core.fullPatchMask(patch)),24));updated.add(patch.sourceId)}
       }
     }
     refreshMasterBrowser();
@@ -1033,7 +1034,7 @@ async function harmonizeWithAI(prompt,sourceVersion=null) {
   message(editingInProgress
     ?'Master '+masterVersion+' updated in the background. Your mask editing remains active.'
     :'Master '+masterVersion+' is active. Earlier appearances remain in each object’s Options.');
-  refreshMasterBrowser();toast('Master '+masterVersion+' saved. Current mask and earlier region options are preserved.');
+  refreshMasterBrowser();toast('Master '+masterVersion+' updated. Existing object Options are preserved; no full-image history is saved.');
   progress.done('Master '+masterVersion+' is ready.');
 }
 function getMasterVersions(){return [...premium.masterVersions]}
@@ -1282,8 +1283,7 @@ async function createMasterFromBase(prompt,files,button,afterSuccess){
     premium.projectPrompt=prompt;
     if(working){
       if(generated.width!==canvas.width||generated.height!==canvas.height){
-        addMasterVersion(generated,'AI generated · not applied',prompt);
-        toast('New Master saved in versions, but aspect ratio differs. Current mask is preserved.');
+        toast('New Master was not applied because its aspect ratio differs. Current image and Options are preserved.');
       }else{
         const isFirstMaster=state.masterIsBase||!premium.masterVersions.length;
         if(firstMaster)revealMaster(currentComposite());
