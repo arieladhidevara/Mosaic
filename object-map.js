@@ -2,6 +2,7 @@ import './app.js';
 import './object-management.js';
 import {PALETTE,decodeColors,idsOverlappingShape,labelAt,CATEGORIES,objectMapSize} from './object-map-utils.mjs';
 import {CLEANUP_VERSION} from './object-map-cleanup.mjs';
+import {cropObjectLabel} from './object-mask-crop.mjs';
 import {prepareInstanceMap,readInstanceLabels} from './object-map-geometry.mjs';
 const core=window.MosaicCore,{state,canvas,makeCanvas}=core;
 let labels=null,mapWidth=0,mapHeight=0,serial=0,busy=false,pendingBase=null,attemptedBase=null,picking=false,pickingIds=[],pickingMode='new',pendingClick=null,active=false,hoverId=0,heldImage=null,operation=null;
@@ -56,7 +57,7 @@ function hydrate(){
   }
   mapWidth=map.raster.width;mapHeight=map.raster.height;labels=readInstanceLabels(map);
   migrateLegacyGroups(map);
-  window.MosaicObjectManager.ensureObjects(map,maskForIds);core.renderGroups();
+  window.MosaicObjectManager.ensureObjects(map,maskForIds,maskCropForEntry);core.renderGroups();
   const needsReview=Array.isArray(map.qualityWarnings)&&map.qualityWarnings.length>0;
   update(needsReview?'Objects ready · review map quality':map.labelsAvailable?'Objects ready':'Objects ready · categories unavailable',false,needsReview);return true;
 }
@@ -95,6 +96,14 @@ async function prepareBase(force=false){
     if(pendingClick&&active){const pending=pendingClick;pendingClick=null;selectAt(pending.point,pending.options)}
   }catch(error){if(ticket===serial)update(error.message||'Object preparation failed',true)}
   finally{if(ticket===serial){busy=false;window.MosaicMaskProgress?.hide('objects')}}
+}
+function maskCropForEntry(entry){
+  const crop=cropObjectLabel(labels,mapWidth,mapHeight,entry.box,entry.id,canvas.width,canvas.height);
+  if(!crop)return null;
+  const mask=makeCanvas(crop.width,crop.height),ctx=mask.getContext('2d'),pixels=ctx.createImageData(crop.width,crop.height);
+  for(let i=0;i<crop.alpha.length;i++)if(crop.alpha[i])pixels.data.fill(255,i*4,i*4+4);
+  ctx.putImageData(pixels,0,0);
+  return {mask,x:crop.x,y:crop.y};
 }
 function maskForIds(ids){
   const selected=new Set(ids),mask=makeCanvas(canvas.width,canvas.height),x=mask.getContext('2d'),pixels=x.createImageData(mask.width,mask.height);
@@ -256,7 +265,13 @@ function hoverAt(point){
   if(!live&&(!labels||state.objectMapLocked))return leave();
   const id=live?.id||labelAt(labels,mapWidth,mapHeight,point.x,point.y,canvas.width,canvas.height);
   if(id===hoverId&&preview.width===canvas.width&&preview.height===canvas.height)return;leave();if(!id)return;hoverId=id;
-  const mask=live?core.groupMask(live):maskForIds([id]);preview.width=mask.width;preview.height=mask.height;const x=preview.getContext('2d');x.drawImage(mask,0,0);x.globalCompositeOperation='source-in';x.fillStyle='rgba(180,147,245,0.10)';x.fillRect(0,0,preview.width,preview.height);x.globalCompositeOperation='source-over';preview.hidden=false;core.overlay.style.cursor='pointer';
+  const crop=live&&!live.active&&!live.objectOriginal&&!live.footprint?live.maskCrop:null;
+  const mask=crop?.mask||(live?core.groupMask(live):maskForIds([id]));
+  preview.width=canvas.width;preview.height=canvas.height;
+  const x=preview.getContext('2d');x.drawImage(mask,crop?.x||0,crop?.y||0);
+  x.globalCompositeOperation='source-in';x.fillStyle='rgba(180,147,245,0.10)';
+  x.fillRect(0,0,preview.width,preview.height);x.globalCompositeOperation='source-over';
+  preview.hidden=false;core.overlay.style.cursor='pointer';
 }
 function leave(){hoverId=0;preview.hidden=true;preview.getContext('2d').clearRect(0,0,preview.width,preview.height)}
 function selectAt(point,options={}){
