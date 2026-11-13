@@ -9,6 +9,28 @@ import {prepareInstanceMap,readInstanceLabels} from './object-map-geometry.mjs';
 const core=window.MosaicCore,{state,canvas,makeCanvas}=core;
 let labels=null,mapWidth=0,mapHeight=0,serial=0,busy=false,pendingBase=null,attemptedBase=null,picking=false,pickingIds=[],pickingMode='new',pendingClick=null,active=false,hoverId=0,hoverMask=null,heldImage=null,operation=null;
 let hitIndex=null,entryById=new Map(),sourceCropCache=new Map();
+// Full image outputs wait for THIS initial Base mapping, not another model call.
+// Waiters keep their generated image in the caller until existing IDs hydrate.
+const preparedWaiters=new Set();
+function hasPreparedObjects(){return Boolean(state.objectMap?.raster&&
+  state.groups.some(g=>g.mapPrepared&&!g.mergedInto&&!g.objectRemoved));}
+function notifyPrepared(){
+  if(!hasPreparedObjects())return;
+  for(const waiter of preparedWaiters)waiter.resolve();
+  preparedWaiters.clear();
+}
+function rejectPrepared(error){
+  for(const waiter of preparedWaiters)waiter.reject(error);
+  preparedWaiters.clear();
+}
+function whenReady(onStatus=()=>{}){
+  if(hasPreparedObjects())return Promise.resolve();
+  if(!state.master)return Promise.reject(Error('No Base image is loaded.'));
+  if(!busy&&attemptedBase===state.master)
+    onStatus('Object preparation needs attention. Click Retry objects to continue.');
+  return new Promise((resolve,reject)=>preparedWaiters.add({resolve,reject,onStatus}));
+}
+
 function invalidateHitIndex(){hitIndex=null;hoverId=0;hoverMask=null;preview.hidden=true}
 function indexedObjects(){
   if(hitIndex&&hitIndex.groups===state.groups&&hitIndex.count===state.groups.length&&hitIndex.width===canvas.width&&hitIndex.height===canvas.height)return hitIndex;
@@ -97,9 +119,12 @@ function hydrate(){
   migrateLegacyGroups(map);
   window.MosaicObjectManager.ensureObjects(map,maskForIds,maskCropForEntry);core.renderGroups();
   const needsReview=Array.isArray(map.qualityWarnings)&&map.qualityWarnings.length>0;
-  update(needsReview?'Objects ready · review map quality':map.labelsAvailable?'Objects ready':'Objects ready · categories unavailable',false,needsReview);return true;
+  update(needsReview?'Objects ready · review map quality':map.labelsAvailable?'Objects ready':'Objects ready · categories unavailable',false,needsReview);
+  notifyPrepared();return true;
 }
 function baseLoaded(base){
+  if(pendingBase&&pendingBase!==base)
+    rejectPrepared(Error('The Base changed before object preparation finished.'));
   if(state.objectMapLocked&&state.objectMap?.raster){hydrate();return}
   if(pendingBase===base&&(busy||attemptedBase===base)){if(state.objectMap)hydrate();return}
   pendingBase=base;serial++;busy=false;attemptedBase=null;pendingClick=null;labels=null;state.objectMapSelection=null;selectedOverlay.hidden=true;
@@ -132,7 +157,11 @@ async function prepareBase(force=false){
     (state.objectMaps??={})[state.objectMap.sourceKey]=state.objectMap;
     hydrate();
     if(pendingClick&&active){const pending=pendingClick;pendingClick=null;selectAt(pending.point,pending.options)}
-  }catch(error){if(ticket===serial)update(error.message||'Object preparation failed',true)}
+  }catch(error){if(ticket===serial){
+    update(error.message||'Object preparation failed',true);
+    for(const waiter of preparedWaiters)
+      waiter.onStatus('Object mapping failed. Click Retry objects to finish splitting the generated image.');
+  }}
   finally{if(ticket===serial){busy=false;window.MosaicMaskProgress?.hide('objects')}}
 }
 function maskCropForEntry(entry){
@@ -411,13 +440,13 @@ function selectObject(object,{append=false}={}){
   if(!append){core.selectGroupMask(object,{showOutline:true});return}
   core.ensureSelectionMask();
   const part=compactObjectPart(object),mode=append&&state.objectSelectionParts?.length?'add':'new';operation={parts:snapshotSelection(),picked:[part]};picking=true;pickingMode=mode;state.selectionTargetPatchId=null;state.draftGroupId=null;state.selectedPatchId=null;state.maskEditOnly=false;core.setMode(mode);const selection=makeCanvas(canvas.width,canvas.height);drawPartMask(selection.getContext('2d'),part);core.applyWandMask(selection);picking=false}
-function invalidateBase(){serial++;busy=false;pendingBase=state.master;attemptedBase=pendingBase;labels=null;state.objectMap=null;state.objectMapSelection=null;if(state.master)delete state.objectMaps?.[sourceKey(state.master)];leave();window.MosaicMaskProgress?.hide('objects');update('Image changed · prepare objects again',true)}
+function invalidateBase(){rejectPrepared(Error('Original Object Map invalidated.'));serial++;busy=false;pendingBase=state.master;attemptedBase=pendingBase;labels=null;state.objectMap=null;state.objectMapSelection=null;if(state.master)delete state.objectMaps?.[sourceKey(state.master)];leave();window.MosaicMaskProgress?.hide('objects');update('Image changed · prepare objects again',true)}
 function imageChanged(){if(state.objectMapLocked)return;if(state.master&&state.master!==heldImage&&state.master!==pendingBase)baseLoaded(state.master)}
-window.MosaicObjectMap={imageReady:baseLoaded,baseLoaded,prepareBase,refineMask,selectShape,selectionCompleted,cancelSelection,partsForSelection,adoptSelection,adoptIdentity,snapshotSelection,selectObject,hitTest:hitObjectAt,invalidateHitIndex,cropAt,tintCrop,hasSelection:()=>Boolean(state.objectSelectionParts?.length),hydrate,invalidateBase,drawSelection,holdImage:image=>{heldImage=image}};
+window.MosaicObjectMap={imageReady:baseLoaded,baseLoaded,prepareBase,whenReady,refineMask,selectShape,selectionCompleted,cancelSelection,partsForSelection,adoptSelection,adoptIdentity,snapshotSelection,selectObject,hitTest:hitObjectAt,invalidateHitIndex,cropAt,tintCrop,hasSelection:()=>Boolean(state.objectSelectionParts?.length),hydrate,invalidateBase,drawSelection,holdImage:image=>{heldImage=image}};
 // Preserve the canvas tool integration while removing model downloads and all
 // SAM calls. Wand hover/click are now lookups into the saved Base index map.
 window.MosaicSlimWand={onToolChange,hoverAt,selectAt,leave,reset:()=>{active=false;pendingClick=null;leave()},preload(){},imageChanged,imageKey:()=>state.objectMap?.sourceKey};
 window.addEventListener('mosaic:keyconnected',()=>void prepareBase());
 window.addEventListener('mosaic:account',()=>void prepareBase());
-window.addEventListener('mosaic:projectloaded',()=>{serial++;busy=false;heldImage=null;pendingBase=state.master;attemptedBase=null;state.featherEnabled=false;state.autoObjectSelect=true;labels=null;if(!hydrate()&&state.master)baseLoaded(state.master);if(state.objectSelectionParts?.length)adoptSelection(state.objectSelectionParts)});
+window.addEventListener('mosaic:projectloaded',()=>{rejectPrepared(Error('Project changed.'));serial++;busy=false;heldImage=null;pendingBase=state.master;attemptedBase=null;state.featherEnabled=false;state.autoObjectSelect=true;labels=null;if(!hydrate()&&state.master)baseLoaded(state.master);if(state.objectSelectionParts?.length)adoptSelection(state.objectSelectionParts)});
 if(state.master)baseLoaded(state.master);
