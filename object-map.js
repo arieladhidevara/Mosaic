@@ -265,7 +265,13 @@ function hoverAt(point){
   if(!live&&(!labels||state.objectMapLocked))return leave();
   const id=live?.id||labelAt(labels,mapWidth,mapHeight,point.x,point.y,canvas.width,canvas.height);
   if(id===hoverId&&preview.width===canvas.width&&preview.height===canvas.height)return;leave();if(!id)return;hoverId=id;
-  const mask=live?core.groupMask(live):maskForIds([id]);preview.width=mask.width;preview.height=mask.height;const x=preview.getContext('2d');x.drawImage(mask,0,0);x.globalCompositeOperation='source-in';x.fillStyle='rgba(180,147,245,0.10)';x.fillRect(0,0,preview.width,preview.height);x.globalCompositeOperation='source-over';preview.hidden=false;core.overlay.style.cursor='pointer';
+  const crop=live&&!live.active&&!live.objectOriginal&&!live.footprint?live.maskCrop:null;
+  const mask=crop?.mask||(live?core.groupMask(live):maskForIds([id]));
+  preview.width=canvas.width;preview.height=canvas.height;
+  const x=preview.getContext('2d');x.drawImage(mask,crop?.x||0,crop?.y||0);
+  x.globalCompositeOperation='source-in';x.fillStyle='rgba(180,147,245,0.10)';
+  x.fillRect(0,0,preview.width,preview.height);x.globalCompositeOperation='source-over';
+  preview.hidden=false;core.overlay.style.cursor='pointer';
 }
 function leave(){hoverId=0;preview.hidden=true;preview.getContext('2d').clearRect(0,0,preview.width,preview.height)}
 function selectAt(point,options={}){
