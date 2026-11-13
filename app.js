@@ -311,7 +311,18 @@ function refreshGroupFootprint(group){
   if(!patches.length&&group.mapPrepared){group.area=maskBoundingBox(groupMask(group));return}
   const union=makeCanvas(canvas.width,canvas.height),c=union.getContext('2d');
   for(const patch of patches)c.drawImage(displayedPatchMask(patch),0,0);
-  group.footprint=union;
+  // Drop the persistent full-image footprint after recomputation. A prepared
+  // Object Map already owns the original crop, which must survive "Master"
+  // selection; manual Groups keep the union as a new cropped footprint.
+  if(!(group.mapPrepared&&group.maskCrop)){
+    const box=exactMaskBoundingBox(union);
+    if(box){
+      const mask=makeCanvas(box.w,box.h);
+      mask.getContext('2d').drawImage(union,-box.x,-box.y);
+      group.maskCrop={mask,x:box.x,y:box.y};
+    }else group.maskCrop=null;
+  }
+  group.footprint=null;
   group.area=maskBoundingBox(groupMask(group));
   if(group.objectOriginal)window.MosaicObjects?.scheduleRepair();
 }
