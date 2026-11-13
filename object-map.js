@@ -4,6 +4,7 @@ import {PALETTE,decodeColors,idsOverlappingShape,labelAt,CATEGORIES,objectMapSiz
 import {CLEANUP_VERSION} from './object-map-cleanup.mjs';
 import {cropObjectLabel} from './object-mask-crop.mjs';
 import {buildObjectHitGrid,cropContainsPoint} from './object-hit-index.mjs';
+import {intersectObjectIds} from './object-intersections.mjs';
 import {prepareInstanceMap,readInstanceLabels} from './object-map-geometry.mjs';
 const core=window.MosaicCore,{state,canvas,makeCanvas}=core;
 let labels=null,mapWidth=0,mapHeight=0,serial=0,busy=false,pendingBase=null,attemptedBase=null,picking=false,pickingIds=[],pickingMode='new',pendingClick=null,active=false,hoverId=0,hoverMask=null,heldImage=null,operation=null;
@@ -151,37 +152,62 @@ function maskForIds(ids){
   x.putImageData(pixels,0,0);return mask;
 }
 function liveObjectAt(point){return hitObjectAt(point)}
+function compactObjectPart(group){
+  const crop=core.groupMaskCrop(group);
+  if(!crop?.mask)return null;
+  const patch=state.patches.get(group.active);
+  return {objectKey:group.objectMapObjectKey||group.id,
+    instanceId:group.objectMapInstanceId||null,category:group.category,label:group.name,
+    mapKey:group.objectMapKey||'manual',mask:null,maskCrop:crop,
+    paths:patch?core.patchSelectionPaths(patch):group.maskPaths||[]};
+}
+function drawPartMask(context,part){
+  if(part.maskCrop?.mask)context.drawImage(part.maskCrop.mask,part.maskCrop.x,part.maskCrop.y);
+  else if(part.mask)context.drawImage(part.mask,0,0);
+}
 function partsOverlappingMask(mask){
-  const dimension=384,scale=Math.min(1,dimension/Math.max(canvas.width,canvas.height));
-  const w=Math.max(1,Math.round(canvas.width*scale)),h=Math.max(1,Math.round(canvas.height*scale));
-  const sample=makeCanvas(w,h),sx=sample.getContext('2d',{willReadFrequently:true});
-  sx.imageSmoothingEnabled=false;sx.drawImage(mask,0,0,w,h);
-  const target=sx.getImageData(0,0,w,h).data,parts=[];
-  let selectedPixels=0;
-  for(let i=3;i<target.length;i+=4)if(target[i]>=128)selectedPixels++;
-  if(!selectedPixels)return parts;
-  for(const group of state.groups){
-    if(group.objectMapBatch||group.mergedInto||group.objectRemoved)continue;
-    // Older saved Groups may have no Object Map ID. Their existing mask must
-    // still be selectable; never create a duplicate foreground object just
-    // because a legacy Group is not labelled with an instance key.
-    if(!group.objectMapObjectKey&&!group.mapPrepared&&!group.objectId&&!group.patchIds?.length)continue;
-    const own=core.groupMask(group);
-    if(!own)continue;
-    const overlay=makeCanvas(w,h),ctx=overlay.getContext('2d',{willReadFrequently:true});
-    ctx.imageSmoothingEnabled=false;ctx.drawImage(own,0,0,w,h);
-    const pixels=ctx.getImageData(0,0,w,h).data;
-    let both=0,all=0;
-    for(let i=3;i<pixels.length;i+=4)if(pixels[i]>=128){all++;if(target[i]>=128)both++;}
-    // A small drawn rectangle inside a huge wall still selects that wall.
-    // Reject mere 1-2 pixel grazing without requiring 12% of the whole object.
-    // Any meaningful contact counts. A small door/fixture overlapping
-    // a large rectangle must retain its existing Object ID as well.
-    if(both>=Math.max(3,Math.min(6,Math.round(selectedPixels*.002)))){
-      parts.push(window.MosaicObjectManager.partForObject(group));
+  const index=indexedObjects(),bounds=core.exactMaskBoundingBox(mask);
+  if(!bounds)return [];
+  const selected=new Map();
+  const remember=group=>{
+    if(!group||group.mergedInto||group.objectRemoved||group.objectMapBatch)return;
+    const part=compactObjectPart(group);
+    if(part)selected.set(group.id,part);
+  };
+  if(labels&&mapWidth&&mapHeight){
+    // One scan of the saved low-resolution ID raster. No per-object
+    // full-frame canvas, and no SAM / inference request.
+    const reduced=makeCanvas(mapWidth,mapHeight),ctx=reduced.getContext('2d',{willReadFrequently:true});
+    ctx.imageSmoothingEnabled=false;ctx.drawImage(mask,0,0,mapWidth,mapHeight);
+    const alpha=ctx.getImageData(0,0,mapWidth,mapHeight).data;
+    for(const id of intersectObjectIds(labels,mapWidth,mapHeight,alpha,mapWidth,mapHeight)){
+      const group=index.byId.get(id);
+      // An edited Option owns its *current* crop, not obsolete Base pixels.
+      if(group&&!group.active)remember(group);
     }
   }
-  return parts;
+  // Edited, moved, and manually created Groups are checked only in cells
+  // intersecting the drawn shape, at their actual cropped geometry.
+  const candidates=labels?index.grid.candidatesInBox(bounds):
+    state.groups.map((group,order)=>({group,order,bounds:group.area}));
+  for(const {group} of candidates){
+    if(group.mergedInto||group.objectMapBatch||group.objectRemoved)continue;
+    const crop=core.groupMaskCrop(group);
+    if(!crop?.mask)continue;
+    const x=Math.max(bounds.x,crop.x),y=Math.max(bounds.y,crop.y);
+    const right=Math.min(bounds.x+bounds.w,crop.x+crop.mask.width);
+    const bottom=Math.min(bounds.y+bounds.h,crop.y+crop.mask.height);
+    const w=Math.ceil(right-x),h=Math.ceil(bottom-y);
+    if(w<=0||h<=0)continue;
+    const overlap=makeCanvas(w,h),ctx=overlap.getContext('2d',{willReadFrequently:true});
+    ctx.drawImage(mask,-x,-y);
+    ctx.globalCompositeOperation='destination-in';
+    ctx.drawImage(crop.mask,crop.x-x,crop.y-y);
+    const bits=ctx.getImageData(0,0,w,h).data;
+    let count=0;for(let i=3;i<bits.length;i+=4)if(bits[i]>=128)count++;
+    if(count>=Math.max(1,Math.min(6,Math.round(w*h*.002))))remember(group);
+  }
+  return [...selected.values()];
 }
 
 // Line, Rectangle and Oval select all touched Object IDs as one temporary
@@ -192,7 +218,7 @@ function selectShape(mask){
   const parts=partsOverlappingMask(mask);
   if(!parts.length)return null;
   const combined=makeCanvas(canvas.width,canvas.height),ctx=combined.getContext('2d');
-  for(const part of parts)ctx.drawImage(part.mask,0,0);
+  for(const part of parts)drawPartMask(ctx,part);
   picking=true;pickingIds=[];pickingMode='new';
   operation={parts:[],picked:parts};
   return combined;
@@ -210,14 +236,16 @@ function refineMask(mask,tool){
   picking=true;pickingIds=[];pickingMode=state.selectionMode;operation={parts:snapshotSelection(),picked:parts};
   if(!parts.length)core.toast('No meaningful object overlap found. Enlarge the selection.');
   const result=makeCanvas(canvas.width,canvas.height);
-  for(const part of parts)result.getContext('2d').drawImage(part.mask,0,0);
+  for(const part of parts)drawPartMask(result.getContext('2d'),part);
   return result;
 }
 function selectionCompleted(){
   if(picking){
     const byKey=new Map((pickingMode==='new'?[]:operation?.parts||[]).map(part=>[part.objectKey,part]));
     for(const part of operation?.picked||pickingIds.map(partForId)){if(pickingMode==='subtract')byKey.delete(part.objectKey);else if(!byKey.has(part.objectKey))byKey.set(part.objectKey,part)}
-    adoptSelection(reconcileParts(state.selectionMask,[...byKey.values()]));picking=false;
+    // Snapped selections are already unions of whole Object IDs.
+    // Keep their compact references; generation materializes only chosen IDs.
+    adoptSelection([...byKey.values()]);picking=false;
   }else if(operation?.parts?.length)adoptSelection(reconcileParts(state.selectionMask,operation.parts));
   operation=null;
   if(state.objectSelectionParts?.length){state.selectionPaths=state.objectSelectionParts.flatMap(part=>part.paths||core.maskPathsFromRaster(part.mask));state.selectionPoints=state.selectionPaths.flat()}
@@ -248,7 +276,10 @@ function adoptSelection(parts){
   }
   state.objectSelectionParts=[...canonical.values()];state.objectMapSelection=canonical.size?(state.objectMap?.sourceKey||parts[0].mapKey):null;state.objectMapSelectedIds=state.objectSelectionParts.map(p=>p.instanceId).filter(Boolean);window.MosaicObjectManager.refreshActions();
 }
-function partForId(id){const entry=state.objectMap.entries.find(entry=>entry.id===id);return window.MosaicObjectManager.resolvePart({objectKey:entry.key,instanceId:id,category:entry.category,label:entry.label,mapKey:state.objectMap.sourceKey,mask:maskForIds([id])})}
+function partForId(id){
+  const group=indexedObjects().byId.get(id);if(group)return compactObjectPart(group);
+  const entry=entryById.get(id);return entry?{objectKey:entry.key,instanceId:id,category:entry.category,label:entry.label,mapKey:state.objectMap.sourceKey,mask:maskForIds([id])}:null;
+}
 function reconcileParts(mask,parts){
   if(!parts.length)return [];
   const w=mask.width,h=mask.height,target=mask.getContext('2d',{willReadFrequently:true}).getImageData(0,0,w,h).data,owner=new Uint16Array(w*h);
@@ -371,12 +402,15 @@ function selectAt(point,options={}){
   core.ensureSelectionMask();
   const hasObjects=state.objectSelectionParts?.length;
   const mode=options.append&&hasObjects?'add':options.subtract&&hasObjects?'subtract':'new';core.setMode(mode);
-  const part=live?window.MosaicObjectManager.partForObject(live):partForId(id);operation={parts:snapshotSelection(),picked:[part]};picking=true;pickingIds=[id];pickingMode=mode;state.maskEditOnly=false;state.selectionTargetPatchId=null;state.draftGroupId=null;core.applyWandMask(part.mask);picking=false;leave();
+  const part=live?compactObjectPart(live):partForId(id);if(!part)return;
+  operation={parts:snapshotSelection(),picked:[part]};picking=true;pickingIds=[id];pickingMode=mode;state.maskEditOnly=false;state.selectionTargetPatchId=null;state.draftGroupId=null;
+  const selection=makeCanvas(canvas.width,canvas.height);drawPartMask(selection.getContext('2d'),part);
+  core.applyWandMask(selection);picking=false;leave();
 }
 function selectObject(object,{append=false}={}){
   if(!append){core.selectGroupMask(object,{showOutline:true});return}
   core.ensureSelectionMask();
-  const part=window.MosaicObjectManager.partForObject(object),mode=append&&state.objectSelectionParts?.length?'add':'new';operation={parts:snapshotSelection(),picked:[part]};picking=true;pickingMode=mode;state.selectionTargetPatchId=null;state.draftGroupId=null;state.selectedPatchId=null;state.maskEditOnly=false;core.setMode(mode);core.applyWandMask(part.mask);picking=false}
+  const part=compactObjectPart(object),mode=append&&state.objectSelectionParts?.length?'add':'new';operation={parts:snapshotSelection(),picked:[part]};picking=true;pickingMode=mode;state.selectionTargetPatchId=null;state.draftGroupId=null;state.selectedPatchId=null;state.maskEditOnly=false;core.setMode(mode);const selection=makeCanvas(canvas.width,canvas.height);drawPartMask(selection.getContext('2d'),part);core.applyWandMask(selection);picking=false}
 function invalidateBase(){serial++;busy=false;pendingBase=state.master;attemptedBase=pendingBase;labels=null;state.objectMap=null;state.objectMapSelection=null;if(state.master)delete state.objectMaps?.[sourceKey(state.master)];leave();window.MosaicMaskProgress?.hide('objects');update('Image changed · prepare objects again',true)}
 function imageChanged(){if(state.objectMapLocked)return;if(state.master&&state.master!==heldImage&&state.master!==pendingBase)baseLoaded(state.master)}
 window.MosaicObjectMap={imageReady:baseLoaded,baseLoaded,prepareBase,refineMask,selectShape,selectionCompleted,cancelSelection,partsForSelection,adoptSelection,adoptIdentity,snapshotSelection,selectObject,hitTest:hitObjectAt,invalidateHitIndex,cropAt,tintCrop,hasSelection:()=>Boolean(state.objectSelectionParts?.length),hydrate,invalidateBase,drawSelection,holdImage:image=>{heldImage=image}};
