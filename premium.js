@@ -3,7 +3,6 @@ import './generation-pool.js';
 import './object-aware.js';
 import {assertGeneratedImage,assertGeneratedRegion} from './generated-image.mjs';
 import {alignGeneratedToLockedMask} from './geometry-mask.mjs';
-import {alignTransparentLayerToLockedMask} from './transparent-material-align.mjs';
 const core = window.MosaicCore;
 if (!core) throw new Error('Mosaic core must load before Premium');
 const {state, canvas, makeCanvas, uid, render, renderGroups, resetSelection, assignGroup, maskBoundingBox, toast, message} = core;
@@ -479,7 +478,6 @@ function encodeRegionalCrop(patch){
     const payload={
       collage:cropFrame(collage,region,w,h),
       mask:cropFrame(editMask,region,w,h,true),
-      transparentLayer:!patch.objectMapParts?.length,
       quality:premium.settings.regionQuality,
       projectPrompt:premium.projectPrompt,
       prompt:patch.prompt,
@@ -603,35 +601,22 @@ async function generateRegion(patchId,regenerate=false){
       }
       const rawPlaced=makeCanvas(canvasSize.width,canvasSize.height);
       rawPlaced.getContext('2d').drawImage(image,region.x,region.y,region.w,region.h);
-      const transparentResult=Boolean(payload.transparentLayer);
-      if(transparentResult&&answer.mimeType!=='image/png')
-        throw Error('Material edit expected a transparent PNG layer; the original image was kept.');
       const resultMasks=existing.objectMapParts?.map(part=>part.mask)||[visibleMask];
-      if(!transparentResult)
-        for(const mask of resultMasks)validateRegionalResult(rawPlaced,capture.collage,mask,payload.prompt,'provider-region',answer.generationId);
-      progress.update(92,transparentResult?'Matching transparent edges and door openings…':'Checking key edges for gentle perspective alignment…');
-      let placed=cloneCanvas(capture.collage),aligned={image:placed,status:'locked-mask',aligned:false};
-      if(transparentResult){
-        // The returned PNG is the proposed surface only. Its alpha is an
-        // ephemeral generated mask, never an Object ID or committed mask.
-        const fitted=alignTransparentLayerToLockedMask({
-          generated:rawPlaced,lockedMask:visibleMask,makeCanvas
-        });
-        if(!fitted.aligned||!fitted.image)
-          throw Error('AI transparency did not match the original object ('+fitted.status+'). The original image was kept. Please retry.');
-        placed.getContext('2d').drawImage(fitted.image,0,0);
-        aligned={...fitted,image:placed};
-      }else{
-        placed.getContext('2d').drawImage(image,region.x,region.y,region.w,region.h);
-        // Opaque legacy alignment is unchanged for compound selections.
-        aligned={image:placed,status:'locked-mask',aligned:false};
-        if(!existing.objectMapParts?.length){
-          try{
-            aligned=alignGeneratedToLockedMask({
-              before:capture.collage,generated:placed,lockedMask:visibleMask,makeCanvas
-            });
-          }catch(error){console.warn('[mozAI:mask-registration]',error);}
-        }
+      for(const mask of resultMasks)validateRegionalResult(rawPlaced,capture.collage,mask,payload.prompt,'provider-region',answer.generationId);
+      progress.update(92,'Checking key edges for gentle perspective alignment…');
+      const placed=makeCanvas(canvasSize.width,canvasSize.height),placedContext=placed.getContext('2d');
+      placedContext.drawImage(capture.collage,0,0);
+      placedContext.drawImage(image,region.x,region.y,region.w,region.h);
+      // Only a small, single perspective correction from matching long image
+      // lines is allowed. No silhouette fitting or per-row contour stretch.
+      let aligned={image:placed,status:'locked-mask',aligned:false};
+      // Compound selections are aligned separately within their original IDs.
+      if(!existing.objectMapParts?.length){
+        try{
+          aligned=alignGeneratedToLockedMask({
+            before:capture.collage,generated:placed,lockedMask:visibleMask,makeCanvas
+          });
+        }catch(error){console.warn('[mozAI:mask-registration]',error);}
       }
       if(state.patches.get(patchId)!==patch||state.selectionGeneration!==projectAtStart||existing.sourceId!==generationId){existing.generating=false;return}
       if(!existing.objectMapParts?.length)validateRegionalResult(aligned.image,capture.collage,visibleMask,payload.prompt,'mask-alignment',answer.generationId);
@@ -643,7 +628,6 @@ async function generateRegion(patchId,regenerate=false){
       existing.maskAlignmentStatus=aligned.status;
       existing.maskAlignmentSegmentation=aligned.segmentation||null;
       existing.maskAlignmentIoU=Number.isFinite(aligned.iou)?aligned.iou:null;
-      existing.maskAlignmentCoverage=Number.isFinite(aligned.coverage)?aligned.coverage:null;
       if(existing.objectMapParts?.length){
         // A combined Line/Rectangle/Oval selection is one temporary generation.
         // After the image arrives, split it across every touched original ID.
@@ -709,11 +693,9 @@ async function generateRegion(patchId,regenerate=false){
       // Async output updates the layer underneath whichever tool, mask or editor
       // the user is working with. Never steal focus or select another option.
       renderGroups();render();
-      const alignmentMessage=transparentResult
-        ?' Transparent surface matched to original edges and openings; original mask kept.'
-        :aligned.aligned
-          ?' Key edges aligned with a gentle perspective adjustment; original mask kept.'
-          :' Original mask kept; no perspective correction needed or confidently supported.';
+      const alignmentMessage=aligned.aligned
+        ?' Key edges aligned with a gentle perspective adjustment; original mask kept.'
+        :' Original mask kept; no perspective correction needed or confidently supported.';
       message((activateResult
         ?'Material edit applied to the existing Group and mask.'
         :'Material edit saved as an Option in the existing Group.')+alignmentMessage);
