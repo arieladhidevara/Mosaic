@@ -128,25 +128,44 @@ export function fitCornerMesh({target,source,width,height}){
   const bt=bounds(target,width,height),bs=bounds(source,width,height);
   if(!bt||!bs)return {approved:false,reason:'missing-alpha-silhouette',matchedCorners:0};
   const a=extractAlphaCorners(target,width,height),b=extractAlphaCorners(source,width,height);
-  const matches=matchCorners(a,b,bs,bt);
+  let matches=matchCorners(a,b,bs,bt);
+  const originalCount=matches.length;
   if(matches.length<4)return {approved:false,reason:'unpaired-corners',matchedCorners:matches.length};
-  const xx=matches.map(p=>p.target.x),yy=matches.map(p=>p.target.y);
-  if(Math.max(...xx)-Math.min(...xx)<bt.w*.35||
-    Math.max(...yy)-Math.min(...yy)<bt.h*.28)
-    return {approved:false,reason:'corners-in-one-local-area',matchedCorners:matches.length};
-  const anchors=[...matches];
-  // Preserve the frame and minimize displacement far from the edited object.
-  for(const [x,y] of [[0,0],[width-1,0],[width-1,height-1],[0,height-1]])
-    if(!anchors.some(p=>Math.hypot(p.target.x-x,p.target.y-y)<2))
-      anchors.push({target:{x,y},source:{x,y}});
-  const triangles=triangulate(anchors.map(a=>a.target));
-  if(!triangles.length)return {approved:false,reason:'mesh-empty',matchedCorners:matches.length};
-  for(const t of triangles){
-    const aa=area(...t.map(i=>anchors[i].target)),bb=area(...t.map(i=>anchors[i].source));
-    const ratio=bb/aa;
-    if(ratio<.50||ratio>1.9)return {approved:false,reason:'folding-corners',matchedCorners:matches.length};
+  // A generated edge can create duplicate corners a few pixels apart.
+  // Unlike dense control-point warps, mesh vertices must never fold.
+  // Discard contradictory CORNER CORRESPONDENCES individually and retry;
+  // this confidence check controls warp selection, NOT AI output acceptance.
+  for(let attempt=0;attempt<Math.max(1,originalCount-3);attempt++){
+    const xx=matches.map(p=>p.target.x),yy=matches.map(p=>p.target.y);
+    if(matches.length<4||Math.max(...xx)-Math.min(...xx)<bt.w*.35||
+       Math.max(...yy)-Math.min(...yy)<bt.h*.28)break;
+    const anchors=[...matches];
+    // Keep the frame steady far from this material selection.
+    for(const [x,y] of [[0,0],[width-1,0],[width-1,height-1],[0,height-1]])
+      if(!anchors.some(p=>Math.hypot(p.target.x-x,p.target.y-y)<2))
+        anchors.push({target:{x,y},source:{x,y}});
+    const triangles=triangulate(anchors.map(p=>p.target));
+    if(!triangles.length)break;
+    const conflicts=new Map();
+    for(const t of triangles){
+      const aa=area(...t.map(i=>anchors[i].target));
+      const bb=area(...t.map(i=>anchors[i].source));
+      const ratio=bb/aa;
+      if(ratio>=.45&&ratio<=2.2)continue;
+      for(const i of t)if(i<matches.length){
+        const severity=1+Math.abs(Math.log2(Math.max(.001,Math.abs(ratio))));
+        conflicts.set(i,(conflicts.get(i)||0)+severity);
+      }
+    }
+    if(!conflicts.size)return {approved:true,width,height,matchedCorners:matches.length,
+      rejectedCornerPairs:originalCount-matches.length,anchors,triangles};
+    // Most often one wrongly paired corner appears in multiple folded cells.
+    // Prefer deleting that corner, not moving the selected object's shape.
+    const worst=[...conflicts].sort((u,v)=>
+      v[1]+matches[v[0]].distance*.015-u[1]-matches[u[0]].distance*.015)[0][0];
+    matches=matches.filter((_,i)=>i!==worst);
   }
-  return {approved:true,width,height,matchedCorners:matches.length,anchors,triangles};
+  return {approved:false,reason:'no-stable-corner-mesh',matchedCorners:matches.length};
 }
 export function mapCornerPoint(fit,x,y){
   if(!fit?.approved)return {x,y};
