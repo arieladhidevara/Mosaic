@@ -412,7 +412,7 @@ function encodeRequest(prompt,patch=null,masterSource=null,extraReferences=[],ma
     payload.base=resizedFrame(state.reference||premium.initialMaster||state.master,w,h);
     if(markupSource)payload.markup=resizedFrame(markupSource,w,h);
     if(patch){
-      payload.mask=transparentEditMask(patch.mask,w,h);
+      payload.mask=transparentEditMask(core.fullPatchMask(patch),w,h);
     }
     if(JSON.stringify(payload).length<3550000)return payload;
   }
@@ -545,7 +545,7 @@ async function generateRegion(patchId,regenerate=false){
     renderGroups();progress.fail('Could not prepare the selected area.');toast('Local AI edit: '+error.message);return;
   }
   const submittedPatch={bbox:{...patch.bbox},corners:patch.corners?.map(point=>({...point}))||null};
-  const maskAtStart=window.MosaicObjects?.maskKey(patch.mask);
+  const maskAtStart=window.MosaicObjects?.maskKey(core.fullPatchMask(patch));
   const overlapChoices=new Map(state.groups.map(g=>[g.id,core.groupChoiceVersion(g)]));
   const generationId=patch.sourceId;
   const canvasSize={width:canvas.width,height:canvas.height};
@@ -601,7 +601,7 @@ async function generateRegion(patchId,regenerate=false){
       }
       if(state.patches.get(patchId)!==patch||state.selectionGeneration!==projectAtStart||existing.sourceId!==generationId){existing.generating=false;return}
       if(!existing.objectMapParts?.length)validateRegionalResult(aligned.image,capture.collage,visibleMask,payload.prompt,'mask-alignment',answer.generationId);
-      const currentMaskUnchanged=maskAtStart===window.MosaicObjects?.maskKey(existing.mask);
+      const currentMaskUnchanged=maskAtStart===window.MosaicObjects?.maskKey(core.fullPatchMask(existing));
       // Preserve the complete unmasked RGB source for Reveal/Add.
       // Restore source coordinates before the existing option warp; this does
       // NOT alter the saved selection or its immutable Object ID.
@@ -647,7 +647,7 @@ async function generateRegion(patchId,regenerate=false){
         Object.assign(source,compact);
         source.name='AI region '+patch.regionNumber;source.revealComplete=true;
       }
-      window.MosaicObjects?.generated(existing,existing.mask,currentMaskUnchanged);
+      window.MosaicObjects?.generated(existing,core.fullPatchMask(existing),currentMaskUnchanged);
       // Material edits preserve the exact same silhouette: deduplicate the
       // canvas, not just the pixels. This also deduplicates .moz serialization.
       const materialGroup=state.groups.find(group=>group.patchIds.includes(existing.id));
@@ -922,7 +922,7 @@ async function attachAIResult(file) {
     c.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
     const source = state.sources.get(patch.sourceId);
     if (!source) throw new Error('Original request was not found');
-    const bounds=core.exactMaskBoundingBox(patch.mask);
+    const bounds=core.exactMaskBoundingBox(core.fullPatchMask(patch));
     const padding=bounds?Math.max(48,Math.ceil(Math.max(bounds.w,bounds.h)*.15)):0;
     Object.assign(source,core.compactOptionSource(c,bounds,padding));
     source.name = file.name;
