@@ -85,3 +85,60 @@ test('Saving .moz keeps Base once and reconstructs its working dimensions',()=>{
   assert.equal(saved.baseWorkingSize.height,1800);
   assert.ok(source.includes('Object.assign(state,{master:null,rawMaster:null},saved)'));
 });
+
+
+test('Full-image results wait for initial Base objects and never request a new map',async()=>{
+  const original=image(8,8),generated=image(8,8),mask=image(8,8);
+  const group={id:'wall',name:'Left wall',patchIds:[],active:null,mask};
+  const state={master:original,reference:original,groups:[],patches:new Map(),
+    sources:new Map(),selectionGeneration:5,sceneVersionCounters:{}};
+  const called=[],pending=[];
+  const core={uid:prefix=>prefix+'_'+(called.length+1),groupMask:g=>g.mask,
+    composeApprovedCanvas:()=>original,maskPathsFromRaster:()=>[],
+    exactMaskBoundingBox:()=>({x:0,y:0,w:8,h:8}),
+    compactOptionSource:source=>({canvas:source,crop:{x:0,y:0,width:8,height:8}}),
+    shareMaterialOptionMask(){},refreshGroupFootprint(){},
+    newGroup(){throw Error('Entire image fallback must not be created while mapping is pending');}};
+  const window={MosaicObjectMap:{
+    whenReady:()=>{called.push('existing-map-wait');return new Promise(resolve=>pending.push(resolve));},
+    hydrate:()=>{called.push('hydrate');return true;}},
+    MosaicMaskProgress:{show:()=>called.push('progress-show'),hide:()=>called.push('progress-hide')}};
+  const ctx=vm.createContext({state,core,canvas:{width:8,height:8},
+    makeCanvas:image,window,clone:x=>x,originalMask:g=>g.mask,
+    isVisible:g=>!g.objectMapBatch&&!g.mergedInto,
+    alignGeneratedToLockedMask:({generated})=>({image:generated,aligned:false,status:'locked-mask'}),
+    render(){},renderGroups(){},console});
+  vm.runInContext(section(scene,'async function apply(','// A manually Created selection'),ctx);
+  const resultPromise=ctx.apply(generated,{type:'ai-edit'});
+  assert.equal(called.includes('existing-map-wait'),true);
+  assert.equal(state.groups.length,0,'generation must not create an Entire image Group before mapping');
+  state.objectMap={raster:{}};
+  state.groups.push(group);
+  pending[0]();
+  const result=await resultPromise;
+  assert.equal(result.objectCount,1);
+  assert.equal(group.patchIds.length,2,'existing Object ID receives original + new appearance');
+  assert.equal(state.groups.length,1,'no new Group or map is created');
+  assert.equal(state.master,original,'Base is never overwritten');
+  assert.equal(called.includes('progress-show'),true);
+  assert.equal(called.includes('progress-hide'),true);
+  assert.doesNotMatch(section(scene,'async function apply(','// A manually Created selection'),
+    /segmentFullFrame\(|\/api\/ai\/(?:sam3|object-map)/);
+});
+
+test('Original object-map waiter resumes after the first mapping is prepared',async()=>{
+  const mapSource=fs.readFileSync('object-map.js','utf8');
+  const body=section(mapSource,'const preparedWaiters=new Set();','function invalidateHitIndex(){');
+  const state={master:{},objectMap:null,groups:[]};
+  const ctx=vm.createContext({state,busy:true,attemptedBase:null,Set,Promise,Error});
+  vm.runInContext('let preparedWaiters;'+body.replace('const preparedWaiters=new Set();','preparedWaiters=new Set();'),ctx);
+  let resolved=false;
+  const request=ctx.whenReady().then(()=>{resolved=true});
+  await Promise.resolve();
+  assert.equal(resolved,false,'waiting does not trigger new segmentation');
+  state.objectMap={raster:{}};
+  state.groups.push({mapPrepared:true});
+  ctx.notifyPrepared();
+  await request;
+  assert.equal(resolved,true);
+});
