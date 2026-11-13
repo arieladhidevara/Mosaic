@@ -102,6 +102,8 @@ function unpack(value,images,depth=0){
   return result;
 }
 function projectState(){
+  // Ensure durable .moz storage uses cropped, shared Option masks.
+  core.compactAllOptionMasks?.();
   const fields=[
     'reference','master','rawBase','rawMaster','masterIsBase','alignmentTransforms',
     'sources','groups','patches','pendingSourceId','editingPatchId','selectedPatchId',
@@ -238,7 +240,7 @@ async function loadProjectFile(file,{recovery=false}={}){
     state.busy=false;state.before=false;state.transformDrag=null;state.maskVertexDrag=null;state.maskMoveDrag=null;state.maskEditOnly=Boolean(saved.maskEditOnly);state.selectionTargetPatchId=saved.selectionTargetPatchId||null;state.drawing=false;
     state.lasso=[];state.hoverPoint=null;state.pointerStart=null;
     state.brushTargetId=null;state.hoveredGroupId=null;
-    state.selectionMask=state.selectionMask||(state.master?makeCanvas(state.master.width,state.master.height):null);
+    state.selectionMask=state.selectionMask||(state.selectionGeometry?null:(state.master?makeCanvas(state.master.width,state.master.height):null));
     premium.restoreProjectState(restoredPremium);
     restoreUI(saved,data.ui);window.dispatchEvent(new Event('mosaic:projectloaded'));void window.MosaicAccount?.startProject(true,data.analytics?.projectId);void window.MosaicAccount?.track('project_opened');
     if(!recovery)window.MosaicRecovery?.markLoaded?.();
