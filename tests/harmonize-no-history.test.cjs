@@ -38,11 +38,11 @@ function setup(){
   vm.runInContext(section(source,'async function apply(', '// A manually Created selection'),env);
   return {env,state,groups,oldMaster,generated,renderCount:()=>renders};
 }
-test('Harmonize keeps only cropped per-object source images and one live Master',async()=>{
+test('Harmonize keeps cropped object Options without modifying the original Base',async()=>{
   const {env,state,groups,generated}=setup();
   const result=await env.apply(generated,{type:'harmonize',prompt:'warm wood'});
   assert.equal(result.objectCount,2);
-  assert.equal(state.master,generated,'generation canvas itself becomes live Master');
+  assert.equal(state.master,oldMaster,'Base geometry must remain immutable');
   assert.equal(state.sources.size,4,'original+harmonized crop per group; no full-size archive sources');
   for(const source of state.sources.values()){
     assert.ok(source.crop,'every saved appearance is cropped');
@@ -58,7 +58,7 @@ test('second Harmonize adds Options but no new original-history image',async()=>
   await env.apply(generated,{type:'harmonize'});
   const next={width:2400,height:1600,name:'next-generation'};
   await env.apply(next,{type:'harmonize'});
-  assert.equal(state.master,next);
+  assert.equal(state.master,oldMaster,'second Harmonize also preserves Base');
   assert.equal(state.sources.size,6,'each group has one original crop and two generated crops');
   assert.equal(groups[0].patchIds.length,3);
   assert.equal(groups[1].patchIds.length,3);
@@ -67,9 +67,9 @@ test('Harmonize no longer copies archive graphs or serializes historical images'
   const run=section(premium,'async function harmonizeWithAI(','function getMasterVersions()');
   assert.doesNotMatch(run,/copyGraph\(state\.groups/);
   assert.doesNotMatch(run,/cloneCanvas\((?:baseAtRequest|finalImage|sourceVersion)/);
-  assert.match(run,/premium\.root=null/);
+  assert.match(run,/premium\.lastRequest=\{prompt\}/);
   const saved=section(premium,'function exportProjectState()','function restoreProjectState(');
   assert.doesNotMatch(saved,/root:premium\.root|expanded:premium\.expanded|previewNode:premium\.previewNode/);
-  assert.match(saved,/masterVersions:premium\.masterVersions\.slice\(-1\)/);
+  assert.doesNotMatch(saved,/masterVersions:/);
   assert.doesNotMatch(section(project,'function projectState()','async function encodeQueue('),/'sceneVersionHistory'/);
 });

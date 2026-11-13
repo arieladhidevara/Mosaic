@@ -977,83 +977,67 @@ async function attachAIResult(file) {
     toast('Generated result updated in the background. Current mask stays editable.');
   } catch (error) {toast('Could not attach result: ' + error.message);}
 }
-async function openHarmonize() {
-  premium.regenerateFrom=null;
-  if (!state.master) {toast('Upload Base or Master first.');return;}
-  if (state.pendingSourceId || state.editingPatchId) {toast('Apply or discard the current mask first.');return;}
-  if (premium.previewNode) {toast('Close the archive preview or branch from it before harmonizing.');return;}
-  if (state.groups.some(g => g.active && state.patches.get(g.active)?.awaitingResult)) {
-    toast('An active masked AI request is still waiting for its result image.');return;
+async function openHarmonize(){
+  if(!state.master){toast('Upload Base first.');return;}
+  if(state.pendingSourceId||state.editingPatchId){toast('Apply or discard your current edit first.');return;}
+  if(state.groups.some(g=>g.active&&state.patches.get(g.active)?.awaitingResult)){
+    toast('Finish pending object edits before Harmonize.');return;
   }
   if(!await window.MosaicAuth.ensure())return;
   clearReferenceFiles('harmonize');
-  $('harmonizePromptInput').value = core.promptText();
-  $('harmonizeDialog').querySelector('h2').textContent='Flatten & harmonize';
+  $('harmonizePromptInput').value=core.promptText();
+  $('harmonizeDialog').querySelector('h2').textContent='Harmonize object options';
   showDialog('harmonizeDialog');
 }
-async function harmonizeWithAI(prompt,sourceVersion=null) {
+async function harmonizeWithAI(prompt){
   if(!await window.MosaicAuth.ensure())return;
-  if(state.pendingSourceId||state.editingPatchId){toast('Apply or discard your unfinished patch before generating.');return}
-  if(state.groups.some(g=>state.patches.get(g.active)?.awaitingResult)){toast('Finish pending region edits first.');return}
-  const a=$('harmonizeBtn'),b=$('harmonizeSidebarBtn');a.disabled=true;b.disabled=true;
-  const progress=beginAIProgress(
-    sourceVersion?'Regenerate Master '+sourceVersion.number:'Harmonize Master',
-    'Preparing the approved composition…'
-  );
+  if(!state.master){toast('Upload Base first.');return;}
+  if(state.pendingSourceId||state.editingPatchId){toast('Apply or discard your current edit first.');return;}
+  if(state.groups.some(g=>state.patches.get(g.active)?.awaitingResult)){
+    toast('Finish pending object edits first.');return;
+  }
+  const a=$('harmonizeBtn'),b=$('harmonizeSidebarBtn');
+  a.disabled=true;b.disabled=true;
+  const progress=beginAIProgress('Harmonizing Options','Preparing the approved composition…',{scope:'canvas'});
   const baseAtRequest=state.master;
+  const referenceAtRequest=state.reference;
   const generationAtRequest=state.selectionGeneration;
-  // No frozen graph/history snapshot: previous looks already live as object Options.
+  const choices=state.groups.map(g=>[g.id,g.active,g.patchIds.length]);
   let finalImage;
   try{
-    message(sourceVersion?'Regenerating from Master '+sourceVersion.number+'…':'Generating harmonized architecture image with OpenAI…');
     progress.update(16,'Preparing reference images…');
     const references=await prepareReferenceImages(getReferenceFiles('harmonize'));
-    progress.update(30,'OpenAI is generating the full image…');
-    const answer=await window.MosaicAuth.request('/api/ai/harmonize',encodeRequest(prompt,null,sourceVersion?.image,references));
-    progress.update(82,'Image received. Decoding result…');
+    progress.update(30,'OpenAI is harmonizing the current composition…');
+    const answer=await window.MosaicAuth.request('/api/ai/harmonize',encodeRequest(prompt,null,null,references));
+    progress.update(82,'Decoding harmonized result…');
     finalImage=await fromGeneratedJPEG(answer.image);
-    progress.update(92,'Applying the new Master…');
-  }catch(error){progress.fail(error.message||'Harmonize failed.');toast('Harmonize failed: '+error.message);message('Your original collage is unchanged. Please retry.');return}
-  finally{a.disabled=false;b.disabled=false}
-  clearReferenceFiles('harmonize');
-  if(state.selectionGeneration!==generationAtRequest||state.master!==baseAtRequest){
-    // A different Master/project was loaded while the request was processing.
-    // Never overwrite its layers, masks or history with a stale AI result.
-    toast('Harmonize finished, but Master changed during generation. The current work was kept.');
-    progress.done('Finished; current Master was kept.');
-    return;
-  }
-  const editingInProgress=Boolean(state.pendingSourceId||state.editingPatchId
-    ||state.drawing||state.lasso.length
-    ||core.selectionBounds());
-  const number=++premium.serial;
-  // Forget archived full-image snapshots. Keep the prompt only, not a full
-  // collage, previous Base, copyGraph(), or hidden version chain.
-  premium.root=null;premium.expanded.clear();premium.previewNode=null;
-  premium.branchFrom=null;
-  premium.lastRequest={prompt};
-  // Every Harmonize result becomes its own named option on EACH persistent object.
-  // SAM 3 resegments the full generated scene and spatially matches candidates
-  // to the existing Object IDs. Unmatched objects retain their previous masks.
-  let versionResult;
-  try{
-    versionResult=await window.MosaicSceneVersions.apply(finalImage,{
+    if(state.selectionGeneration!==generationAtRequest||state.master!==baseAtRequest
+      ||state.reference!==referenceAtRequest
+      ||choices.some(([id,active,length])=>{
+        const g=state.groups.find(g=>g.id===id);
+        return !g||g.active!==active||g.patchIds.length!==length;
+      })||state.groups.length!==choices.length){
+      progress.done('Project changed during generation; existing Options were kept.');
+      toast('Harmonize finished but the project changed. Generate again for the latest design.');
+      return;
+    }
+    progress.update(92,'Adding the result as object Options…');
+    const editingInProgress=Boolean(state.drawing||state.maskVertexDrag||state.maskMoveDrag);
+    const result=await window.MosaicSceneVersions.apply(finalImage,{
       type:'harmonize',prompt,preserveEditing:editingInProgress,
       onStatus:detail=>progress.update(94,detail)
     });
-  }catch(error){progress.fail(error.message);toast('Harmonize versioning failed: '+error.message);return}
-  // Only the current Master remains. Old appearances are per-object Options.
-  const masterVersion=addMasterVersion(state.master,sourceVersion?'Regenerated':'Harmonized',prompt,sourceVersion?.number||null);
-  $('masterTitle').textContent = 'Master ' + masterVersion + ' · AI';
-  $('masterInfo').textContent = canvas.width + ' × ' + canvas.height + ' · working image';core.setSourcePreview('masterPreview',finalImage);
-  core.setProjectTitle('Harmonized ' + number + ' · AI render');
-  renderGroups();
-  render();
-  message(editingInProgress
-    ?'Master '+masterVersion+' updated in the background. Your mask editing remains active.'
-    :'Master '+masterVersion+' is active. Earlier appearances remain in each object’s Options.');
-  refreshMasterBrowser();toast('Master '+masterVersion+' updated. Existing object Options are preserved; no full-image history is saved.');
-  progress.done('Master '+masterVersion+' is ready.');
+    // Only lightweight prompt metadata remains. No archived graph or collage.
+    premium.lastRequest={prompt};
+    message('Harmonize saved as '+result.objectCount+' object Options. Base stays unchanged.');
+    toast('Harmonize complete. Base image unchanged; old Options remain available.');
+    progress.done('New object Options ready.');
+  }catch(error){
+    progress.fail(error.message||'Harmonize failed.');
+    toast('Harmonize failed: '+error.message);
+  }finally{
+    a.disabled=false;b.disabled=false;clearReferenceFiles('harmonize');
+  }
 }
 function getMasterVersions(){return [...premium.masterVersions]}
 function initialMasterImage(){return premium.initialMaster||premium.masterVersions[0]?.image}
@@ -1360,12 +1344,8 @@ function exportProjectState(){
   return {
     settings:{...premium.settings},
     projectPrompt:premium.projectPrompt,
-    // Do not serialize old Harmonize image trees or archived Master canvases.
     serial:premium.serial,
     lastRequest:premium.lastRequest?.prompt?{prompt:premium.lastRequest.prompt}:null,
-    originalMaster:premium.originalMaster,
-    initialMaster:premium.initialMaster,
-    masterVersions:premium.masterVersions.slice(-1),
     regionSerial:premium.regionSerial,
     showGuides:premium.showGuides
   };
@@ -1378,19 +1358,11 @@ function restoreProjectState(snapshot){
   premium.settings=generationSettings(data.settings);
   syncGenerationSettings();
   premium.projectPrompt=String(data.projectPrompt||'');
-  // Older .moz files can still be opened, but imported full-image archive
-  // branches are discarded. One live Master and all saved Options remain.
-  premium.root=null;
+  premium.root=null;premium.expanded.clear();premium.previewNode=null;
   premium.serial=Number(data.serial)||0;
-  premium.expanded=new Set();
-  premium.previewNode=null;
-  premium.lastRequest=data.lastRequest?.prompt?{prompt:data.lastRequest.prompt}:null;
-  premium.originalMaster=data.originalMaster||state.reference||null;
-  premium.initialMaster=data.initialMaster||(!state.reference?state.master:null);
-  const latest=Array.isArray(data.masterVersions)?data.masterVersions.at(-1):null;
-  premium.masterVersions=latest?[{...latest,image:state.master||latest.image}]:[];
-  premium.branchFrom=null;
-  premium.regionSerial=Number(data.regionSerial)||0;
+  premium.lastRequest=data.lastRequest?.prompt?{prompt:String(data.lastRequest.prompt)}:null;
+  premium.originalMaster=null;premium.initialMaster=null;premium.masterVersions=[];
+  premium.branchFrom=null;premium.regionSerial=Number(data.regionSerial)||0;
   premium.showGuides=Boolean(data.showGuides);
   premium.regenerateFrom=null;premium.uploadPatch=null;
   $('regionGuidesBtn').setAttribute('aria-pressed',String(premium.showGuides));

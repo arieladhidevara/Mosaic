@@ -34,19 +34,15 @@ function downloadPNG(source,name){
   },'image/png');
 }
 function refresh(){
-  const hasBase=Boolean(state.reference),hasMaster=Boolean(state.master&&!state.masterIsBase);
+  const hasBase=Boolean(state.reference);
   $('referenceInput').disabled=hasBase;
-  $('masterInput').disabled=hasMaster;
+  $('masterInput').disabled=true;
   $('referenceZone').classList.toggle('source-locked',hasBase);
-  $('masterZone').classList.toggle('source-locked',hasMaster);
+  $('masterZone').classList.add('source-locked');
   $('referenceZone').title=hasBase?'Preview Base image (original upload is locked)':'Upload Base image';
-  $('masterZone').title=hasMaster?'Preview latest Master image (original upload is locked)':'Upload Master image';
-  // Full-scene Master history was removed. The current Master can still be
-  // previewed from the main Master zone; earlier looks live as object Options.
   masterPanel.classList.add('hidden');
   $('masterVersionsCount').textContent='0';
   $('masterVersionsList').replaceChildren();
-  lastVersionCount=0;
 }
 for(const [zoneId,inputId,kind] of [['referenceZone','referenceInput','base'],['masterZone','masterInput','master']]){
   const zone=$(zoneId);
