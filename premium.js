@@ -151,38 +151,40 @@ function onReferenceLoaded() {
 }
 function refreshMasterBrowser(){window.MosaicSources?.refresh?.()}
 function addMasterVersion(image,kind='Harmonized',prompt='',from=null){
-  const number=(premium.masterVersions.at(-1)?.number||0)+1;
-  premium.masterVersions.push({number,image:cloneCanvas(image),kind,prompt,from});
+  // Keep only the live Master, never retain a second full-sized image
+  // for old Master history. Object-level Options hold previous appearances.
+  const number=Math.max(premium.masterVersions.at(-1)?.number||0,premium.serial||0)+1;
+  premium.masterVersions=[{number,image,kind,prompt,from}];
   refreshMasterBrowser();
   return number;
 }
 function onMasterLoaded(image,name='Master'){
-  premium.initialMaster=cloneCanvas(image);
-  if(state.reference)premium.originalMaster=cloneCanvas(state.reference);
+  premium.initialMaster=image;
+  if(state.reference)premium.originalMaster=state.reference;
   addMasterVersion(image,name.includes('AI')?'AI generated':name.includes('Base')?'Base placeholder':'Uploaded');
 }
 function onBaseContinue(working){
   // Continue is a deliberate manual draft, not a Master upload or generation.
   premium.masterVersions=[];
-  premium.initialMaster=cloneCanvas(working);
-  premium.originalMaster=state.reference?cloneCanvas(state.reference):cloneCanvas(working);
+  premium.initialMaster=working;
+  premium.originalMaster=state.reference||working;
   refreshMasterBrowser();
 }
 function onSourceEdited(kind,raster){
-  if(kind==='base'){premium.originalMaster=cloneCanvas(raster);window.MosaicObjectMap?.invalidateBase()}
+  if(kind==='base'){premium.originalMaster=raster;window.MosaicObjectMap?.invalidateBase()}
   if(kind==='master'){
-    // Editing Master 3 must not overwrite the immutable Original Master / Master 1 snapshot.
-    if(premium.masterVersions.length<=1)premium.initialMaster=cloneCanvas(raster);
+    // A replacement of the only current Master should not clone history.
+    if(premium.masterVersions.length<=1&&!premium.initialMaster)premium.initialMaster=raster;
     const latest=premium.masterVersions.at(-1);
     if(latest){
-      latest.image=cloneCanvas(raster);
+      latest.image=raster;
       // The active Master may also appear as shared per-region Master N options.
       // Update only the matching latest version, not older Masters/material alternatives.
       const updated=new Set();
       for(const patch of state.patches.values()){
         if(!patch.isMasterVersion||patch.masterVersion!==latest.number||updated.has(patch.sourceId))continue;
         const source=state.sources.get(patch.sourceId);
-        if(source){source.canvas=cloneCanvas(raster);source.crop=null;updated.add(patch.sourceId)}
+        if(source){Object.assign(source,core.compactOptionSource(raster,core.exactMaskBoundingBox(patch.mask),24));updated.add(patch.sourceId)}
       }
     }
     refreshMasterBrowser();
@@ -190,9 +192,9 @@ function onSourceEdited(kind,raster){
   core.promptText();
 }
 function onSourcesAligned(base,master){
-  premium.initialMaster=cloneCanvas(master);
-  premium.originalMaster=cloneCanvas(base);
-  if(premium.masterVersions.length===1)premium.masterVersions[0].image=cloneCanvas(master);
+  premium.initialMaster=master;
+  premium.originalMaster=base;
+  if(premium.masterVersions.length===1)premium.masterVersions[0].image=master;
   refreshMasterBrowser();
   core.promptText();
 }
@@ -979,12 +981,9 @@ async function harmonizeWithAI(prompt,sourceVersion=null) {
     sourceVersion?'Regenerate Master '+sourceVersion.number:'Harmonize Master',
     'Preparing the approved composition…'
   );
-  const flattened = currentComposite();
   const baseAtRequest=state.master;
   const generationAtRequest=state.selectionGeneration;
-  // Freeze the approved graph at submission time for accurate archive history.
-  // Any painting after this point belongs to the active working session.
-  const submittedGraph=copyGraph(state.groups,state.patches,state.sources);
+  // No frozen graph/history snapshot: previous looks already live as object Options.
   let finalImage;
   try{
     message(sourceVersion?'Regenerating from Master '+sourceVersion.number+'…':'Generating harmonized architecture image with OpenAI…');
@@ -1008,22 +1007,12 @@ async function harmonizeWithAI(prompt,sourceVersion=null) {
   const editingInProgress=Boolean(state.pendingSourceId||state.editingPatchId
     ||state.drawing||state.lasso.length
     ||core.selectionBounds());
-  const graph = submittedGraph;
-  const number = ++premium.serial;
-  const masterVersion=addMasterVersion(finalImage,sourceVersion?'Regenerated':'Harmonized',prompt,sourceVersion?.number||null);
-  const node = {
-    id: uid('harmonized'), number, base: cloneCanvas(baseAtRequest),
-    groups: graph.groups, patches: graph.patches, sources: graph.sources,
-    output: cloneCanvas(finalImage), prompt, parent: premium.root,
-    branchedFrom: premium.branchFrom, aiGenerated: true
-  };
-  premium.root = node;
-  premium.expanded.add(node.id);
-  if(!editingInProgress)premium.previewNode = null;
-  premium.lastRequest = {
-    originalBase: state.reference||premium.initialMaster||state.master, collage: cloneCanvas(sourceVersion?.image||flattened),
-    prompt, snapshotId: node.id
-  };
+  const number=++premium.serial;
+  // Forget archived full-image snapshots. Keep the prompt only, not a full
+  // collage, previous Base, copyGraph(), or hidden version chain.
+  premium.root=null;premium.expanded.clear();premium.previewNode=null;
+  premium.branchFrom=null;
+  premium.lastRequest={prompt};
   // Every Harmonize result becomes its own named option on EACH persistent object.
   // SAM 3 resegments the full generated scene and spatially matches candidates
   // to the existing Object IDs. Unmatched objects retain their previous masks.
@@ -1034,9 +1023,8 @@ async function harmonizeWithAI(prompt,sourceVersion=null) {
       onStatus:detail=>progress.update(94,detail)
     });
   }catch(error){progress.fail(error.message);toast('Harmonize versioning failed: '+error.message);return}
-  // Preserve pending imports, selection canvas, in-progress lasso, mask editor,
-  // undo/redo stack, tool and keyboard focus across the background Master update.
-  premium.branchFrom = node.id;
+  // Only the current Master remains. Old appearances are per-object Options.
+  const masterVersion=addMasterVersion(state.master,sourceVersion?'Regenerated':'Harmonized',prompt,sourceVersion?.number||null);
   $('masterTitle').textContent = 'Master ' + masterVersion + ' · AI';
   $('masterInfo').textContent = canvas.width + ' × ' + canvas.height + ' · working image';core.setSourcePreview('masterPreview',finalImage);
   core.setProjectTitle('Harmonized ' + number + ' · AI render');
@@ -1044,12 +1032,12 @@ async function harmonizeWithAI(prompt,sourceVersion=null) {
   render();
   message(editingInProgress
     ?'Master '+masterVersion+' updated in the background. Your mask editing remains active.'
-    :'Master '+masterVersion+' is active. Earlier Masters remain available in the expandable source list.');
+    :'Master '+masterVersion+' is active. Earlier appearances remain in each object’s Options.');
   refreshMasterBrowser();toast('Master '+masterVersion+' saved. Current mask and earlier region options are preserved.');
   progress.done('Master '+masterVersion+' is ready.');
 }
 function getMasterVersions(){return [...premium.masterVersions]}
-function initialMasterImage(){return premium.masterVersions[0]?.image||premium.initialMaster}
+function initialMasterImage(){return premium.initialMaster||premium.masterVersions[0]?.image}
 async function regenerateMaster(number){
   const version=premium.masterVersions.find(item=>item.number===Number(number));
   if(!version){toast('This Master version is no longer available.');return}
@@ -1302,8 +1290,8 @@ async function createMasterFromBase(prompt,files,button,afterSuccess){
         state.master=generated;state.rawMaster=generated;state.masterIsBase=false;
         if(!state.objectMap?.raster)window.MosaicObjectMap?.imageReady?.(generated);
         const version=addMasterVersion(generated,'AI generated',prompt);
-        if(isFirstMaster)premium.initialMaster=cloneCanvas(generated);
-        premium.originalMaster=cloneCanvas(baseAtRequest);
+        if(isFirstMaster)premium.initialMaster=generated;
+        premium.originalMaster=baseAtRequest;
         core.setSourcePreview('masterPreview',generated);
         $('masterTitle').textContent='Master '+version+' · AI';
         $('masterInfo').textContent=generated.width+' × '+generated.height+' · AI generated';
@@ -1316,7 +1304,7 @@ async function createMasterFromBase(prompt,files,button,afterSuccess){
       }
     }else{
       core.setMaster(generated,'Master · AI');
-      premium.originalMaster=cloneCanvas(baseAtRequest);
+      premium.originalMaster=baseAtRequest;
       message('AI Master ready. Select regions to edit, or add another image.');
       toast('Generated Master from Base.');
     }
@@ -1354,15 +1342,12 @@ function exportProjectState(){
   return {
     settings:{...premium.settings},
     projectPrompt:premium.projectPrompt,
-    root:premium.root,
+    // Do not serialize old Harmonize image trees or archived Master canvases.
     serial:premium.serial,
-    expanded:premium.expanded,
-    previewNode:premium.previewNode,
-    lastRequest:premium.lastRequest,
+    lastRequest:premium.lastRequest?.prompt?{prompt:premium.lastRequest.prompt}:null,
     originalMaster:premium.originalMaster,
     initialMaster:premium.initialMaster,
-    masterVersions:premium.masterVersions,
-    branchFrom:premium.branchFrom,
+    masterVersions:premium.masterVersions.slice(-1),
     regionSerial:premium.regionSerial,
     showGuides:premium.showGuides
   };
@@ -1375,15 +1360,18 @@ function restoreProjectState(snapshot){
   premium.settings=generationSettings(data.settings);
   syncGenerationSettings();
   premium.projectPrompt=String(data.projectPrompt||'');
-  premium.root=data.root||null;
+  // Older .moz files can still be opened, but imported full-image archive
+  // branches are discarded. One live Master and all saved Options remain.
+  premium.root=null;
   premium.serial=Number(data.serial)||0;
-  premium.expanded=data.expanded instanceof Set?data.expanded:new Set();
-  premium.previewNode=data.previewNode||null;
-  premium.lastRequest=data.lastRequest||null;
-  premium.originalMaster=data.originalMaster||null;
-  premium.initialMaster=data.initialMaster||null;
-  premium.masterVersions=Array.isArray(data.masterVersions)?data.masterVersions:[];
-  premium.branchFrom=data.branchFrom||null;
+  premium.expanded=new Set();
+  premium.previewNode=null;
+  premium.lastRequest=data.lastRequest?.prompt?{prompt:data.lastRequest.prompt}:null;
+  premium.originalMaster=data.originalMaster||state.reference||null;
+  premium.initialMaster=data.initialMaster||(!state.reference?state.master:null);
+  const latest=Array.isArray(data.masterVersions)?data.masterVersions.at(-1):null;
+  premium.masterVersions=latest?[{...latest,image:state.master||latest.image}]:[];
+  premium.branchFrom=null;
   premium.regionSerial=Number(data.regionSerial)||0;
   premium.showGuides=Boolean(data.showGuides);
   premium.regenerateFrom=null;premium.uploadPatch=null;
