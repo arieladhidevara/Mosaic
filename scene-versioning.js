@@ -84,6 +84,7 @@ async function apply(image,{type='ai-edit',prompt='',onStatus=()=>{},preserveEdi
         bbox:core.exactMaskBoundingBox(mask),maskPaths:paths,maskPoints:paths.flat(),
         name:'Before full image',manualName:true,isOriginalMaster:true,versionCategory:'Original'});
       group.patchIds.unshift(oldId);
+      core.shareMaterialOptionMask(state.patches.get(oldId),group);
     }
     // Apply at most one small perspective correction from long matching image
     // lines. Uncertain correspondence leaves RGB and the original mask alone.
@@ -109,6 +110,7 @@ async function apply(image,{type='ai-edit',prompt='',onStatus=()=>{},preserveEdi
       segmentationStatus:'locked-original',maskAlignmentStatus:aligned.status,
       segmentationConfidence:0,prompt});
     group.patchIds.push(patchId);
+    core.shareMaterialOptionMask(state.patches.get(patchId),group);
     group.hasHarmonizedMaster=true;
     if(!preserveEditing||!state.selectionTargetPatchId)group.active=patchId;
     core.refreshGroupFootprint(group);

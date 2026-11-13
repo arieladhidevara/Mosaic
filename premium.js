@@ -28,9 +28,17 @@ const cloneCanvas = input => {
   return output;
 };
 function copyGraph(groups, patches, sources) {
+  // Preserve sharing *inside* an archive snapshot while keeping it isolated
+  // from the live editable graph. Old behavior cloned the same mask per Option.
+  const maskCopies=new WeakMap();
+  const copyMask=mask=>{
+    if(!mask)return mask;
+    if(!maskCopies.has(mask))maskCopies.set(mask,cloneCanvas(mask));
+    return maskCopies.get(mask);
+  };
   return {
     groups: groups.map(g => ({...g, objectBehind:g.objectBehind?[...g.objectBehind]:undefined,objectOriginal:g.objectOriginal?{...g.objectOriginal,repairs:[...g.objectOriginal.repairs]}:undefined,patchIds: [...g.patchIds],footprint: g.footprint?cloneCanvas(g.footprint):null})),
-    patches: new Map([...patches].map(([id,p]) => [id, {...p, objectRepairs:p.objectRepairs?[...p.objectRepairs]:undefined,mask: cloneCanvas(p.mask), corners: p.corners?.map(q=>({...q}))||null}])),
+    patches: new Map([...patches].map(([id,p]) => [id, {...p, objectRepairs:p.objectRepairs?[...p.objectRepairs]:undefined,mask: copyMask(p.mask),request:p.request?{...p.request,mask:copyMask(p.request.mask)}:p.request, corners: p.corners?.map(q=>({...q}))||null}])),
     // Archived branches may reference lossless images already stored on disk.
     // Keep their disk pointers rather than decoding all inactive options here.
     sources: new Map([...sources].map(([id,s]) => [id, {...s, canvas: s.canvas?cloneCanvas(s.canvas):null}]))
@@ -640,6 +648,10 @@ async function generateRegion(patchId,regenerate=false){
         source.name='AI region '+patch.regionNumber;source.revealComplete=true;
       }
       window.MosaicObjects?.generated(existing,existing.mask,currentMaskUnchanged);
+      // Material edits preserve the exact same silhouette: deduplicate the
+      // canvas, not just the pixels. This also deduplicates .moz serialization.
+      const materialGroup=state.groups.find(group=>group.patchIds.includes(existing.id));
+      core.shareMaterialOptionMask(existing,materialGroup);
       // Previously every completed Option still referenced a full RGB
       // pre-edit collage through request.baseImage and request.reference.
       // Reveal uses this Option's saved contextual crop instead.
@@ -752,7 +764,9 @@ function commitObjectMapParts(batch,result,underlay,requestOrder){
       name:core.optionNameFromPrompt(batch.prompt,part.category+' edit')};
     patch.maskPoints=patch.maskPaths.flat();
     const activeBefore=group.active,choice=core.groupChoiceVersion(group),previous=lastAppliedGenerations.get(group);
-    assignGroup(patch,group.id);core.updateGroupCategory(group,part.category,'object-map');
+    assignGroup(patch,group.id);
+    core.shareMaterialOptionMask(patch,group);
+    core.updateGroupCategory(group,part.category,'object-map');
     if(choice===part.choiceAtStart&&requestOrder>(previous?.order||0)){group.active=patch.id;lastAppliedGenerations.set(group,{order:requestOrder,patchId:patch.id})}
     else group.active=activeBefore;
     core.refreshGroupFootprint(group);
@@ -831,6 +845,9 @@ function createRegionRequest(prompt,referenceImages=[],selectedMask=state.select
   // activate this new option when its pixels are ready, unless the user makes
   // another option choice in the meantime.
   group.active=activeBefore.has(group.id)?activeBefore.get(group.id):null;
+  // Queue requests against the immutable approved geometry. Editing another
+  // Option while OpenAI works triggers copy-on-write on that other Option.
+  if(!objectSelection?.parts?.length)core.shareMaterialOptionMask(patch,group);
   window.MosaicObjects?.capture(patch,group,objectSelection);
   void suggestSemanticName(patch.id,text);
   // The submitted mask is already an independent snapshot on patch.mask.
@@ -912,6 +929,7 @@ async function attachAIResult(file) {
     source.revealComplete=true;
     patch.awaitingResult = false;
     if(patch.request){delete patch.request.baseImage;delete patch.request.reference;}
+    core.shareMaterialOptionMask(patch,state.groups.find(group=>group.patchIds.includes(patch.id)));
     if(!patch.manualName&&!patch.semanticNamed)patch.name = core.optionNameFromPrompt(patch.prompt,file.name.replace(/\.[^.]+$/,''));
     const group = state.groups.find(g => g.patchIds.includes(patch.id));
     // Keep the user's currently selected Group option as-is. The generated

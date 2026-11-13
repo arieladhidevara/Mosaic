@@ -28,7 +28,11 @@
   const recentlyUsed = new WeakMap();
   // Canvas restored from a PNG is unchanged until callers replace the canvas.
   // Reuse its existing file instead of writing a duplicate every time it goes idle.
-  const hydratedCanvas = new WeakMap();
+  let hydratedCanvas = new WeakMap();
+  // Several Material Options may share one immutable canvas. Backing up the
+  // same object multiple times would waste IndexedDB as well as RAM.
+  let savedCanvasKeys=new WeakMap();
+  const hydratedKeys=new Map(); // Disk key -> weak canvas reference, no RAM pin.
 
   const hasCanvas = value => !!value && typeof value.toBlob === 'function' &&
     Number.isFinite(value.width) && Number.isFinite(value.height);
@@ -129,8 +133,12 @@
     if(!hasCanvas(canvas) || check() || !cacheAvailable || blocked) return false;
     const epoch=projectEpoch, account=owner();
     const prior=hydratedCanvas.get(target)?.[field];
-    if(prior?.canvas===canvas && prior.key===target[marker(field)]){
+    const known=savedCanvasKeys.get(canvas);
+    const sharedKey=prior?.canvas===canvas&&prior.owner===account?prior.key:
+      known?.owner===account?known.key:null;
+    if(sharedKey){
       if(check()||blocked)return false;
+      target[marker(field)]=sharedKey;
       target[field]=null;
       delete hydratedCanvas.get(target)?.[field];
       onEvict();
@@ -145,6 +153,7 @@
       bytes+=blob.size;
       // Do not change the live graph until the lossless file has been persisted.
       if(check() || target[field]!==canvas || epoch!==projectEpoch || account!==owner() || blocked) return false;
+      savedCanvasKeys.set(canvas,{key:id,owner:account});
       target[marker(field)]=id;
       target[field]=null;
       delete hydratedCanvas.get(target)?.[field];
@@ -167,12 +176,16 @@
     const record=await read(key);
     if(!record?.blob || record.owner!==owner())
       throw Error('Image cache is unavailable. Restore a saved .moz project.');
-    const canvas=await decode(record.blob);
+    // Reuse the same decoded pixels for all Options with a shared disk key.
+    const reused=hydratedKeys.get(key)?.deref?.();
+    const canvas=reused||await decode(record.blob);
+    if(typeof WeakRef==='function')hydratedKeys.set(key,new WeakRef(canvas));
+    savedCanvasKeys.set(canvas,{key,owner:owner()});
     // A newer image may have arrived while the disk version was decoding.
     if(!hasCanvas(target[field])){
       target[field]=canvas;
       const history=hydratedCanvas.get(target)||{};
-      history[field]={canvas,key};
+      history[field]={canvas,key,owner:owner()};
       hydratedCanvas.set(target,history);
     }
     recentlyUsed.set(target,Date.now());
@@ -279,6 +292,8 @@
   function pause() {blocked++; return ()=>{blocked=Math.max(0,blocked-1);schedule();};}
   async function clearOwner(account=owner()) {
     projectEpoch++;
+    // Never reuse a disk pointer after deletion or across signed-in users.
+    savedCanvasKeys=new WeakMap();hydratedCanvas=new WeakMap();hydratedKeys.clear();
     clearTimeout(timer);timer=null;
     if(sweeping)await sweeping;
     const records=await list();

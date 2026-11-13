@@ -228,6 +228,9 @@ async function loadProjectFile(file,{recovery=false}={}){
     window.MosaicObjects?.reset();
     window.MosaicWorkspace?.reset();
     Object.assign(state,saved);
+    // Older .moz versions stored a separate identical mask for every
+    // appearance Option. Consolidate them on load without changing geometry.
+    core.shareSavedOptionMasks?.();
     state.objectCollections=Array.isArray(saved.objectCollections)?saved.objectCollections:[];state.objectSelectionParts=Array.isArray(saved.objectSelectionParts)?saved.objectSelectionParts:[];
     state.selectionPoints=Array.isArray(saved.selectionPoints)?saved.selectionPoints:[];
     state.selectionPaths=Array.isArray(saved.selectionPaths)?saved.selectionPaths:[];
