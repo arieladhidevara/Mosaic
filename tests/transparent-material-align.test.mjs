@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {fitTransparentMasks,mapTransparentPoint,warpTransparentPixels} from '../transparent-material-align.mjs';
+import {fitTransparentMasks,mapTransparentPoint,warpTransparentPixels,repairLockedMaskGaps} from '../transparent-material-align.mjs';
 
 const width=240,height=180;
 function wall(doorShiftA=0,doorShiftB=0,missingDoor=false){
@@ -48,4 +48,37 @@ test('rejects blank and wildly different alpha silhouettes',()=>{
   const source=new Uint8Array(width*height);
   for(let y=0;y<30;y++)for(let x=0;x<40;x++)source[y*width+x]=1;
   assert.equal(fitTransparentMasks({target:wall(),source,width,height}).approved,false);
+});
+
+test('repairs a transparent top rim and a small gap without changing door openings',()=>{
+  const target=wall(),source=rgba(target),original=rgba(target);
+  // AI output loses the upper rim and a narrow horizontal interior strip.
+  for(let y=18;y<29;y++)for(let x=15;x<225;x++)source[(y*width+x)*4+3]=0;
+  for(let y=117;y<121;y++)for(let x=15;x<225;x++)source[(y*width+x)*4+3]=0;
+  const fit=fitTransparentMasks({target,source:target,width,height});
+  assert.equal(fit.approved,true);
+  const repaired=warpTransparentPixels({sourceRGBA:source,targetRGBA:original,width,height,fit});
+  assert.ok(repaired.rgba,'narrow transparent gaps should be repaired instead of discarded');
+  assert.ok(repaired.initialCoverage<.98,'this is the previously rejected scenario');
+  assert.equal(repaired.coverage,1);
+  assert.ok(repaired.repairedPixels>0);
+  for(let i=0;i<target.length;i++)assert.equal(repaired.rgba[i*4+3],target[i]*255,
+    'all material is strictly clipped to original mask and excludes both doors');
+});
+test('repair respects disconnected objects and refuses major transparency loss',()=>{
+  const target=wall(),before=rgba(target),out=new Uint8ClampedArray(before);
+  // A large part of the surface is entirely missing: not safe to hallucinate.
+  for(let y=18;y<90;y++)for(let x=15;x<225;x++)out[(y*width+x)*4+3]=0;
+  const fit=fitTransparentMasks({target,source:target,width,height});
+  const rejected=warpTransparentPixels({sourceRGBA:out,targetRGBA:before,width,height,fit});
+  assert.equal(rejected.rgba,null);
+  assert.ok(rejected.initialCoverage<.8);
+});
+test('semi-transparent but colored pixels count as valid AI material',()=>{
+  const target=wall(),before=rgba(target),source=rgba(target);
+  for(let i=0;i<target.length;i++)if(target[i])source[i*4+3]=96;
+  const fit=fitTransparentMasks({target,source:target,width,height});
+  const result=warpTransparentPixels({sourceRGBA:source,targetRGBA:before,width,height,fit});
+  assert.ok(result.rgba,'antialiased material must not fail opacity-only coverage checks');
+  assert.ok(result.coverage>=.995);
 });
