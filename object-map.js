@@ -53,10 +53,16 @@ retry.addEventListener('click',()=>void prepareBase(true));
 const preview=makeCanvas(1,1);preview.className='object-map-hover-overlay';preview.hidden=true;preview.setAttribute('aria-hidden','true');document.getElementById('canvasWrap').append(preview);
 const selectedOverlay=makeCanvas(1,1);selectedOverlay.id='selectedObjectOverlay';selectedOverlay.className='object-map-selection-overlay';selectedOverlay.setAttribute('aria-hidden','true');document.getElementById('canvasWrap').append(selectedOverlay);
 function drawSelection(){
-  selectedOverlay.hidden=!state.objectMapSelection||!state.selectionMask||state.before||state.selectionOverlayHidden||Boolean(window.MosaicPremium?.isPreviewing());
+  const crop=state.selectionGeometry?.crop;
+  selectedOverlay.hidden=!state.objectMapSelection||(!state.selectionMask&&!crop)||
+    state.before||state.selectionOverlayHidden||Boolean(window.MosaicPremium?.isPreviewing());
   if(selectedOverlay.hidden)return;
-  if(selectedOverlay.width!==canvas.width||selectedOverlay.height!==canvas.height){selectedOverlay.width=canvas.width;selectedOverlay.height=canvas.height}
-  const x=selectedOverlay.getContext('2d');x.clearRect(0,0,canvas.width,canvas.height);x.drawImage(state.selectionMask,0,0);x.globalCompositeOperation='source-in';x.fillStyle='rgba(180,147,245,0.12)';x.fillRect(0,0,canvas.width,canvas.height);x.globalCompositeOperation='source-over';
+  if(crop){tintCrop(selectedOverlay,crop,.12);return}
+  const bounds=core.selectionBounds();
+  if(!bounds)return;
+  const image=makeCanvas(bounds.w,bounds.h);
+  image.getContext('2d').drawImage(state.selectionMask,-bounds.x,-bounds.y);
+  tintCrop(selectedOverlay,{mask:image,x:bounds.x,y:bounds.y},.12);
 }
 function update(text,failed=false,allowRetry=failed){
   status.textContent=text;
@@ -219,16 +225,38 @@ function selectionCompleted(){
 const cloneMask=mask=>{const out=makeCanvas(mask.width,mask.height);out.getContext('2d').drawImage(mask,0,0);return out};
 // Adopt always copies masks before writing, so history can share these immutable masks.
 function snapshotSelection(){return (state.objectSelectionParts||[]).map(part=>({...part}))}
+function adoptIdentity(group){
+  const part={objectKey:group.objectMapObjectKey||group.id,
+    instanceId:group.objectMapInstanceId||null,
+    category:group.category,label:group.name,mapKey:group.objectMapKey||'manual',
+    mask:null,paths:state.selectionPaths};
+  state.objectSelectionParts=[part];
+  state.objectMapSelection=state.objectMap?.sourceKey||part.mapKey;
+  state.objectMapSelectedIds=part.instanceId?[part.instanceId]:[];
+  window.MosaicObjectManager?.refreshActions?.();
+}
 function adoptSelection(parts){
   const canonical=new Map();
-  for(const part of parts){const resolved=window.MosaicObjectManager.resolvePart(part,true),key=resolved.objectKey,previous=canonical.get(key);if(previous){previous.mask.getContext('2d').drawImage(part.mask,0,0);previous.paths=null;}else canonical.set(key,{...part,objectKey:key,mapKey:resolved.mapKey,label:resolved.label,instanceId:resolved.instanceId,mask:cloneMask(part.mask)})}
+  for(const part of parts){
+    const resolved=window.MosaicObjectManager.resolvePart(part,true),key=resolved.objectKey,previous=canonical.get(key);
+    if(previous){
+      if(part.mask){if(!previous.mask)previous.mask=cloneMask(part.mask);
+        else previous.mask.getContext('2d').drawImage(part.mask,0,0);}
+      previous.paths=null;
+    }else canonical.set(key,{...part,objectKey:key,mapKey:resolved.mapKey,label:resolved.label,
+      instanceId:resolved.instanceId,mask:part.mask?cloneMask(part.mask):null});
+  }
   state.objectSelectionParts=[...canonical.values()];state.objectMapSelection=canonical.size?(state.objectMap?.sourceKey||parts[0].mapKey):null;state.objectMapSelectedIds=state.objectSelectionParts.map(p=>p.instanceId).filter(Boolean);window.MosaicObjectManager.refreshActions();
 }
 function partForId(id){const entry=state.objectMap.entries.find(entry=>entry.id===id);return window.MosaicObjectManager.resolvePart({objectKey:entry.key,instanceId:id,category:entry.category,label:entry.label,mapKey:state.objectMap.sourceKey,mask:maskForIds([id])})}
 function reconcileParts(mask,parts){
   if(!parts.length)return [];
   const w=mask.width,h=mask.height,target=mask.getContext('2d',{willReadFrequently:true}).getImageData(0,0,w,h).data,owner=new Uint16Array(w*h);
-  const outputs=parts.map((part,index)=>{const bits=part.mask.getContext('2d',{willReadFrequently:true}).getImageData(0,0,w,h).data;for(let i=0;i<owner.length;i++)if(bits[i*4+3]>=128&&!owner[i])owner[i]=index+1;const frame=makeCanvas(w,h),ctx=frame.getContext('2d');return {...part,mask:frame,ctx,pixels:ctx.createImageData(w,h),box:core.exactMaskBoundingBox(part.mask),count:0}});
+  const outputs=parts.map((stored,index)=>{
+    const part=stored.mask?stored:window.MosaicObjectManager.resolvePart(stored);
+    if(!part.mask)return null;
+    const bits=part.mask.getContext('2d',{willReadFrequently:true}).getImageData(0,0,w,h).data;for(let i=0;i<owner.length;i++)if(bits[i*4+3]>=128&&!owner[i])owner[i]=index+1;const frame=makeCanvas(w,h),ctx=frame.getContext('2d');return {...part,mask:frame,ctx,pixels:ctx.createImageData(w,h),box:core.exactMaskBoundingBox(part.mask),count:0}});
+  if(outputs.some(item=>!item))return [];
   for(let i=0;i<owner.length;i++)if(target[i*4+3]>=128){
     let which=owner[i]-1;if(which<0){const x=i%w,y=(i-x)/w;let best=Infinity;outputs.forEach((part,index)=>{const b=part.box;if(!b)return;const distance=Math.max(0,b.x-x,x-b.x-b.w)**2+Math.max(0,b.y-y,y-b.y-b.h)**2;if(distance<best){best=distance;which=index}})}
     if(which>=0){outputs[which].pixels.data.fill(255,i*4,i*4+4);outputs[which].count++}
@@ -237,6 +265,7 @@ function reconcileParts(mask,parts){
 }
 function cancelSelection(){state.objectMapSelection=null;state.objectMapSelectedIds=[];state.objectSelectionParts=[];window.MosaicObjectManager.refreshActions();selectedOverlay.hidden=true;preview.getContext('2d').clearRect(0,0,preview.width,preview.height)}
 function partsForSelection(mask,stored=false){
+  if(!mask)return state.objectSelectionParts||[];
   if(!stored&&state.objectSelectionParts?.length)return reconcileParts(mask,state.objectSelectionParts);
   if(!labels||!state.objectMap||!stored&&state.objectMapSelection!==state.objectMap.sourceKey)return null;
   const rgba=mask.getContext('2d').getImageData(0,0,mask.width,mask.height).data,entries=new Map(state.objectMap.entries.map(e=>[e.id,e])),parts=new Map();
@@ -323,6 +352,9 @@ function leave(){hoverId=0;hoverMask=null;preview.hidden=true}
 function selectAt(point,options={}){
   if(!active)return;
   const live=liveObjectAt(point);
+  if(live&&!options.append&&!options.subtract&&!state.maskEditOnly&&!state.pendingSourceId){
+    core.selectGroupMask(live,{showOutline:true});leave();return;
+  }
   if(!live&&(!labels||state.objectMapLocked)){
     if(busy){pendingClick={point:{...point},options};core.message('Object selection queued until the image map is ready.');}
     else if(!options.append&&!options.subtract){core.resetSelection();core.render();}
@@ -330,14 +362,18 @@ function selectAt(point,options={}){
   }
   const id=live?.id||(labels?labelAt(labels,mapWidth,mapHeight,point.x,point.y,canvas.width,canvas.height):0);
   if(!id){if(!options.append&&!options.subtract){core.resetSelection();core.render()}return}
+  core.ensureSelectionMask();
   const hasObjects=state.objectSelectionParts?.length;
   const mode=options.append&&hasObjects?'add':options.subtract&&hasObjects?'subtract':'new';core.setMode(mode);
   const part=live?window.MosaicObjectManager.partForObject(live):partForId(id);operation={parts:snapshotSelection(),picked:[part]};picking=true;pickingIds=[id];pickingMode=mode;state.maskEditOnly=false;state.selectionTargetPatchId=null;state.draftGroupId=null;core.applyWandMask(part.mask);picking=false;leave();
 }
-function selectObject(object,{append=false}={}){const part=window.MosaicObjectManager.partForObject(object),mode=append&&state.objectSelectionParts?.length?'add':'new';operation={parts:snapshotSelection(),picked:[part]};picking=true;pickingMode=mode;state.selectionTargetPatchId=null;state.draftGroupId=null;state.selectedPatchId=null;state.maskEditOnly=false;core.setMode(mode);core.applyWandMask(part.mask);picking=false}
+function selectObject(object,{append=false}={}){
+  if(!append){core.selectGroupMask(object,{showOutline:true});return}
+  core.ensureSelectionMask();
+  const part=window.MosaicObjectManager.partForObject(object),mode=append&&state.objectSelectionParts?.length?'add':'new';operation={parts:snapshotSelection(),picked:[part]};picking=true;pickingMode=mode;state.selectionTargetPatchId=null;state.draftGroupId=null;state.selectedPatchId=null;state.maskEditOnly=false;core.setMode(mode);core.applyWandMask(part.mask);picking=false}
 function invalidateBase(){serial++;busy=false;pendingBase=state.master;attemptedBase=pendingBase;labels=null;state.objectMap=null;state.objectMapSelection=null;if(state.master)delete state.objectMaps?.[sourceKey(state.master)];leave();window.MosaicMaskProgress?.hide('objects');update('Image changed · prepare objects again',true)}
 function imageChanged(){if(state.objectMapLocked)return;if(state.master&&state.master!==heldImage&&state.master!==pendingBase)baseLoaded(state.master)}
-window.MosaicObjectMap={imageReady:baseLoaded,baseLoaded,prepareBase,refineMask,selectShape,selectionCompleted,cancelSelection,partsForSelection,adoptSelection,snapshotSelection,selectObject,hitTest:hitObjectAt,invalidateHitIndex,cropAt,tintCrop,hasSelection:()=>Boolean(state.objectSelectionParts?.length),hydrate,invalidateBase,drawSelection,holdImage:image=>{heldImage=image}};
+window.MosaicObjectMap={imageReady:baseLoaded,baseLoaded,prepareBase,refineMask,selectShape,selectionCompleted,cancelSelection,partsForSelection,adoptSelection,adoptIdentity,snapshotSelection,selectObject,hitTest:hitObjectAt,invalidateHitIndex,cropAt,tintCrop,hasSelection:()=>Boolean(state.objectSelectionParts?.length),hydrate,invalidateBase,drawSelection,holdImage:image=>{heldImage=image}};
 // Preserve the canvas tool integration while removing model downloads and all
 // SAM calls. Wand hover/click are now lookups into the saved Base index map.
 window.MosaicSlimWand={onToolChange,hoverAt,selectAt,leave,reset:()=>{active=false;pendingClick=null;leave()},preload(){},imageChanged,imageKey:()=>state.objectMap?.sourceKey};
