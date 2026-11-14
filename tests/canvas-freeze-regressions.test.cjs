@@ -28,7 +28,7 @@ test('Create trusts OpenAI PNG alpha without an extra SAM inference or segmentat
 test('Create has a cropped, lossless alpha placement path for ordinary unwarped PNGs',()=>{
   const part=premium.slice(premium.indexOf('// Untransformed Create cuts out locally.'),premium.indexOf('if(regenerate){',premium.indexOf('// Untransformed Create cuts out locally.')));
   assert.match(part,/if\(!submittedPatch\.corners\?\.length\)/);
-  assert.match(part,/prepareCroppedCreateLayer\(image,region\)/);
+  assert.match(part,/prepareCroppedCreateLayer\(image,region,rgba\)/);
   assert.match(part,/else\{[\s\S]*core\.unwarpPatchSelection\(positioned,submittedPatch\)/);
   assert.match(premium,/existing\.mask=objectMask;existing\.maskOffset=maskOffset/);
   assert.match(premium,/core\.invalidateDisplayedMask\(existing,\{geometryChanged:false\}\)/);
