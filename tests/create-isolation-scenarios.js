@@ -40,8 +40,12 @@ window.runCreateIsolationChecks=async function(){
     assert(pixels.every((value,index)=>index%4!==3||value===0),'Create copied underlying wall pixels');
     assert(core.composeApprovedCanvas().toDataURL()===originalScene,'Drawing Create modified the original scene');
     checks.push('Drawing over an existing object starts a new object ID, empty foreground and unchanged scene');
+    let samCreateRequests=0;
     window.MosaicAccount.request=async(path,options)=>{
-      if(path==='/api/ai/sam3')throw Error('Fixture: SAM 3 unavailable, use PNG alpha.');
+      if(path==='/api/ai/sam3'){
+        samCreateRequests++;
+        throw Error('Create must never send a SAM 3 request.');
+      }
       return originalSamRequest(path,options);
     };
     window.MosaicAuth.ensure=async()=>true;
@@ -64,10 +68,24 @@ window.runCreateIsolationChecks=async function(){
     c.fillStyle='#3166bb';c.fillRect(80,58,94,128);
     finish({image:cutout.toDataURL('image/png').split(',')[1],mimeType:'image/png'});
     await wait(()=>[...state.patches.values()].some(p=>p.createObject&&!p.generating&&!p.awaitingResult));
+    assert(samCreateRequests===0,'Create unexpectedly requested SAM 3 segmentation');
+    const completedCreate=[...state.patches.values()].find(p=>p.createObject&&!p.generating&&!p.awaitingResult);
+    assert(completedCreate?.maskAlignmentStatus==='png-alpha','Create must use original PNG alpha, not SAM');
+    assert(!completedCreate?.createSegmentationLabel,'Create should not retain obsolete SAM labels');
     assert(state.groups.some(g=>g.id===wallId),'Create result removed the wall');
     assert(state.groups.some(g=>g.id===created.id),'Create result lost its independent Group');
     assert(core.composeApprovedCanvas().toDataURL()!==originalScene,'Transparent Create result did not composite');
+    const cropPatch=state.patches.get(created.active),cropSource=state.sources.get(cropPatch.sourceId);
+    assert(cropPatch.maskOffset&&cropPatch.mask.width<canvas.width&&cropPatch.mask.height<canvas.height,
+      'Create generated a full-scene mask instead of a lightweight cropped mask');
+    assert(cropSource.crop&&cropSource.canvas.width<canvas.width&&cropSource.canvas.height<canvas.height,
+      'Create kept a full-scene RGBA buffer unnecessarily');
+    assert(cropPatch.bbox.x===cropPatch.maskOffset.x&&cropPatch.bbox.y===cropPatch.maskOffset.y,
+      'Cropped Create mask is not positioned in world coordinates');
+    assert(core.fullPatchMask(cropPatch).width===canvas.width,
+      'Create full-mask expansion is not available for legacy editing');
     checks.push('Transparent PNG output is composited as a new object without changing the original Group');
+    checks.push('Create uses cropped world-positioned RGBA/mask without full-image per-pixel readback');
     // Removing a new PNG cutout is just turning its own layer off. There is
     // already an accepted background underneath, so no image model is needed.
     const createdOption=created.active,generatedScene=core.composeApprovedCanvas().toDataURL();
