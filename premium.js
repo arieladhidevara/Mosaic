@@ -3,7 +3,7 @@ import './generation-pool.js';
 import './object-aware.js';
 import {assertGeneratedImage,assertGeneratedRegion} from './generated-image.mjs';
 import {alignGeneratedToLockedMask} from './geometry-mask.mjs';
-import {createSamLabel,alphaBounds,planCreateAlphaCrop,samMaskBits,refineCreatePixels} from './create-sam3.mjs';
+import {planCreateAlphaCrop} from './create-alpha.mjs';
 const core = window.MosaicCore;
 if (!core) throw new Error('Mosaic core must load before Premium');
 const {state, canvas, makeCanvas, uid, render, renderGroups, resetSelection, assignGroup, maskBoundingBox, toast, message} = core;
@@ -544,54 +544,16 @@ async function classifyArea(mask){
   return core.CATEGORIES.includes(answer.category)?answer.category:'Other';
 }
 
-// Text-guided SAM 3 is applied to the NEW cutout, not any existing Object ID.
-// On SAM failures or mismatched geometry, preserve GPT's transparent PNG alpha.
-async function refineCreatedCutoutWithSAM3(image,prompt){
-  const pixelsCtx=image.getContext('2d',{willReadFrequently:true});
-  const rgba=pixelsCtx.getImageData(0,0,image.width,image.height);
-  const bbox=alphaBounds(rgba.data,image.width,image.height,96);
-  if(!bbox)return {applied:false,reason:'empty alpha'};
-  const scale=Math.min(1,896/Math.max(image.width,image.height));
-  const width=Math.max(1,Math.round(image.width*scale));
-  const height=Math.max(1,Math.round(image.height*scale));
-  const sample=makeCanvas(width,height),ctx=sample.getContext('2d');
-  ctx.fillStyle='#e9e9ed';ctx.fillRect(0,0,width,height);ctx.drawImage(image,0,0,width,height);
-  const margin=Math.max(8,Math.round(Math.max(bbox.width,bbox.height)*scale*.18));
-  const left=Math.max(0,Math.floor(bbox.x*scale-margin));
-  const top=Math.max(0,Math.floor(bbox.y*scale-margin));
-  const right=Math.min(width,Math.ceil((bbox.x+bbox.width)*scale+margin));
-  const bottom=Math.min(height,Math.ceil((bbox.y+bbox.height)*scale+margin));
-  if(right<=left||bottom<=top)return {applied:false,reason:'invalid bbox'};
-  const reply=await window.MosaicAccount.request('/api/ai/sam3',{
-    method:'POST',body:{mode:'object',image:sample.toDataURL('image/jpeg',.85),
-      width,height,label:createSamLabel(prompt),box:[left,top,right,bottom]}
-  });
-  if(typeof reply?.mask!=='string'||!reply.mask.startsWith('data:image/png;base64,'))
-    throw Error('SAM 3 returned no valid object mask.');
-  const bitmap=await new Promise((resolve,reject)=>{
-    const img=new Image();
-    img.onload=()=>resolve(img);
-    img.onerror=()=>reject(Error('Cannot decode SAM 3 object mask.'));
-    img.src=reply.mask;
-  });
-  if(bitmap.width!==width||bitmap.height!==height)
-    throw Error('SAM 3 mask dimensions differ from the generated crop.');
-  const upscaled=makeCanvas(image.width,image.height),maskCtx=upscaled.getContext('2d',{willReadFrequently:true});
-  maskCtx.imageSmoothingEnabled=false;
-  maskCtx.drawImage(bitmap,0,0,image.width,image.height);
-  const bits=samMaskBits(maskCtx.getImageData(0,0,image.width,image.height).data,image.width,image.height);
-  const result=refineCreatePixels(rgba.data,bits);
-  if(result.applied)pixelsCtx.putImageData(rgba,0,0);
-  return result;
-}
 // Common Create path: keep the generated RGBA and its alpha mask in local
 // crop coordinates. Never allocate/read a 2400px full-scene pixel buffer just
 // to position a transparent foreground (the original Base is unchanged).
-function prepareCroppedCreateLayer(image,region){
+function prepareCroppedCreateLayer(image,region,originalPixels=null){
   const layer=makeCanvas(region.w,region.h);
   const lc=layer.getContext('2d',{willReadFrequently:true});
   lc.drawImage(image,0,0,region.w,region.h);
-  const pixels=lc.getImageData(0,0,region.w,region.h).data;
+  // Reuse the image pixels already validated below when crop dimensions match.
+  const pixels=originalPixels&&image.width===region.w&&image.height===region.h
+    ?originalPixels:lc.getImageData(0,0,region.w,region.h).data;
   const plan=planCreateAlphaCrop(pixels,region.w,region.h,region);
   if(!plan)throw Error('No visible pixels were returned for the new object.');
   const {localBox,bbox,sourceRect,sourceCrop}=plan;
@@ -687,25 +649,15 @@ async function generateRegion(patchId,regenerate=false){
         }
         if(subjectPixels<16||clearPixels<rgba.length/4*.01)
           throw Error('AI did not return a usable transparent cutout. Regenerate Create without applying this result.');
-        progress.update(86,'SAM 3 is tracing the new object using your prompt…');
-        let samStatus='alpha-fallback';
-        try{
-          const sam=await refineCreatedCutoutWithSAM3(image,payload.prompt);
-          samStatus=sam.applied?'sam3-prompt':'alpha-fallback';
-          if(!sam.applied)console.info('[mozAI:create-sam3] PNG alpha fallback',sam);
-        }catch(error){
-          console.warn('[mozAI:create-sam3] PNG alpha fallback:',error?.message||error);
-        }
-        if(state.patches.get(patchId)!==patch||state.selectionGeneration!==projectAtStart||
-           canvas.width!==canvasSize.width||canvas.height!==canvasSize.height){
-          patch.generating=false;progress.done('Project changed during segmentation.');return;
-        }
-        progress.update(92,samStatus==='sam3-prompt'?'Applying SAM 3 object mask…':'Applying transparent PNG alpha…');
+        // The generated PNG already contains its object silhouette in alpha.
+        // Do not contact SAM 3 or re-segment it. This eliminates the extra
+        // network inference and main-thread mask decode/upscale on every Create.
+        progress.update(92,'Applying the generated transparent PNG…');
         // Untransformed Create cuts out locally. Explicit four-corner edits
         // still use the existing full-frame unwarp to preserve perspective.
         let objectMask,bounds,compact,maskOffset=null,maskPaths;
         if(!submittedPatch.corners?.length){
-          const local=prepareCroppedCreateLayer(image,region);
+          const local=prepareCroppedCreateLayer(image,region,rgba);
           objectMask=local.mask;bounds=local.bbox;compact=local.compact;
           maskOffset=local.maskOffset;maskPaths=local.paths;
         }else{
@@ -738,8 +690,8 @@ async function generateRegion(patchId,regenerate=false){
         existing.maskPaths=maskPaths;
         existing.maskPoints=existing.maskPaths.flat();
         existing.editMode='create';
-        existing.maskAlignmentStatus=samStatus;
-        existing.createSegmentationLabel=createSamLabel(payload.prompt);
+        existing.maskAlignmentStatus='png-alpha';
+        delete existing.createSegmentationLabel;
         existing.maskAlignmentSegmentation=null;
         existing.maskAlignmentIoU=null;
         existing.maskAlignmentCoverage=null;
