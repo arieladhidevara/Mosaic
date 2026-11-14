@@ -12,3 +12,18 @@
 .geometry-review-bar button{white-space:nowrap;background:#343039;color:#eee6f4;border:1px solid #ffffff28;border-radius:7px;padding:8px 10px;cursor:pointer;font-size:11px;font-weight:700}
 .geometry-review-bar #geometryApply{background:#cbb6ec;color:#211a2b;border-color:#cbb6ec}
 @media(max-width:700px){.geometry-review-bar{bottom:8px;flex-wrap:wrap;justify-content:center;width:calc(100% - 20px)}.geometry-review-bar span{max-width:none;flex-basis:100%;text-align:center}}
+
+/* Geometry mode is only relevant to edits of existing objects. Create is
+   always transparent foreground generation; hide all mode controls there. */
+.geometry-mode-switcher[hidden],.geometry-mode-hint[hidden]{display:none!important}
+.quick-area-prompt .geometry-mode-switcher{
+  display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) auto;
+  align-items:center;gap:3px;margin:0;
+}
+.quick-area-prompt .geometry-mode-switcher button{
+  padding:4px 2px;min-width:0;border-radius:5px;font-size:9px;white-space:nowrap;
+}
+.quick-area-prompt .geometry-mode-switcher #geometryRemoveBtn{
+  padding:4px 3px;font-size:9px;
+}
+.quick-area-prompt .geometry-mode-hint{display:none}

@@ -88,6 +88,8 @@ test('browser Material Edit uses opaque JPG and only structural perspective alig
   assert.match(premium,/lockedMask:visibleMask,makeCanvas/);
   assert.match(premium,/validateRegionalResult\(aligned\.image,capture\.collage,visibleMask/);
   const provider=readFileSync('lib/image-provider.js','utf8');
-  assert.match(provider,/output_format:'jpeg',output_compression:100/);
-  assert.match(provider,/mimeType:'image\/jpeg'/);
+  // Material Edit remains JPEG; only the separate Create flow opts into PNG.
+  assert.match(provider,/output_format:p\.createObject\?'png':'jpeg'/);
+  assert.match(provider,/else payload\.output_compression=100/);
+  assert.match(provider,/mimeType:p\.createObject\?'image\/png':'image\/jpeg'/);
 });

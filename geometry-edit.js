@@ -20,6 +20,24 @@ promptForm.querySelector('.quick-area-title').after(switcher);
 const modeHint=document.createElement('p');
 modeHint.className='geometry-mode-hint';
 switcher.after(modeHint);
+function isFreshCreate(){
+  const group=state.groups.find(g=>g.id===state.draftGroupId||g.patchIds.includes(state.selectionTargetPatchId));
+  return Boolean(group?.createdLocally&&!group.createdViaAI);
+}
+function syncPromptMode(){
+  const create=isFreshCreate();
+  if(create)mode='material';
+  switcher.hidden=create;
+  modeHint.hidden=create;
+  if(create){
+    input.placeholder='Describe the new object…';
+    for(const button of switcher.querySelectorAll('[data-geometry-mode]')){
+      const active=button.dataset.geometryMode==='material';
+      button.classList.toggle('active',active);
+      button.setAttribute('aria-pressed',String(active));
+    }
+  }else setMode(mode);
+}
 function setMode(next){
   mode=next==='shape'?'shape':'material';
   for(const button of switcher.querySelectorAll('[data-geometry-mode]')){
@@ -28,9 +46,11 @@ function setMode(next){
     button.setAttribute('aria-pressed',String(active));
   }
   input.placeholder=mode==='shape'?'Describe the new object shape or size…':'Change material, finish or color…';
-  modeHint.textContent=mode==='shape'?'Shape edit · SAM detects changed geometry':'Material edit · original mask kept · gentle perspective alignment';
+  modeHint.textContent=mode==='shape'?'Shape edit · SAM detects changed geometry':'Material edit · original mask kept';
+  modeHint.hidden=false;
 }
 switcher.addEventListener('click',event=>{
+  if(isFreshCreate())return;
   const button=event.target.closest('[data-geometry-mode]');
   if(button){setMode(button.dataset.geometryMode);input.focus({preventScroll:true});}
 });
@@ -301,4 +321,4 @@ async function generate(prompt,files=[],operation='shape'){
 }
 $('geometryRemoveBtn').addEventListener('click',()=>void generate('',window.MosaicPremium.getReferenceFiles?.('quick')||[],'remove'));
 window.addEventListener('mosaic:projectloaded',()=>{closeReview();setMode('material')});
-window.MosaicGeometryEdit={generate,getMode:()=>mode,setMode,discard:closeReview};
+window.MosaicGeometryEdit={generate,syncPromptMode,getMode:()=>isFreshCreate()?'material':mode,setMode,discard:closeReview};

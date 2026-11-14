@@ -9,9 +9,9 @@ const MaskGeometry=window.MozMaskGeometry;
 const state = {
   reference: null, master: null, rawBase: null, rawMaster: null, masterIsBase: false, alignmentTransforms: null, sources: new Map(), groups: [], patches: new Map(),
   pendingSourceId: null, queue: [], editingPatchId: null, selectedPatchId: null,
-  selectionMask: null, selectionGeometry: null, boundaryCanvas: null, selectionPoints: [], selectionPaths: [], selectionTargetPatchId: null, maskVertexDrag: null, maskMoveDrag: null, maskEditOnly: false, selectionMode: 'new', lasso: [], drawing: false,
+  selectionMask: null, selectionGeometry: null, boundaryCanvas: null, selectionPoints: [], selectionPaths: [], selectionTargetPatchId: null, maskVertexDrag: null, maskMoveDrag: null, maskEditOnly: false, manualAreaSelection: false, selectionMode: 'new', lasso: [], drawing: false,
   pointerStart: null, dragFreehand: false, hoverPoint: null, shapeStart: null, shapeEnd: null,
-  tool: 'select', lastPoint: null, lastCanvasPointer: null, pendingRevealOnly: false, brushTargetId: null, before: false, zoom: 1, fitZoom: 1, busy: false,
+  tool: 'select', toolIntent:null, lastPoint: null, lastCanvasPointer: null, pendingRevealOnly: false, brushTargetId: null, before: false, zoom: 1, fitZoom: 1, busy: false,
   undo: [], redo: [], serial: 1, panAnchor: null, transformDrag: null, draftGroupId: null, queuedGroupId: null, hoveredGroupId: null, selectionGeneration: 0, selectionOverlayHidden: false, forceNewSelectionGroup: false,
   projectTitle:'Untitled composition',projectTitleManual:false,brushSize:36,brushIntensity:100,focusedGroupId:null,comparePosition:50,autoObjectSelect:false,featherEnabled:false,objectMap:null,objectMapSelection:null
 };
@@ -108,38 +108,75 @@ function showProcessing(on){state.busy=on;$('processing').classList.toggle('hidd
 function clearDraft(){window.MosaicObjectCreateCut?.cancelCut?.();state.lasso=[];state.hoverPoint=null;state.pointerStart=null;state.dragFreehand=false;state.shapeStart=null;state.shapeEnd=null;state.drawing=false}
 function clearHover(){window.MosaicRegions?.clearHover()}
 function hideQuickPrompt(){document.getElementById('quickAreaPromptForm')?.classList.add('hidden')}
+// Choose the nearest position that does not cover the selected silhouette's
+// bounding rectangle. When a small viewport makes that impossible, minimize
+// the overlapped area rather than anchoring blindly to the click position.
+function quickPromptOutsideSelection(selected,available,size,point=null,gap=10){
+  const clampTo=(value,min,max)=>Math.max(min,Math.min(value,Math.max(min,max)));
+  const w=size.width,h=size.height;
+  const cx=(selected.left+selected.right)/2,cy=(selected.top+selected.bottom)/2;
+  const px=Number.isFinite(point?.x)?point.x:cx,py=Number.isFinite(point?.y)?point.y:cy;
+  const xmin=available.left,xmax=available.right-w,ymin=available.top,ymax=available.bottom-h;
+  const candidates=[
+    {x:selected.right+gap,y:cy-h/2}, // right
+    {x:selected.left-gap-w,y:cy-h/2}, // left
+    {x:cx-w/2,y:selected.bottom+gap}, // below
+    {x:cx-w/2,y:selected.top-gap-h} // above
+  ];
+  const area=box=>Math.max(0,Math.min(box.x+w,selected.right)-Math.max(box.x,selected.left))*
+    Math.max(0,Math.min(box.y+h,selected.bottom)-Math.max(box.y,selected.top));
+  const score=(box,index)=>{
+    const overlap=area(box);
+    const distance=Math.hypot(box.x+w/2-px,box.y+h/2-py);
+    return overlap*1e6+distance+index*.001;
+  };
+  const valid=candidates.map((p,index)=>({...p,index})).filter(p=>
+    p.x>=xmin&&p.x<=xmax&&p.y>=ymin&&p.y<=ymax);
+  if(valid.length){valid.sort((a,b)=>score(a,a.index)-score(b,b.index));return {x:valid[0].x,y:valid[0].y}}
+  const fallback=candidates.map((p,index)=>({x:clampTo(p.x,xmin,xmax),y:clampTo(p.y,ymin,ymax),index}));
+  fallback.sort((a,b)=>score(a,a.index)-score(b,b.index));
+  return {x:fallback[0].x,y:fallback[0].y};
+}
+function positionQuickPrompt(point=state.lastCanvasPointer){
+  const form=$('quickAreaPromptForm'),selection=selectionBounds();
+  if(!selection||form.classList.contains('hidden'))return;
+  const r=$('viewport').getBoundingClientRect(),margin=10;
+  const available={
+    left:Math.max(0,r.left)+margin,right:Math.min(window.innerWidth,r.right)-margin,
+    top:Math.max(0,r.top)+margin,bottom:Math.min(window.innerHeight,r.bottom)-margin
+  };
+  form.style.maxWidth=Math.max(120,available.right-available.left)+'px';
+  form.style.maxHeight=Math.max(120,available.bottom-available.top)+'px';
+  // The small-screen UI docks this form in its own AI pane.
+  if(form.closest('#mobileEditPane'))return;
+  const bounds=form.getBoundingClientRect(),w=bounds.width,h=bounds.height;
+  const image=overlay.getBoundingClientRect();
+  const selected={
+    left:image.left+selection.x/canvas.width*image.width,
+    right:image.left+(selection.x+selection.w)/canvas.width*image.width,
+    top:image.top+selection.y/canvas.height*image.height,
+    bottom:image.top+(selection.y+selection.h)/canvas.height*image.height
+  };
+  const pointer=Number.isFinite(point?.clientX)&&Number.isFinite(point?.clientY)?
+    {x:point.clientX,y:point.clientY}:null;
+  const suggestion=quickPromptOutsideSelection(selected,available,{width:w,height:h},pointer);
+  let target=suggestion;
+  if(quickPromptPosition){
+    const x=Math.max(available.left,Math.min(r.left+quickPromptPosition.x,available.right-w));
+    const y=Math.max(available.top,Math.min(r.top+quickPromptPosition.y,available.bottom-h));
+    if(x+w<=selected.left||x>=selected.right||y+h<=selected.top||y>=selected.bottom)target={x,y};
+  }
+  form.style.left=target.x+'px';form.style.top=target.y+'px';
+}
 function showQuickPrompt(point=state.lastCanvasPointer,keepText=false,focusInput=true){
   if(window.MosaicWorkspace?.isSelectingResult())return;
   if(!state.master||!selectionBounds()||state.pendingSourceId||state.editingPatchId)return;
-  const form=$('quickAreaPromptForm'),vp=$('viewport'),r=vp.getBoundingClientRect();
+  const form=$('quickAreaPromptForm');
   refreshQuickOptions();
-  // The prompt is position:fixed, so work in actual screen coordinates.
-  // The previous code clamped to the left/top of the viewport, which could
-  // put the prompt hundreds of pixels away from the clicked mask.
-  const margin=10,gap=12;
-  const left=Math.max(0,r.left)+margin,right=Math.min(window.innerWidth,r.right)-margin;
-  const top=Math.max(0,r.top)+margin,bottom=Math.min(window.innerHeight,r.bottom)-margin;
-  form.style.maxWidth=Math.max(120,right-left)+'px';
-  form.style.maxHeight=Math.max(120,bottom-top)+'px';
+  window.MosaicGeometryEdit?.syncPromptMode?.();
   form.classList.remove('hidden');
   if(focusInput)showSelectionHighlightForPrompt();
-  const bounds=form.getBoundingClientRect(),w=bounds.width,h=bounds.height;
-  // Keyboard completion and programmatic selection fall back to the actual
-  // selection on canvas rather than an arbitrary corner of the viewport.
-  const selection=selectionBounds();
-  const canvasRect=overlay.getBoundingClientRect();
-  const selectedX=canvasRect.left+(selection.x+selection.w/2)/canvas.width*canvasRect.width;
-  const selectedY=canvasRect.top+(selection.y+selection.h/2)/canvas.height*canvasRect.height;
-  const pointerX=Number.isFinite(point?.clientX)?point.clientX:selectedX;
-  const pointerY=Number.isFinite(point?.clientY)?point.clientY:selectedY;
-  const x=Math.max(left,Math.min(right,Math.max(left,pointerX)));
-  const y=Math.max(top,Math.min(bottom,Math.max(top,pointerY)));
-  // Prefer just below/right of the cursor, then flip above/left near edges.
-  // Clamp only as a final safeguard if the viewport is smaller than the form.
-  const wantedX=x+gap+w<=right?x+gap:x-gap-w;
-  const wantedY=y+gap+h<=bottom?y+gap:y-gap-h;
-  form.style.left=Math.max(left,Math.min(quickPromptPosition?r.left+quickPromptPosition.x:wantedX,Math.max(left,right-w)))+'px';
-  form.style.top=Math.max(top,Math.min(quickPromptPosition?r.top+quickPromptPosition.y:wantedY,Math.max(top,bottom-h)))+'px';
+  positionQuickPrompt(point);
   if(!keepText){window.MosaicPremium?.clearReferenceFiles?.('quick');$('quickAreaPromptInput').value=''}
   if(focusInput&&!window.matchMedia('(max-width:850px)').matches)$('quickAreaPromptInput').focus({preventScroll:true});
 }
@@ -163,7 +200,7 @@ function updateSourceActions(){
   if(state.master){$('welcome').classList.add('hidden');$('canvasWrap').classList.remove('hidden')}
   window.MosaicSources?.refresh?.();
 }
-function resetSelection(deferMask=false){window.MosaicObjects?.cancelSelection?.();$('selectionOutlineVectors')?.replaceChildren();state.selectionPaths=[];state.maskMoveDrag=null;state.maskEditOnly=false;activeMaskVertex=null;hoverMaskEdge=null;maskEditVersion++;state.selectionPoints=[];state.selectionTargetPatchId=null;state.maskVertexDrag=null;state.selectionGeometry=null;state.selectionMask=state.master&&!deferMask?makeCanvas(canvas.width,canvas.height):null;state.boundaryCanvas=null;state.draftGroupId=null;state.selectionOverlayHidden=false;state.forceNewSelectionGroup=false;state.pendingRevealOnly=false;hideQuickPrompt();clearDraft();updateApplyButton();clearHover()}
+function resetSelection(deferMask=false){window.MosaicObjects?.cancelSelection?.();$('selectionOutlineVectors')?.replaceChildren();state.selectionPaths=[];state.maskMoveDrag=null;state.maskEditOnly=false;state.manualAreaSelection=false;activeMaskVertex=null;hoverMaskEdge=null;maskEditVersion++;state.selectionPoints=[];state.selectionTargetPatchId=null;state.maskVertexDrag=null;state.selectionGeometry=null;state.selectionMask=state.master&&!deferMask?makeCanvas(canvas.width,canvas.height):null;state.boundaryCanvas=null;state.draftGroupId=null;state.selectionOverlayHidden=false;state.forceNewSelectionGroup=false;state.pendingRevealOnly=false;hideQuickPrompt();clearDraft();updateApplyButton();clearHover()}
 function updateApplyButton(){
   const pending=Boolean(state.pendingSourceId),editing=Boolean(state.editingPatchId),btn=$('commitBtn');
   btn.disabled=!(pending||editing)||!Boolean(selectionBounds());
@@ -574,23 +611,39 @@ async function chooseGroupOption(group,patchId,{showPrompt=false,showOutline=fal
 }
 function refreshQuickOptions(){
   const form=$('quickAreaPromptForm');let rail=$('quickGroupOptions');
-  if(!rail){rail=document.createElement('aside');rail.id='quickGroupOptions';rail.className='quick-group-options';rail.setAttribute('aria-label','Options for selected object');form.append(rail)}
+  if(rail&&rail.tagName!=='DETAILS'){rail.remove();rail=null}
+  if(!rail){
+    rail=document.createElement('details');rail.id='quickGroupOptions';rail.className='quick-group-options';
+    rail.setAttribute('aria-label','Object options');
+    form.insertBefore(rail,form.querySelector('.prompt-footer'));
+    // Opening the dropdown changes panel height. Reposition so it still
+    // clears the selected image area rather than expanding over it.
+    rail.addEventListener('toggle',()=>{
+      if(!form.classList.contains('hidden')&&!form.closest('#mobileEditPane'))
+        requestAnimationFrame(()=>positionQuickPrompt(state.lastCanvasPointer));
+    });
+  }
   const group=state.groups.find(group=>group.id===state.draftGroupId||group.patchIds.includes(state.selectionTargetPatchId));
   const ready=group?.patchIds.map(id=>state.patches.get(id)).filter(patch=>patch&&!patch.hideUntilReady)||[];
-  rail.replaceChildren();rail.hidden=!ready.length;form.classList.toggle('has-group-options',Boolean(ready.length));
+  if(rail.dataset.groupId!==String(group?.id||''))rail.open=false;
+  rail.dataset.groupId=String(group?.id||'');
+  rail.replaceChildren();rail.hidden=!ready.length;
+  form.classList.toggle('has-group-options',Boolean(ready.length));
   if(!ready.length)return;
-  const heading=document.createElement('small');heading.textContent='Options';rail.append(heading);
-  const choices=[...(!group.hasHarmonizedMaster?[null]:[]),...ready];
+  const summary=document.createElement('summary');summary.textContent='Options';rail.append(summary);
+  const choices=(!group.hasHarmonizedMaster?[null]:[]).concat(ready);
+  const list=document.createElement('div');list.className='quick-option-list';
   choices.forEach((patch,index)=>{
     const button=document.createElement('button');button.type='button';button.className='quick-option';
     button.dataset.option=patch?.id||'original';button.setAttribute('aria-pressed',String(group.active===(patch?.id||null)));
     button.title=patch?.name||'Original Master';button.setAttribute('aria-label','Choose '+button.title);
     const thumb=patch&&patchThumbnail(patch);
     if(thumb){const image=document.createElement('img');image.src=thumb;image.alt='';button.append(image)}
-    const label=document.createElement('span');label.textContent=patch?String(index+(group.hasHarmonizedMaster?1:0)):'Original';button.append(label);
+    const label=document.createElement('span');label.textContent=patch?String(index+(group.hasHarmonizedMaster?1:0)):'Base';button.append(label);
     button.onclick=()=>chooseGroupOption(group,patch?.id||null,{showPrompt:true,showOutline:false});
-    rail.append(button);
+    list.append(button);
   });
+  rail.append(list);
 }
 // Ctrl/Cmd-click unions existing selections, without modifying a saved Group.
 // A new draft Group is created for the merged shape so Generate saves one option.
@@ -1315,39 +1368,50 @@ function groupEvent(e){if(window.MosaicRegions?.handleGroupEvent(e))return;if(wi
     chooseGroupOption(group,pid==='master'?null:pid);renderGroups();return;
   }
   if(action==='delete'&&group){if(state.pendingSourceId){toast('Finish the new image before removing variants.');return}group.patchIds=group.patchIds.filter(x=>x!==pid);state.patches.delete(pid);if(group.active===pid)group.active=group.patchIds.at(-1)||null;if(state.editingPatchId===pid)state.editingPatchId=null;if(state.selectedPatchId===pid)state.selectedPatchId=null;if(!group.patchIds.length)state.groups=state.groups.filter(g=>g.id!==group.id);else refreshGroupFootprint(group);resetSelection();renderGroups();render();toast('Variant removed.')}}
-function selectTool(tool){if(window.MosaicSourceEditor?.isEditing())return;
-  const creating=['lasso','rect','ellipse'].includes(tool);
-  const independentCreate=creating&&canCreateSelection()&&!state.maskEditOnly;
-  if(independentCreate){
-    // Create always begins a NEW foreground identity, never the active Object ID.
-    // Discard the old selection before drawing, even if it overlaps the new shape.
-    resetSelection();
-    setMode('new');
-  }else if(state.selectionGeometry&&['lasso','rect','ellipse','wand','reveal','erase','cut','transform'].includes(tool))ensureSelectionMask();
-  clearHover();clearDraft();hideQuickPrompt();state.tool=tool;if(state.pendingSourceId&&tool==='reveal'){state.pendingRevealOnly=true;render()}$('resetTransformBtn').classList.toggle('hidden',tool!=='transform'||!activeTransformPatch());
-  $('viewport').classList.toggle('is-selecting',['lasso','rect','ellipse','wand','reveal','erase'].includes(tool));
-  $('wandOptions').classList.toggle('hidden',tool!=='wand');
-  const modes=document.querySelector('.selection-modes');
-  modes.classList.toggle('hidden',!creating||independentCreate);
-  if(creating&&!independentCreate){
-    const selected=Boolean(state.draftGroupId&&state.groups.some(g=>g.id===state.draftGroupId&&!g.mergedInto));
-    const newButton=modes.querySelector('[data-mode="new"]');
-    if(newButton){newButton.disabled=selected;newButton.title=selected?'Clear the current object selection to create a new object':'Create a new object';}
-    if(selected&&state.selectionMode==='new')setMode('add');
-    if(!selected&&state.selectionMode!=='new')setMode('new');
+function selectTool(tool){
+  if(window.MosaicSourceEditor?.isEditing())return;
+  const selectShape=/^select-(lasso|rect|ellipse)$/.test(tool);
+  const actual=selectShape?tool.slice(7):tool;
+  const drawing=['lasso','rect','ellipse'].includes(actual);
+  const selectIntent=selectShape||drawing&&Boolean(state.pendingSourceId||state.editingPatchId||state.maskEditOnly);
+  const createIntent=drawing&&!selectIntent&&canCreateSelection();
+  if(createIntent){
+    // Create never inherits an existing selected object or Add/Subtract mask.
+    resetSelection();setMode('new');
+  }else if(state.selectionGeometry&&(drawing||['wand','reveal','erase','cut','transform'].includes(actual))){
+    ensureSelectionMask();
   }
-  $('brushOptions').classList.toggle('hidden',tool!=='reveal'&&tool!=='erase');
-  $('brushIntensityOptions').classList.toggle('hidden',tool!=='reveal'&&tool!=='erase');
+  clearHover();clearDraft();hideQuickPrompt();
+  state.tool=actual;
+  state.toolIntent=drawing?(selectIntent?'select':'create'):null;
+  if(state.pendingSourceId&&actual==='reveal'){state.pendingRevealOnly=true;render()}
+  $('resetTransformBtn').classList.toggle('hidden',actual!=='transform'||!activeTransformPatch());
+  $('viewport').classList.toggle('is-selecting',drawing||['wand','reveal','erase'].includes(actual));
+  $('wandOptions').classList.toggle('hidden',actual!=='wand');
+  const modes=document.querySelector('.selection-modes');
+  modes.classList.toggle('hidden',!selectIntent);
+  if(selectIntent){
+    const newButton=modes.querySelector('[data-mode="new"]');
+    if(newButton){newButton.disabled=false;newButton.title='Start a new selection';}
+    if(!['new','add','subtract'].includes(state.selectionMode))setMode('new');
+  }
+  $('brushOptions').classList.toggle('hidden',actual!=='reveal'&&actual!=='erase');
+  $('brushIntensityOptions').classList.toggle('hidden',actual!=='reveal'&&actual!=='erase');
   overlay.style.cursor='';
-  if(tool==='select'&&state.boundaryCanvas)ensureSelectionPaths();
-  if(tool==='select')message('Select: tap an object, or drag a rectangle to select overlapping object masks.');
-  else if(tool==='cut')message('Cut: click to add points, double-click to finish. Hold and drag for freehand. Esc cancels.');
-  else if(tool==='wand')message('Wand: click to select one prepared object. Ctrl/Cmd-click adds another object.');
-  else if(tool==='lasso')message('Line: click each corner, then click the first point or press Enter to close.');
-  else if(tool==='zoom')message('Zoom: click to zoom in. Shift-click to zoom out.');
-  else if(tool==='pan')message('Pan: drag to move around the canvas.');
-  else if(tool==='rect'||tool==='ellipse')message('Draw the approximate placement of a NEW foreground object. Hold Shift to constrain proportions.');
-document.querySelectorAll('.tool').forEach(b=>{b.classList.toggle('active',b.dataset.tool===tool);b.setAttribute('aria-pressed',String(b.dataset.tool===tool))});$('canvasWrap').className=`canvas-wrap${state.master?'':' hidden'} ${tool==='pan'?'pan':tool==='zoom'?'zoom':tool==='transform'?'transform':tool==='reveal'?'brush':tool==='erase'?'eraser':''}`;drawOverlay();window.MosaicSlimWand?.onToolChange?.(tool)}
+  if(actual==='select'&&state.boundaryCanvas)ensureSelectionPaths();
+  if(actual==='select')message('Select an object, or draw an area using dashed Select tools.');
+  else if(actual==='cut')message('Cut: click points and double-click to finish, or drag freehand.');
+  else if(actual==='wand')message('Wand: click a prepared object. Ctrl/Cmd-click adds another.');
+  else if(selectIntent)message('Select area with '+(actual==='lasso'?'Line':actual==='rect'?'Square':'Circle')+'. Use New, Add or Subtract to adjust the selection.');
+  else if(createIntent)message('Draw an approximate placement for a NEW transparent object.');
+  else if(actual==='pan')message('Pan the canvas.');
+  document.querySelectorAll('.tool').forEach(button=>{
+    const active=button.dataset.tool===tool||!selectShape&&button.dataset.tool===actual;
+    button.classList.toggle('active',active);button.setAttribute('aria-pressed',String(active));
+  });
+  $('canvasWrap').className=`canvas-wrap${state.master?'':' hidden'} ${actual==='pan'?'pan':actual==='zoom'?'zoom':actual==='transform'?'transform':actual==='reveal'?'brush':actual==='erase'?'eraser':''}`;
+  drawOverlay();window.MosaicSlimWand?.onToolChange?.(actual);
+}
 function canvasPoint(e,clipped=true){const rect=overlay.getBoundingClientRect(), x=(e.clientX-rect.left)/rect.width*canvas.width,y=(e.clientY-rect.top)/rect.height*canvas.height;return {x:clipped?clamp(x,0,canvas.width):x,y:clipped?clamp(y,0,canvas.height):y}}
 function pointInImage(p){return p.x>=0&&p.y>=0&&p.x<canvas.width&&p.y<canvas.height}
 function renderMaskPaths(paths){
@@ -1730,7 +1794,7 @@ function commitMaskPath(trace,points=[],polygon=false){
   if(!state.selectionMask)return;
   const selectedPatch=state.patches.get(state.selectionTargetPatchId);
   const selectedGroup=state.groups.find(g=>g.id===state.draftGroupId);
-  const modifyingSelected=['add','subtract'].includes(state.selectionMode)&&!state.pendingSourceId&&!state.editingPatchId&&!state.maskEditOnly&&
+  const modifyingSelected=state.toolIntent!=='select'&&['add','subtract'].includes(state.selectionMode)&&!state.pendingSourceId&&!state.editingPatchId&&!state.maskEditOnly&&
     (selectedPatch&&selectedGroup?.active===selectedPatch.id);
   if(modifyingSelected)snapshotPatch(selectedPatch);
   else if(state.maskEditOnly&&state.selectionTargetPatchId)snapshotPointEdit();
@@ -1739,7 +1803,7 @@ function commitMaskPath(trace,points=[],polygon=false){
   if(state.selectionMode==='new'){if(!state.maskEditOnly){state.selectionTargetPatchId=null;releaseDraftGroupForNewSelection()}m.clearRect(0,0,canvas.width,canvas.height)}
   const raw=makeCanvas(canvas.width,canvas.height),r=raw.getContext('2d');r.fillStyle='#fff';r.beginPath();trace(r);r.closePath();r.fill();
   const hard=r.getImageData(0,0,raw.width,raw.height);for(let i=3;i<hard.data.length;i+=4)hard.data[i]=hard.data[i]>=128?255:0;r.putImageData(hard,0,0);
-  if(['lasso','rect','ellipse'].includes(state.tool)&&!state.pendingSourceId&&!state.editingPatchId&&!state.maskEditOnly){
+  if(['lasso','rect','ellipse'].includes(state.tool)&&state.toolIntent==='create'&&!state.pendingSourceId&&!state.editingPatchId&&!state.maskEditOnly){
     m.restore();
     // Strict Create contract: the drawn path is a placement guide for a NEW
     // foreground layer, not a lookup into Object Map or the selected mask.
@@ -1747,7 +1811,21 @@ function commitMaskPath(trace,points=[],polygon=false){
     return;
   }
   if(state.selectionMode==='add')state.forceNewSelectionGroup=true;
-  const region=window.MosaicObjectMap?.refineMask(raw,state.tool)||raw;
+  // Dashed Select shapes use exactly the user-drawn geometry and never
+  // snap to existing Object IDs or mutate a saved Option's mask.
+  const manualSelect=state.toolIntent==='select';
+  if(manualSelect){
+    window.MosaicObjectMap?.cancelSelection?.();
+    // Replace temporary draft selection Groups rather than leaking a new
+    // empty Group every time the user adds or subtracts a drawn area.
+    const previousDraft=state.groups.find(g=>g.id===state.draftGroupId);
+    if(previousDraft&&!previousDraft.patchIds.length&&!previousDraft.mapPrepared&&!previousDraft.manualName)
+      state.groups=state.groups.filter(g=>g!==previousDraft);
+    state.manualAreaSelection=true;
+    state.selectionTargetPatchId=null;state.selectedPatchId=null;state.draftGroupId=null;
+    state.selectionGeometry=null;state.forceNewSelectionGroup=true;
+  }
+  const region=manualSelect?raw:window.MosaicObjectMap?.refineMask(raw,state.tool)||raw;
   m.globalCompositeOperation=state.selectionMode==='subtract'?'destination-out':'source-over';m.drawImage(region,0,0);m.restore();
   if(region===raw&&state.selectionMode==='new'&&polygon&&points.length>=3)setSelectionPaths([points]);else{state.selectionPaths=[];state.selectionPoints=[];activeMaskVertex=null;hoverMaskEdge=null;maskEditVersion++}
   state.pendingRevealOnly=Boolean(state.pendingSourceId);finishMaskSelection();message(state.pendingSourceId?'Click Apply to keep the selected part of the new image.':'Selection ready. Drag its points to refine it, or describe an AI edit.')}
@@ -1965,7 +2043,7 @@ function pointerDown(e){if(e.target.closest('form,button,input,textarea,select')
     else if(state.selectedPatchId){const originalTool=state.tool;editExisting(state.selectedPatchId);selectTool(originalTool)}
     else{toast('Return to the current composition to create a selection.');return}}
   const p=canvasPoint(e,!['lasso','rect','ellipse'].includes(state.tool));
-  if((e.ctrlKey||e.metaKey)&&(state.tool==='wand'||((state.pendingSourceId||state.editingPatchId||state.maskEditOnly)&&['lasso','rect','ellipse'].includes(state.tool)))&&!state.lasso.length&&state.selectionMode!=='subtract')setMode('add');
+  if((e.ctrlKey||e.metaKey)&&(state.tool==='wand'||state.toolIntent==='select')&&!state.lasso.length&&state.selectionMode!=='subtract')setMode('add');
   if(state.tool==='wand'){e.preventDefault();window.MosaicSlimWand?.selectAt?.(p,{append:e.ctrlKey||e.metaKey,subtract:e.altKey});return}
   state.drawing=true;e.preventDefault();e.currentTarget.setPointerCapture(e.pointerId);
   if(state.tool==='lasso'){state.pointerStart=p;state.dragFreehand=false;state.hoverPoint=p;if(!state.lasso.length)state.lasso=[p];drawOverlay()}
@@ -2278,7 +2356,7 @@ for(const type of ['pointerup','pointercancel'])compareSlider.addEventListener(t
 // Touch and mouse drawing both use Pointer Events.
 for(const type of ['pointerdown','pointermove','pointerup','pointercancel'])$('viewport').addEventListener(type,{pointerdown:pointerDown,pointermove:pointerMove,pointerup:pointerUp,pointercancel:pointerCancel}[type]);
 $('viewport').addEventListener('dblclick',e=>{if(e.target.closest('form,button,input,textarea,select'))return;if(state.tool==='cut'){e.preventDefault();window.MosaicObjectCreateCut?.endCut?.();return}if(state.tool==='lasso'&&state.lasso.length>=3){e.preventDefault();updateMaskWithLasso()}});
-window.addEventListener('keydown',onKeys);window.addEventListener('resize',()=>{if(window.innerWidth>730&&!inspectorPanel.classList.contains('is-collapsed'))setInspectorWidth(inspectorPanel.getBoundingClientRect().width);if(state.master)updateZoomFit();const form=$('quickAreaPromptForm');if(!form.classList.contains('hidden')){const box=form.getBoundingClientRect();moveQuickPrompt(box.left,box.top)}});
+window.addEventListener('keydown',onKeys);window.addEventListener('resize',()=>{if(window.innerWidth>730&&!inspectorPanel.classList.contains('is-collapsed'))setInspectorWidth(inspectorPanel.getBoundingClientRect().width);if(state.master)updateZoomFit();const form=$('quickAreaPromptForm');if(!form.classList.contains('hidden'))positionQuickPrompt(state.lastCanvasPointer)});
 for(const id of ['copyPromptBtn','copyPromptSecondary'])$(id).addEventListener('click',async()=>{try{await navigator.clipboard.writeText(promptText());toast('Prompt copied.')}catch{toast('Clipboard unavailable. Select prompt from the panel.')}});
 const viewport=$('viewport');viewport.addEventListener('pointerleave',()=>{window.MosaicRegions?.clearHover();window.MosaicSlimWand?.leave?.()});viewport.addEventListener('dragover',e=>{e.preventDefault();viewport.classList.add('dropping')});viewport.addEventListener('dragleave',()=>viewport.classList.remove('dropping'));viewport.addEventListener('drop',async e=>{e.preventDefault();viewport.classList.remove('dropping');const files=[...e.dataTransfer.files].filter(f=>f.type.startsWith('image/'));if(!state.master){if(files[0])await importReference(files[0]);if(files.length>1)await importVariants(files.slice(1))}else await importVariants(files)});
 viewport.addEventListener('pointerleave',()=>{brushPointer=null;brushCursor.hidden=true;hoverMaskEdge=null;updateMaskPointControls()});
