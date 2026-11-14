@@ -6,6 +6,7 @@ window.runCreateIsolationChecks=async function(){
   const wait=async predicate=>{for(let i=0;i<350;i++){if(predicate())return;await pause(20)}throw Error('Create scenario timed out')};
   const capture=Element.prototype.setPointerCapture,release=Element.prototype.releasePointerCapture;
   const originalAuth={ensure:window.MosaicAuth.ensure,request:window.MosaicAuth.request};
+  const originalSamRequest=window.MosaicAccount.request;
   Element.prototype.setPointerCapture=()=>{};Element.prototype.releasePointerCapture=()=>{};
   const pointer=(type,x,y)=>{
     const r=overlay.getBoundingClientRect();
@@ -32,11 +33,17 @@ window.runCreateIsolationChecks=async function(){
     assert(created&&created.id!==wallId,'Create reused an underlying Object ID');
     assert(state.groups.some(group=>group.id===wallId),'Create removed the original object');
     assert(created.patchIds.length===1&&state.draftGroupId===created.id,'Create failed to select its new Group');
+    assert(document.querySelector('.geometry-mode-switcher')?.hidden,
+      'Create should hide Material/Shape/Remove and use transparent PNG mode');
     const placeholder=state.patches.get(created.active),source=state.sources.get(placeholder.sourceId);
     const pixels=source.canvas.getContext('2d').getImageData(0,0,640,480).data;
     assert(pixels.every((value,index)=>index%4!==3||value===0),'Create copied underlying wall pixels');
     assert(core.composeApprovedCanvas().toDataURL()===originalScene,'Drawing Create modified the original scene');
     checks.push('Drawing over an existing object starts a new object ID, empty foreground and unchanged scene');
+    window.MosaicAccount.request=async(path,options)=>{
+      if(path==='/api/ai/sam3')throw Error('Fixture: SAM 3 unavailable, use PNG alpha.');
+      return originalSamRequest(path,options);
+    };
     window.MosaicAuth.ensure=async()=>true;
     let payload,finish;
     window.MosaicAuth.request=async(path,request)=>{
@@ -64,6 +71,7 @@ window.runCreateIsolationChecks=async function(){
     return {passed:checks.length,checks};
   }finally{
     Object.assign(window.MosaicAuth,originalAuth);
+    window.MosaicAccount.request=originalSamRequest;
     Element.prototype.setPointerCapture=capture;Element.prototype.releasePointerCapture=release;
   }
 };
