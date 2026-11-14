@@ -283,9 +283,53 @@ function commit(){
   else core.selectGroupMask(group,{showOutline:false});
   toast('Edit applied. Previous options and newly revealed pixels are retained in the .moz project.');
 }
+// A Create result is an independent RGBA foreground layer. Removing it
+// needs no background reconstruction: the accepted scene already exists
+// underneath. Keep the earlier cutout Options intact for one-click restore.
+function removeCreatedCutout(){
+  const group=state.groups.find(g=>g.id===state.draftGroupId||
+    g.patchIds.includes(state.selectionTargetPatchId));
+  if(!group?.createdLocally)return false;
+  if(state.busy||state.pendingSourceId||state.editingPatchId){
+    toast('Finish the current edit before removing this cutout.');return true;
+  }
+  if(processing||review){
+    toast('Finish the current preview first.');return true;
+  }
+  const current=state.patches.get(group.active);
+  if(!current||current.generating||current.awaitingResult){
+    toast('Finish generating the cutout first.');return true;
+  }
+  if(current.localCutoutRemoval){
+    toast('This cutout is already removed. Choose another Option to restore it.');return true;
+  }
+  let removed=group.patchIds.map(id=>state.patches.get(id)).find(p=>p?.localCutoutRemoval);
+  if(!removed){
+    const id=core.uid('remove_cutout');
+    // Empty alpha; no new RGB source, image generation, SAM, or ownership work.
+    // Reuse the existing source reference only for Option bookkeeping.
+    removed={
+      id,groupId:group.id,sourceId:current.sourceId,
+      mask:makeCanvas(1,1),bbox:{...current.bbox},
+      maskPaths:[],maskPoints:[],name:'Removed',manualName:true,
+      editMode:'remove',localCutoutRemoval:true,objectId:group.objectId||group.id,
+      createdAt:new Date().toISOString()
+    };
+    state.patches.set(id,removed);group.patchIds.push(id);
+  }
+  group.active=removed.id;
+  group.objectRemoved=true;
+  core.refreshGroupFootprint(group);
+  core.resetSelection();
+  renderGroups();render();
+  window.MosaicDiskCache?.schedule?.();
+  toast('Cutout removed. Choose an earlier Option to restore it.');
+  return true;
+}
 $('geometryDiscard').addEventListener('click',()=>{closeReview();toast('Shape preview discarded.');});
 $('geometryApply').addEventListener('click',commit);
 async function generate(prompt,files=[],operation='shape'){
+  if(operation==='remove'&&removeCreatedCutout())return;
   if(processing){toast('A shape edit is already generating.');return;}
   if(review){toast('Apply or discard the current preview first.');return;}
   if(!state.master||!core.selectionBounds()){toast('Select one object first.');return;}
