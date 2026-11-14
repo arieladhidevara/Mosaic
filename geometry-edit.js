@@ -181,22 +181,23 @@ async function matchRevealedOwners(image,revealedMask,excludedGroup){
     group!==excludedGroup&&!group.mergedInto&&!group.objectRemoved&&
     activeSavedOption(group)&&boxesIntersect(group.area,revealedBox))
     .map(group=>{
-      const label=promptLabel(group);
-      if(!label)return null;
       const mask=core.groupMask(group);
       if(!mask)return null;
       const old=binary(mask);
       const intersection=intersectBinaryMasks(exposed,old);
       if(!intersection.count)return null;
+      // An unnamed Option is still a genuine overlap. Track it as unresolved
+      // rather than incorrectly recording the cutout as conflict-free.
+      const label=promptLabel(group);
       return {group,label,mask,old,overlapBits:intersection.bits,overlapCount:intersection.count,
-        surface:/floor|wall|ceiling|ground|pavement|carpet|tile/i.test(label)};
+        surface:/floor|wall|ceiling|ground|pavement|carpet|tile/i.test(label||'')};
     })
     .filter(Boolean)
     .sort((a,b)=>b.overlapCount-a.overlapCount||Number(b.surface)-Number(a.surface));
   if(!candidates.length)return none; // no SAM call; keep GPT's recovered cutout unchanged
   const assignments=[],claimed=new Uint8Array(exposed.length);
   // Limit extra SAM requests to the most relevant conflicting saved Options.
-  for(const entry of candidates.slice(0,3)){
+  for(const entry of candidates.filter(item=>item.label).slice(0,3)){
     try{
       const next=await samMask(image,entry.label,entry.mask);
       const fresh=binary(next);
