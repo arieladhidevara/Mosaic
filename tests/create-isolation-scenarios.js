@@ -68,6 +68,32 @@ window.runCreateIsolationChecks=async function(){
     assert(state.groups.some(g=>g.id===created.id),'Create result lost its independent Group');
     assert(core.composeApprovedCanvas().toDataURL()!==originalScene,'Transparent Create result did not composite');
     checks.push('Transparent PNG output is composited as a new object without changing the original Group');
+    // Removing a new PNG cutout is just turning its own layer off. There is
+    // already an accepted background underneath, so no image model is needed.
+    const createdOption=created.active,generatedScene=core.composeApprovedCanvas().toDataURL();
+    core.selectGroupMask(created,{showOutline:true});
+    const formerAuth=window.MosaicAuth.request,formerSam=window.MosaicAccount.request;
+    let extraCalls=0;
+    window.MosaicAuth.request=async()=>{extraCalls++;throw Error('Remove must not call OpenAI')};
+    window.MosaicAccount.request=async()=>{extraCalls++;throw Error('Remove must not call SAM 3')};
+    document.getElementById('geometryRemoveBtn').click();
+    const removed=state.patches.get(created.active);
+    assert(removed?.localCutoutRemoval&&removed.editMode==='remove','Remove did not create an empty local Option');
+    assert(created.objectRemoved&&created.patchIds.includes(createdOption),'Remove discarded original Create Option');
+    assert(core.composeApprovedCanvas().toDataURL()===originalScene,'Removing Create did not reveal original underlying scene');
+    assert(extraCalls===0,'Removing Create made an unnecessary AI call');
+    assert(document.querySelector('.region-group[data-group="'+created.id+'"]'),
+      'Removed Create object disappeared from Groups, blocking restoration');
+    await core.chooseGroupOption(created,createdOption,{showOutline:false});
+    assert(!created.objectRemoved&&core.composeApprovedCanvas().toDataURL()===generatedScene,
+      'Selecting prior Option failed to restore the cutout');
+    core.selectGroupMask(created,{showOutline:true});
+    document.getElementById('geometryRemoveBtn').click();
+    assert(state.patches.get(created.active)===removed&&created.patchIds.length===2,
+      'Repeated Remove created duplicate empty Options instead of reusing it');
+    window.MosaicAuth.request=formerAuth;
+    window.MosaicAccount.request=formerSam;
+    checks.push('Create Remove is instant, costs zero AI requests, and its Option remains reversible');
     return {passed:checks.length,checks};
   }finally{
     Object.assign(window.MosaicAuth,originalAuth);
