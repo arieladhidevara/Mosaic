@@ -315,3 +315,38 @@
   #mobileToolPane .selection-modes .mode{min-width:0!important;min-height:44px!important}
   #mobileToolPane .selection-modes .mode:disabled{color:#8a8493!important;background:transparent!important}
 }
+
+
+/* Mobile AI panel keeps the compact options disclosure closed by default.
+   The panel stays docked, never floats across the selected canvas. */
+@media(max-width:850px){
+  .quick-area-prompt.has-group-options>.quick-group-options,
+  #mobileEditPane .quick-group-options{
+    display:block!important;
+    flex:none!important;
+    width:100%!important;
+    max-width:100%!important;
+    max-height:none!important;
+    overflow:visible!important;
+    padding:0!important;
+    border:0!important;
+    border-top:1px solid #ffffff16!important;
+  }
+  .quick-area-prompt .quick-group-options[hidden],
+  #mobileEditPane .quick-group-options[hidden]{display:none!important}
+  .quick-area-prompt .quick-option-list,
+  #mobileEditPane .quick-option-list{
+    display:flex!important;
+    flex-direction:row!important;
+    gap:7px!important;
+    max-height:80px!important;
+    padding:6px 0 1px!important;
+    overflow-x:auto!important;
+    overflow-y:hidden!important;
+  }
+  #mobileEditPane .quick-area-prompt .prompt-input-row textarea{
+    min-height:48px!important;
+    height:48px!important;
+    max-height:100px!important;
+  }
+}
