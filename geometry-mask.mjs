@@ -14,6 +14,19 @@ export function calculateMaskDelta(oldBits,newBits){
 }
 
 
+// Test exact cutout/Option intersection. Allocate a new mask only when
+// pixels truly overlap; bounding-box proximity is never evidence of conflict.
+export function intersectBinaryMasks(revealed,option){
+  if(!(revealed instanceof Uint8Array)||!(option instanceof Uint8Array)||revealed.length!==option.length)
+    throw new TypeError('Masks must have the same pixel dimensions.');
+  let count=0;
+  for(let i=0;i<revealed.length;i++)if(revealed[i]&&option[i])count++;
+  if(!count)return {count:0,bits:null};
+  const bits=new Uint8Array(revealed.length);
+  for(let i=0;i<bits.length;i++)if(revealed[i]&&option[i])bits[i]=1;
+  return {count,bits};
+}
+
 // The mask defines pixel ownership; image lines define optional perspective correction.
 export function measureBinaryMask(bits,width,height){
   if(bits.length!==width*height)throw new TypeError('Mask dimensions differ.');
