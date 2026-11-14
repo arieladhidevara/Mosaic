@@ -173,6 +173,7 @@ function showQuickPrompt(point=state.lastCanvasPointer,keepText=false,focusInput
   if(!state.master||!selectionBounds()||state.pendingSourceId||state.editingPatchId)return;
   const form=$('quickAreaPromptForm');
   refreshQuickOptions();
+  window.MosaicGeometryEdit?.syncPromptMode?.();
   form.classList.remove('hidden');
   if(focusInput)showSelectionHighlightForPrompt();
   positionQuickPrompt(point);
