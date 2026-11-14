@@ -3,7 +3,7 @@
    Materials keep using the existing cropped editing workflow. */
 import './premium.js';
 import './object-map.js';
-import {calculateMaskDelta} from './geometry-mask.mjs';
+import {calculateMaskDelta,intersectBinaryMasks} from './geometry-mask.mjs';
 
 const core=window.MosaicCore;
 const {state,canvas,makeCanvas,toast,render,renderGroups}=core;
@@ -159,41 +159,64 @@ function compositedResult(before,generated,changeMask){
   result.getContext('2d').drawImage(clip,0,0);
   return result;
 }
-// SAM assigns only well-supported newly revealed pixels to existing objects.
-// Ambiguous pixels stay unassigned instead of corrupting a permanent texture.
+// Removing an object already produces reconstructed RGB pixels. Only pixels
+// that ACTUALLY intersect another visible saved Option need ownership analysis.
+// The rest of the cutout is final: never infer an owner from spatial proximity.
+function activeSavedOption(group){
+  const patch=state.patches.get(group.active);
+  return patch&&!patch.awaitingResult&&!patch.hideUntilReady&&patch.editMode!=='remove'&&
+    state.sources.has(patch.sourceId)&&!(group.createdLocally&&!group.createdViaAI);
+}
+function boxesIntersect(a,b){
+  return !a||!b||a.x<b.x+b.w&&b.x<a.x+a.w&&a.y<b.y+b.h&&b.y<a.y+a.h;
+}
 async function matchRevealedOwners(image,revealedMask,excludedGroup){
-  const exposed=binary(revealedMask),revealCount=exposed.reduce((a,b)=>a+b,0);
-  if(revealCount<64)return [];
-  const oldBox=core.exactMaskBoundingBox(revealedMask);
-  const center=b=>({x:b.x+b.w/2,y:b.y+b.h/2});
-  const candidates=state.groups.filter(g=>g!==excludedGroup&&!g.mergedInto&&!g.objectRemoved)
-    .map(g=>({group:g,label:promptLabel(g),mask:core.groupMask(g)}))
-    .filter(o=>o.label&&o.mask&&core.exactMaskBoundingBox(o.mask))
-    .map(o=>{
-      const b=core.exactMaskBoundingBox(o.mask),a=center(oldBox),c=center(b);
-      const distance=Math.hypot(a.x-c.x,a.y-c.y);
-      const surface=/floor|wall|ceiling|ground|pavement|carpet|tile/i.test(o.label)?1:0;
-      return {...o,distance,priority:surface*10000-distance};
+  const exposed=binary(revealedMask);
+  const revealCount=exposed.reduce((sum,value)=>sum+value,0);
+  const none={assignments:[],optionOverlapPixels:0,overlapCandidateCount:0};
+  if(!revealCount)return none;
+  const revealedBox=core.exactMaskBoundingBox(revealedMask);
+  // Filter by visible Option state and bounding box BEFORE loading full masks.
+  const candidates=state.groups.filter(group=>
+    group!==excludedGroup&&!group.mergedInto&&!group.objectRemoved&&
+    activeSavedOption(group)&&boxesIntersect(group.area,revealedBox))
+    .map(group=>{
+      const label=promptLabel(group);
+      if(!label)return null;
+      const mask=core.groupMask(group);
+      if(!mask)return null;
+      const old=binary(mask);
+      const intersection=intersectBinaryMasks(exposed,old);
+      if(!intersection.count)return null;
+      return {group,label,mask,old,overlapBits:intersection.bits,overlapCount:intersection.count,
+        surface:/floor|wall|ceiling|ground|pavement|carpet|tile/i.test(label)};
     })
-    .sort((a,b)=>b.priority-a.priority).slice(0,3);
-  const collected=[],claimed=new Uint8Array(exposed.length);
-  for(const entry of candidates){
+    .filter(Boolean)
+    .sort((a,b)=>b.overlapCount-a.overlapCount||Number(b.surface)-Number(a.surface));
+  if(!candidates.length)return none; // no SAM call; keep GPT's recovered cutout unchanged
+  const assignments=[],claimed=new Uint8Array(exposed.length);
+  // Limit extra SAM requests to the most relevant conflicting saved Options.
+  for(const entry of candidates.slice(0,3)){
     try{
       const next=await samMask(image,entry.label,entry.mask);
-      const old=binary(entry.mask),fresh=binary(next);
+      const fresh=binary(next);
       let original=0,retained=0,newlyVisible=0;
-      for(let i=0;i<old.length;i++){
-        if(old[i]){original++;if(fresh[i]&&!exposed[i])retained++;}
-        if(exposed[i]&&fresh[i]&&!claimed[i])newlyVisible++;
+      for(let i=0;i<entry.old.length;i++){
+        if(entry.old[i]){original++;if(fresh[i]&&!exposed[i])retained++;}
+        if(entry.overlapBits[i]&&fresh[i]&&!claimed[i])newlyVisible++;
       }
-      // Both shape continuity AND ownership of exposed pixels are necessary.
-      if(original<20||retained/original<.4||newlyVisible<Math.max(16,revealCount*.04))continue;
+      // Never assign pixels OUTSIDE the cutout/Option intersection.
+      if(original<20||retained/original<.4||
+         newlyVisible<Math.max(1,Math.min(16,Math.ceil(entry.overlapCount*.04))))continue;
       const bits=new Uint8Array(exposed.length);
-      for(let i=0;i<bits.length;i++)if(exposed[i]&&fresh[i]&&!claimed[i]){bits[i]=1;claimed[i]=1;}
-      collected.push({groupId:entry.group.id,mask:rasterFromBits(bits),confidence:Math.min(1,retained/original)});
+      for(let i=0;i<bits.length;i++){
+        if(entry.overlapBits[i]&&fresh[i]&&!claimed[i]){bits[i]=1;claimed[i]=1;}
+      }
+      assignments.push({groupId:entry.group.id,mask:rasterFromBits(bits),confidence:Math.min(1,retained/original)});
     }catch(error){console.warn('[mozAI:revealed-owner]',entry.label,error?.message||error);}
   }
-  return collected;
+  return {assignments,optionOverlapPixels:candidates.reduce((sum,item)=>sum+item.overlapCount,0),
+    overlapCandidateCount:candidates.length};
 }
 function accumulateRevealedPixels(event,before,aligned){
   state.objectReconstruction??={version:1,events:[]};
@@ -271,7 +294,8 @@ function commit(){
     oldMask:clone(item.oldMask),newMask:item.newMask?clone(item.newMask):null,
     revealedMask:clone(item.masks.reveal),
     revealedRGB:(()=>{const c=clone(item.aligned),x=c.getContext('2d');x.globalCompositeOperation='destination-in';x.drawImage(item.masks.reveal,0,0);return c;})(),
-    cameraOffset:item.offset,ownership:item.assignments.length?'partially-matched':'unassigned',
+    cameraOffset:item.offset,ownership:item.assignments.length?'partially-matched':item.overlapCandidateCount===0?'no-option-overlap':'unassigned',
+    overlapCandidateCount:item.overlapCandidateCount,optionOverlapPixels:item.optionOverlapPixels,
     assignments:item.assignments.map(a=>({groupId:a.groupId,mask:clone(a.mask),confidence:a.confidence})),
     createdAt:new Date().toISOString()
   };
@@ -310,10 +334,12 @@ async function generate(prompt,files=[],operation='shape'){
     if(operation==='shape')newMask=await samMask(alignedResult.image,label,oldMask);
     if(generation!==state.selectionGeneration||state.master!==master){toast('The project changed during segmentation; result discarded.');return;}
     const masks=operationMasks(oldMask,newMask,operation);
-    const assignments=await matchRevealedOwners(alignedResult.image,masks.reveal,group);
+    const ownership=await matchRevealedOwners(alignedResult.image,masks.reveal,group);
+    const assignments=ownership.assignments;
     if(generation!==state.selectionGeneration||state.master!==master){toast('Project changed while matching surfaces.');return;}
     const result=compositedResult(before,alignedResult.image,masks.padded);
-    review={generation,master,oldMask,newMask,group,label,prompt:task,operation,masks,aligned:alignedResult.image,offset:alignedResult.offset,result,assignments,before};
+    review={generation,master,oldMask,newMask,group,label,prompt:task,operation,masks,aligned:alignedResult.image,offset:alignedResult.offset,result,assignments,
+      overlapCandidateCount:ownership.overlapCandidateCount,optionOverlapPixels:ownership.optionOverlapPixels,before};
     showReview(result,alignedResult.status+' · '+(operation==='remove'?'Background recovered': 'SAM outline validated'),operation);
     toast('Review the new image, then Apply or Discard.');
   }catch(error){toast('Shape edit: '+(error?.message||'Unable to generate. Original image is unchanged.'));}
