@@ -12,7 +12,7 @@ function fixture(createdLocally=true){
   const old={id:'cutout_1',sourceId:'rgba_1',bbox:{x:120,y:80,w:64,h:90},editMode:'create'};
   const group={id:'group_1',createdLocally,createdViaAI:true,active:old.id,patchIds:[old.id],objectId:'group_1',objectRemoved:false};
   const state={draftGroupId:group.id,groups:[group],patches:new Map([[old.id,old]]),busy:false,pendingSourceId:null,editingPatchId:null,selectionTargetPatchId:old.id};
-  const counts={raster:0,render:0,sidebar:0,reset:0,refresh:0,schedule:0};
+  const counts={raster:0,render:0,sidebar:0,reset:0,refresh:0,schedule:0,hitInvalidations:0};
   const core={
     uid:()=>('removed_1'),
     refreshGroupFootprint:()=>counts.refresh++,
@@ -20,7 +20,8 @@ function fixture(createdLocally=true){
   };
   const makeCanvas=(w,h)=>{counts.raster++;return {width:w,height:h}};
   const remove=compile(state,core,makeCanvas,()=>{},()=>counts.sidebar++,()=>counts.render++,
-    {MosaicDiskCache:{schedule:()=>counts.schedule++}},false,null);
+    {MosaicDiskCache:{schedule:()=>counts.schedule++},
+      MosaicObjectMap:{invalidateHitIndex:()=>counts.hitInvalidations++}},false,null);
   return {old,group,state,counts,remove};
 }
 
@@ -35,6 +36,8 @@ test('created PNG cutout is removed with one empty local mask, no model calls or
   assert.equal(group.objectRemoved,true);
   assert.deepEqual(group.patchIds,[old.id,removed.id]);
   assert.equal(counts.raster,1);
+  assert.equal(counts.refresh,0,'Remove must not recalculate existing Group geometry');
+  assert.equal(counts.hitInvalidations,1,'Remove must invalidate stale object picking');
   assert.equal(counts.render,1);
   assert.equal(counts.reset,1);
   assert.equal(counts.schedule,1);
