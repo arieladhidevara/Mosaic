@@ -1816,6 +1816,11 @@ function commitMaskPath(trace,points=[],polygon=false){
   const manualSelect=state.toolIntent==='select';
   if(manualSelect){
     window.MosaicObjectMap?.cancelSelection?.();
+    // Replace temporary draft selection Groups rather than leaking a new
+    // empty Group every time the user adds or subtracts a drawn area.
+    const previousDraft=state.groups.find(g=>g.id===state.draftGroupId);
+    if(previousDraft&&!previousDraft.patchIds.length&&!previousDraft.mapPrepared&&!previousDraft.manualName)
+      state.groups=state.groups.filter(g=>g!==previousDraft);
     state.manualAreaSelection=true;
     state.selectionTargetPatchId=null;state.selectedPatchId=null;state.draftGroupId=null;
     state.selectionGeometry=null;state.forceNewSelectionGroup=true;
