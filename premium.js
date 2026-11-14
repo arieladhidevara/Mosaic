@@ -656,6 +656,7 @@ async function generateRegion(patchId,regenerate=false){
           requestOrder>(previous?.order||0)&&
           (group.active===activeAtStart||group.active===previous?.patchId));
         if(group){
+          group.createdViaAI=true;
           if(activate){group.active=patchId;lastAppliedGenerations.set(group,{order:requestOrder,patchId});}
           core.refreshGroupFootprint(group);
           if(activate)core.attachGeneratedSelection(existing,group);
@@ -928,7 +929,7 @@ function createRegionRequest(prompt,referenceImages=[],selectedMask=state.select
     });
     group=core.newGroup(mask);group.objectMapBatch=true;patch.groupId=group.id;state.patches.set(patch.id,patch);group.patchIds.push(patch.id);
   }else group=assignGroup(patch,groupId);
-  if(group?.createdLocally){
+  if(group?.createdLocally&&!group.createdViaAI){
     // Manual Create is a new foreground identity, not a material edit on the
     // underlying wall/floor pixels. Let GPT return its own alpha silhouette.
     patch.createObject=true;
