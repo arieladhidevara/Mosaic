@@ -359,6 +359,9 @@ function groupMaskCrop(group){
   if(!group.active&&!group.objectOriginal&&!group.footprint&&group.maskCrop)
     return group.maskCrop;
   const active=state.patches.get(group.active);
+  // Removed Create layers retain their previous silhouette as a selectable
+  // group footprint, despite drawing zero visible pixels.
+  if(active?.localCutoutRemoval&&group.maskCrop)return group.maskCrop;
   if(active?.maskOffset&&!active.corners&&!active.geometryObjectMask)
     return {mask:active.mask,x:active.maskOffset.x,y:active.maskOffset.y};
   const cached=groupCropCache.get(group);
@@ -591,7 +594,7 @@ async function chooseGroupOption(group,patchId,{showPrompt=false,showOutline=fal
   optionLoadTickets.set(group,ticket);
   const patch=state.patches.get(patchId);
   const source=patch&&state.sources.get(patch.sourceId);
-  if(source&&!source.canvas){
+  if(source&&!source.canvas&&!patch?.localCutoutRemoval){
     try{
       message('Loading saved Option from this device…');
       await window.MosaicDiskCache.ensure(source,'canvas');
@@ -847,7 +850,8 @@ function affineTriangle(target,texture,s0,s1,s2,d0,d1,d2,padding=0){
   target.drawImage(texture,0,0);target.restore();
 }
 function drawPatch(target,patch,source){
-  if(!patch || !source || patch.awaitingResult)return;
+  // No geometry, RGB or AI needed for removing a standalone RGBA cutout.
+  if(!patch || !source || patch.awaitingResult||patch.localCutoutRemoval)return;
   const t=patchTexture(patch,source);
   if(!patch.corners){target.drawImage(t.image,t.x,t.y);return}
   const q=patchCorners(patch),b=patch.bbox;
@@ -1083,7 +1087,7 @@ function cutoutThumbnail(image,mask,cropOrigin=null,imageOrigin=null){
   return thumb.toDataURL('image/png');
 }
 function patchThumbnail(patch){
-  if(!patch)return '';
+  if(!patch||patch.localCutoutRemoval)return '';
   const src=state.sources.get(patch.sourceId),cached=optionThumbCache.get(patch);
   // Keep the tiny cutout preview visible without decoding an inactive full-size source.
   if(!src?.canvas)return cached?.data||'';
@@ -1245,7 +1249,10 @@ function renderGroups(){
     window.MosaicObjectManager?.groupSimilarNames();
     sidebarSemanticKey=sidebarSemanticSignature();
   }
-  const visibleGroups=state.groups.filter(group=>!group.objectMapBatch&&!group.mergedInto&&!group.objectRemoved);
+  // Keep removed Create objects in Groups so any previous Option can restore
+  // them without regenerating an image; removed Base objects stay hidden.
+  const visibleGroups=state.groups.filter(group=>!group.objectMapBatch&&!group.mergedInto&&
+    (!group.objectRemoved||group.createdLocally&&state.patches.get(group.active)?.localCutoutRemoval));
   const collections=state.objectCollections||[];
   const categories=new Map(collections.slice().sort((a,b)=>String(a.name||'').localeCompare(String(b.name||''),undefined,{numeric:true,sensitivity:'base'})).map(group=>[group.id,[]]));
   for(const group of visibleGroups){
