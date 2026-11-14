@@ -612,6 +612,12 @@ function refreshQuickOptions(){
     rail=document.createElement('details');rail.id='quickGroupOptions';rail.className='quick-group-options';
     rail.setAttribute('aria-label','Object options');
     form.insertBefore(rail,form.querySelector('.prompt-footer'));
+    // Opening the dropdown changes panel height. Reposition so it still
+    // clears the selected image area rather than expanding over it.
+    rail.addEventListener('toggle',()=>{
+      if(!form.classList.contains('hidden')&&!form.closest('#mobileEditPane'))
+        requestAnimationFrame(()=>showQuickPrompt(state.lastCanvasPointer,true,false));
+    });
   }
   const group=state.groups.find(group=>group.id===state.draftGroupId||group.patchIds.includes(state.selectionTargetPatchId));
   const ready=group?.patchIds.map(id=>state.patches.get(id)).filter(patch=>patch&&!patch.hideUntilReady)||[];
