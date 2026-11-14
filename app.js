@@ -137,42 +137,45 @@ function quickPromptOutsideSelection(selected,available,size,point=null,gap=10){
   fallback.sort((a,b)=>score(a,a.index)-score(b,b.index));
   return {x:fallback[0].x,y:fallback[0].y};
 }
-function showQuickPrompt(point=state.lastCanvasPointer,keepText=false,focusInput=true){
-  if(window.MosaicWorkspace?.isSelectingResult())return;
-  if(!state.master||!selectionBounds()||state.pendingSourceId||state.editingPatchId)return;
-  const form=$('quickAreaPromptForm'),vp=$('viewport'),r=vp.getBoundingClientRect();
-  refreshQuickOptions();
-  const margin=10;
+function positionQuickPrompt(point=state.lastCanvasPointer){
+  const form=$('quickAreaPromptForm'),selection=selectionBounds();
+  if(!selection||form.classList.contains('hidden'))return;
+  const r=$('viewport').getBoundingClientRect(),margin=10;
   const available={
     left:Math.max(0,r.left)+margin,right:Math.min(window.innerWidth,r.right)-margin,
     top:Math.max(0,r.top)+margin,bottom:Math.min(window.innerHeight,r.bottom)-margin
   };
   form.style.maxWidth=Math.max(120,available.right-available.left)+'px';
   form.style.maxHeight=Math.max(120,available.bottom-available.top)+'px';
+  // The small-screen UI docks this form in its own AI pane.
+  if(form.closest('#mobileEditPane'))return;
+  const bounds=form.getBoundingClientRect(),w=bounds.width,h=bounds.height;
+  const image=overlay.getBoundingClientRect();
+  const selected={
+    left:image.left+selection.x/canvas.width*image.width,
+    right:image.left+(selection.x+selection.w)/canvas.width*image.width,
+    top:image.top+selection.y/canvas.height*image.height,
+    bottom:image.top+(selection.y+selection.h)/canvas.height*image.height
+  };
+  const pointer=Number.isFinite(point?.clientX)&&Number.isFinite(point?.clientY)?
+    {x:point.clientX,y:point.clientY}:null;
+  const suggestion=quickPromptOutsideSelection(selected,available,{width:w,height:h},pointer);
+  let target=suggestion;
+  if(quickPromptPosition){
+    const x=Math.max(available.left,Math.min(r.left+quickPromptPosition.x,available.right-w));
+    const y=Math.max(available.top,Math.min(r.top+quickPromptPosition.y,available.bottom-h));
+    if(x+w<=selected.left||x>=selected.right||y+h<=selected.top||y>=selected.bottom)target={x,y};
+  }
+  form.style.left=target.x+'px';form.style.top=target.y+'px';
+}
+function showQuickPrompt(point=state.lastCanvasPointer,keepText=false,focusInput=true){
+  if(window.MosaicWorkspace?.isSelectingResult())return;
+  if(!state.master||!selectionBounds()||state.pendingSourceId||state.editingPatchId)return;
+  const form=$('quickAreaPromptForm');
+  refreshQuickOptions();
   form.classList.remove('hidden');
   if(focusInput)showSelectionHighlightForPrompt();
-  // On mobile the prompt is docked in the AI pane; don't float it over the image.
-  if(!form.closest('#mobileEditPane')){
-    const box=form.getBoundingClientRect(),w=box.width,h=box.height;
-    const selection=selectionBounds(),image=overlay.getBoundingClientRect();
-    const selected={
-      left:image.left+selection.x/canvas.width*image.width,
-      right:image.left+(selection.x+selection.w)/canvas.width*image.width,
-      top:image.top+selection.y/canvas.height*image.height,
-      bottom:image.top+(selection.y+selection.h)/canvas.height*image.height
-    };
-    const pointer=Number.isFinite(point?.clientX)&&Number.isFinite(point?.clientY)?
-      {x:point.clientX,y:point.clientY}:null;
-    const suggestion=quickPromptOutsideSelection(selected,available,{width:w,height:h},pointer);
-    // Preserve a manually dragged position only if it still clears this selection.
-    let target=suggestion;
-    if(quickPromptPosition){
-      const x=Math.max(available.left,Math.min(r.left+quickPromptPosition.x,available.right-w));
-      const y=Math.max(available.top,Math.min(r.top+quickPromptPosition.y,available.bottom-h));
-      if(x+w<=selected.left||x>=selected.right||y+h<=selected.top||y>=selected.bottom)target={x,y};
-    }
-    form.style.left=target.x+'px';form.style.top=target.y+'px';
-  }
+  positionQuickPrompt(point);
   if(!keepText){window.MosaicPremium?.clearReferenceFiles?.('quick');$('quickAreaPromptInput').value=''}
   if(focusInput&&!window.matchMedia('(max-width:850px)').matches)$('quickAreaPromptInput').focus({preventScroll:true});
 }
@@ -616,7 +619,7 @@ function refreshQuickOptions(){
     // clears the selected image area rather than expanding over it.
     rail.addEventListener('toggle',()=>{
       if(!form.classList.contains('hidden')&&!form.closest('#mobileEditPane'))
-        requestAnimationFrame(()=>showQuickPrompt(state.lastCanvasPointer,true,false));
+        requestAnimationFrame(()=>positionQuickPrompt(state.lastCanvasPointer));
     });
   }
   const group=state.groups.find(group=>group.id===state.draftGroupId||group.patchIds.includes(state.selectionTargetPatchId));
@@ -2327,7 +2330,7 @@ for(const type of ['pointerup','pointercancel'])compareSlider.addEventListener(t
 // Touch and mouse drawing both use Pointer Events.
 for(const type of ['pointerdown','pointermove','pointerup','pointercancel'])$('viewport').addEventListener(type,{pointerdown:pointerDown,pointermove:pointerMove,pointerup:pointerUp,pointercancel:pointerCancel}[type]);
 $('viewport').addEventListener('dblclick',e=>{if(e.target.closest('form,button,input,textarea,select'))return;if(state.tool==='cut'){e.preventDefault();window.MosaicObjectCreateCut?.endCut?.();return}if(state.tool==='lasso'&&state.lasso.length>=3){e.preventDefault();updateMaskWithLasso()}});
-window.addEventListener('keydown',onKeys);window.addEventListener('resize',()=>{if(window.innerWidth>730&&!inspectorPanel.classList.contains('is-collapsed'))setInspectorWidth(inspectorPanel.getBoundingClientRect().width);if(state.master)updateZoomFit();const form=$('quickAreaPromptForm');if(!form.classList.contains('hidden'))showQuickPrompt(state.lastCanvasPointer,true,false)});
+window.addEventListener('keydown',onKeys);window.addEventListener('resize',()=>{if(window.innerWidth>730&&!inspectorPanel.classList.contains('is-collapsed'))setInspectorWidth(inspectorPanel.getBoundingClientRect().width);if(state.master)updateZoomFit();const form=$('quickAreaPromptForm');if(!form.classList.contains('hidden'))positionQuickPrompt(state.lastCanvasPointer)});
 for(const id of ['copyPromptBtn','copyPromptSecondary'])$(id).addEventListener('click',async()=>{try{await navigator.clipboard.writeText(promptText());toast('Prompt copied.')}catch{toast('Clipboard unavailable. Select prompt from the panel.')}});
 const viewport=$('viewport');viewport.addEventListener('pointerleave',()=>{window.MosaicRegions?.clearHover();window.MosaicSlimWand?.leave?.()});viewport.addEventListener('dragover',e=>{e.preventDefault();viewport.classList.add('dropping')});viewport.addEventListener('dragleave',()=>viewport.classList.remove('dropping'));viewport.addEventListener('drop',async e=>{e.preventDefault();viewport.classList.remove('dropping');const files=[...e.dataTransfer.files].filter(f=>f.type.startsWith('image/'));if(!state.master){if(files[0])await importReference(files[0]);if(files.length>1)await importVariants(files.slice(1))}else await importVariants(files)});
 viewport.addEventListener('pointerleave',()=>{brushPointer=null;brushCursor.hidden=true;hoverMaskEdge=null;updateMaskPointControls()});
