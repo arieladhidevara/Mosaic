@@ -1340,7 +1340,7 @@ function selectTool(tool){if(window.MosaicSourceEditor?.isEditing())return;
   else if(tool==='lasso')message('Line: click each corner, then click the first point or press Enter to close.');
   else if(tool==='zoom')message('Zoom: click to zoom in. Shift-click to zoom out.');
   else if(tool==='pan')message('Pan: drag to move around the canvas.');
-  else if(tool==='rect'||tool==='ellipse')message('Draw to select intersected objects together. Empty areas can create a new object. Hold Shift to constrain proportions.');
+  else if(tool==='rect'||tool==='ellipse')message('Draw the approximate placement of a NEW foreground object. Hold Shift to constrain proportions.');
 document.querySelectorAll('.tool').forEach(b=>{b.classList.toggle('active',b.dataset.tool===tool);b.setAttribute('aria-pressed',String(b.dataset.tool===tool))});$('canvasWrap').className=`canvas-wrap${state.master?'':' hidden'} ${tool==='pan'?'pan':tool==='zoom'?'zoom':tool==='transform'?'transform':tool==='reveal'?'brush':tool==='erase'?'eraser':''}`;drawOverlay();window.MosaicSlimWand?.onToolChange?.(tool)}
 function canvasPoint(e,clipped=true){const rect=overlay.getBoundingClientRect(), x=(e.clientX-rect.left)/rect.width*canvas.width,y=(e.clientY-rect.top)/rect.height*canvas.height;return {x:clipped?clamp(x,0,canvas.width):x,y:clipped?clamp(y,0,canvas.height):y}}
 function pointInImage(p){return p.x>=0&&p.y>=0&&p.x<canvas.width&&p.y<canvas.height}
@@ -1755,9 +1755,13 @@ function commitMaskPath(trace,points=[],polygon=false){
       selectTool('select');updateSelectionOutline();renderGroups();render();
       return;
     }
-    // Drawn selection is a temporary union of all touched Object IDs.
-    // It is split back to independent objects when the AI result arrives.
-    // With no mapped object underneath, keep the traditional Create path.
+    // Create tools always add a new foreground object, even when the drawn
+    // area overlaps a prepared wall, door or furniture Object ID.
+    // Multi-object editing remains available through the Select tool.
+    if(state.selectionMode==='new'){
+      window.MosaicObjectCreateCut?.create(raw);
+      return;
+    }
     const grouped=window.MosaicObjectMap?.selectShape?.(raw);
     if(grouped&&exactMaskBoundingBox(grouped)){
       m.drawImage(grouped,0,0);
