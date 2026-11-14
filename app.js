@@ -108,38 +108,71 @@ function showProcessing(on){state.busy=on;$('processing').classList.toggle('hidd
 function clearDraft(){window.MosaicObjectCreateCut?.cancelCut?.();state.lasso=[];state.hoverPoint=null;state.pointerStart=null;state.dragFreehand=false;state.shapeStart=null;state.shapeEnd=null;state.drawing=false}
 function clearHover(){window.MosaicRegions?.clearHover()}
 function hideQuickPrompt(){document.getElementById('quickAreaPromptForm')?.classList.add('hidden')}
+// Choose the nearest position that does not cover the selected silhouette's
+// bounding rectangle. When a small viewport makes that impossible, minimize
+// the overlapped area rather than anchoring blindly to the click position.
+function quickPromptOutsideSelection(selected,available,size,point=null,gap=10){
+  const clampTo=(value,min,max)=>Math.max(min,Math.min(value,Math.max(min,max)));
+  const w=size.width,h=size.height;
+  const cx=(selected.left+selected.right)/2,cy=(selected.top+selected.bottom)/2;
+  const px=Number.isFinite(point?.x)?point.x:cx,py=Number.isFinite(point?.y)?point.y:cy;
+  const xmin=available.left,xmax=available.right-w,ymin=available.top,ymax=available.bottom-h;
+  const candidates=[
+    {x:selected.right+gap,y:cy-h/2}, // right
+    {x:selected.left-gap-w,y:cy-h/2}, // left
+    {x:cx-w/2,y:selected.bottom+gap}, // below
+    {x:cx-w/2,y:selected.top-gap-h} // above
+  ];
+  const area=box=>Math.max(0,Math.min(box.x+w,selected.right)-Math.max(box.x,selected.left))*
+    Math.max(0,Math.min(box.y+h,selected.bottom)-Math.max(box.y,selected.top));
+  const score=(box,index)=>{
+    const overlap=area(box);
+    const distance=Math.hypot(box.x+w/2-px,box.y+h/2-py);
+    return overlap*1e6+distance+index*.001;
+  };
+  const valid=candidates.map((p,index)=>({...p,index})).filter(p=>
+    p.x>=xmin&&p.x<=xmax&&p.y>=ymin&&p.y<=ymax);
+  if(valid.length){valid.sort((a,b)=>score(a,a.index)-score(b,b.index));return {x:valid[0].x,y:valid[0].y}}
+  const fallback=candidates.map((p,index)=>({x:clampTo(p.x,xmin,xmax),y:clampTo(p.y,ymin,ymax),index}));
+  fallback.sort((a,b)=>score(a,a.index)-score(b,b.index));
+  return {x:fallback[0].x,y:fallback[0].y};
+}
 function showQuickPrompt(point=state.lastCanvasPointer,keepText=false,focusInput=true){
   if(window.MosaicWorkspace?.isSelectingResult())return;
   if(!state.master||!selectionBounds()||state.pendingSourceId||state.editingPatchId)return;
   const form=$('quickAreaPromptForm'),vp=$('viewport'),r=vp.getBoundingClientRect();
   refreshQuickOptions();
-  // The prompt is position:fixed, so work in actual screen coordinates.
-  // The previous code clamped to the left/top of the viewport, which could
-  // put the prompt hundreds of pixels away from the clicked mask.
-  const margin=10,gap=12;
-  const left=Math.max(0,r.left)+margin,right=Math.min(window.innerWidth,r.right)-margin;
-  const top=Math.max(0,r.top)+margin,bottom=Math.min(window.innerHeight,r.bottom)-margin;
-  form.style.maxWidth=Math.max(120,right-left)+'px';
-  form.style.maxHeight=Math.max(120,bottom-top)+'px';
+  const margin=10;
+  const available={
+    left:Math.max(0,r.left)+margin,right:Math.min(window.innerWidth,r.right)-margin,
+    top:Math.max(0,r.top)+margin,bottom:Math.min(window.innerHeight,r.bottom)-margin
+  };
+  form.style.maxWidth=Math.max(120,available.right-available.left)+'px';
+  form.style.maxHeight=Math.max(120,available.bottom-available.top)+'px';
   form.classList.remove('hidden');
   if(focusInput)showSelectionHighlightForPrompt();
-  const bounds=form.getBoundingClientRect(),w=bounds.width,h=bounds.height;
-  // Keyboard completion and programmatic selection fall back to the actual
-  // selection on canvas rather than an arbitrary corner of the viewport.
-  const selection=selectionBounds();
-  const canvasRect=overlay.getBoundingClientRect();
-  const selectedX=canvasRect.left+(selection.x+selection.w/2)/canvas.width*canvasRect.width;
-  const selectedY=canvasRect.top+(selection.y+selection.h/2)/canvas.height*canvasRect.height;
-  const pointerX=Number.isFinite(point?.clientX)?point.clientX:selectedX;
-  const pointerY=Number.isFinite(point?.clientY)?point.clientY:selectedY;
-  const x=Math.max(left,Math.min(right,Math.max(left,pointerX)));
-  const y=Math.max(top,Math.min(bottom,Math.max(top,pointerY)));
-  // Prefer just below/right of the cursor, then flip above/left near edges.
-  // Clamp only as a final safeguard if the viewport is smaller than the form.
-  const wantedX=x+gap+w<=right?x+gap:x-gap-w;
-  const wantedY=y+gap+h<=bottom?y+gap:y-gap-h;
-  form.style.left=Math.max(left,Math.min(quickPromptPosition?r.left+quickPromptPosition.x:wantedX,Math.max(left,right-w)))+'px';
-  form.style.top=Math.max(top,Math.min(quickPromptPosition?r.top+quickPromptPosition.y:wantedY,Math.max(top,bottom-h)))+'px';
+  // On mobile the prompt is docked in the AI pane; don't float it over the image.
+  if(!form.closest('#mobileEditPane')){
+    const box=form.getBoundingClientRect(),w=box.width,h=box.height;
+    const selection=selectionBounds(),image=overlay.getBoundingClientRect();
+    const selected={
+      left:image.left+selection.x/canvas.width*image.width,
+      right:image.left+(selection.x+selection.w)/canvas.width*image.width,
+      top:image.top+selection.y/canvas.height*image.height,
+      bottom:image.top+(selection.y+selection.h)/canvas.height*image.height
+    };
+    const pointer=Number.isFinite(point?.clientX)&&Number.isFinite(point?.clientY)?
+      {x:point.clientX,y:point.clientY}:null;
+    const suggestion=quickPromptOutsideSelection(selected,available,{width:w,height:h},pointer);
+    // Preserve a manually dragged position only if it still clears this selection.
+    let target=suggestion;
+    if(quickPromptPosition){
+      const x=Math.max(available.left,Math.min(r.left+quickPromptPosition.x,available.right-w));
+      const y=Math.max(available.top,Math.min(r.top+quickPromptPosition.y,available.bottom-h));
+      if(x+w<=selected.left||x>=selected.right||y+h<=selected.top||y>=selected.bottom)target={x,y};
+    }
+    form.style.left=target.x+'px';form.style.top=target.y+'px';
+  }
   if(!keepText){window.MosaicPremium?.clearReferenceFiles?.('quick');$('quickAreaPromptInput').value=''}
   if(focusInput&&!window.matchMedia('(max-width:850px)').matches)$('quickAreaPromptInput').focus({preventScroll:true});
 }
@@ -574,23 +607,33 @@ async function chooseGroupOption(group,patchId,{showPrompt=false,showOutline=fal
 }
 function refreshQuickOptions(){
   const form=$('quickAreaPromptForm');let rail=$('quickGroupOptions');
-  if(!rail){rail=document.createElement('aside');rail.id='quickGroupOptions';rail.className='quick-group-options';rail.setAttribute('aria-label','Options for selected object');form.append(rail)}
+  if(rail&&rail.tagName!=='DETAILS'){rail.remove();rail=null}
+  if(!rail){
+    rail=document.createElement('details');rail.id='quickGroupOptions';rail.className='quick-group-options';
+    rail.setAttribute('aria-label','Object options');
+    form.insertBefore(rail,form.querySelector('.prompt-footer'));
+  }
   const group=state.groups.find(group=>group.id===state.draftGroupId||group.patchIds.includes(state.selectionTargetPatchId));
   const ready=group?.patchIds.map(id=>state.patches.get(id)).filter(patch=>patch&&!patch.hideUntilReady)||[];
-  rail.replaceChildren();rail.hidden=!ready.length;form.classList.toggle('has-group-options',Boolean(ready.length));
+  if(rail.dataset.groupId!==String(group?.id||''))rail.open=false;
+  rail.dataset.groupId=String(group?.id||'');
+  rail.replaceChildren();rail.hidden=!ready.length;
+  form.classList.toggle('has-group-options',Boolean(ready.length));
   if(!ready.length)return;
-  const heading=document.createElement('small');heading.textContent='Options';rail.append(heading);
-  const choices=[...(!group.hasHarmonizedMaster?[null]:[]),...ready];
+  const summary=document.createElement('summary');summary.textContent='Options';rail.append(summary);
+  const choices=(!group.hasHarmonizedMaster?[null]:[]).concat(ready);
+  const list=document.createElement('div');list.className='quick-option-list';
   choices.forEach((patch,index)=>{
     const button=document.createElement('button');button.type='button';button.className='quick-option';
     button.dataset.option=patch?.id||'original';button.setAttribute('aria-pressed',String(group.active===(patch?.id||null)));
     button.title=patch?.name||'Original Master';button.setAttribute('aria-label','Choose '+button.title);
     const thumb=patch&&patchThumbnail(patch);
     if(thumb){const image=document.createElement('img');image.src=thumb;image.alt='';button.append(image)}
-    const label=document.createElement('span');label.textContent=patch?String(index+(group.hasHarmonizedMaster?1:0)):'Original';button.append(label);
+    const label=document.createElement('span');label.textContent=patch?String(index+(group.hasHarmonizedMaster?1:0)):'Base';button.append(label);
     button.onclick=()=>chooseGroupOption(group,patch?.id||null,{showPrompt:true,showOutline:false});
-    rail.append(button);
+    list.append(button);
   });
+  rail.append(list);
 }
 // Ctrl/Cmd-click unions existing selections, without modifying a saved Group.
 // A new draft Group is created for the merged shape so Generate saves one option.
