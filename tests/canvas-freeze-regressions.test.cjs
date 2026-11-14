@@ -17,6 +17,14 @@ test('brush defers expensive mask bounding/geometry invalidation until release',
   assert.match(app,/if\(pendingBrushRepaint\)return/);
   assert.match(app,/pendingBrushRepaint=requestAnimationFrame/);
 });
+test('Create trusts OpenAI PNG alpha without an extra SAM inference or segmentation pass',()=>{
+  assert.doesNotMatch(premium,/refineCreatedCutoutWithSAM3|createSamLabel|samMaskBits|refineCreatePixels|\/api\/ai\/sam3/);
+  assert.match(premium,/maskAlignmentStatus='png-alpha'/);
+  assert.match(premium,/prepareCroppedCreateLayer\(image,region,rgba\)/);
+  assert.match(premium,/import \{planCreateAlphaCrop\} from '\.\/create-alpha\.mjs'/);
+  assert.match(premium,/delete existing\.createSegmentationLabel/);
+});
+
 test('Create has a cropped, lossless alpha placement path for ordinary unwarped PNGs',()=>{
   const part=premium.slice(premium.indexOf('// Untransformed Create cuts out locally.'),premium.indexOf('if(regenerate){',premium.indexOf('// Untransformed Create cuts out locally.')));
   assert.match(part,/if\(!submittedPatch\.corners\?\.length\)/);
