@@ -108,7 +108,7 @@ async function apply(image,{type='ai-edit',prompt='',onStatus=()=>{},onProgress=
   for(const [index,{group,mask,choice}] of snapshots.entries()){
     // Large canvas/mask processing otherwise occupies the UI thread for
     // many consecutive objects and makes the Assistant appear frozen.
-    if(index%2===0)await new Promise(resolve=>requestAnimationFrame(resolve));
+    if(index%2===0&&typeof requestAnimationFrame==='function')await new Promise(resolve=>requestAnimationFrame(resolve));
     const bounds=core.exactMaskBoundingBox(mask);
     if(!bounds)continue;
     const paths=core.maskPathsFromRaster(mask);
