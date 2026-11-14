@@ -117,16 +117,17 @@ function beginAIProgress(label,detail='Preparing request…',target={scope:'mast
     if(patch){
       patch.aiProgress={id,label,detail:currentDetail,value,status};
       if(status)window.MosaicMaskProgress?.hide(owner);
-      else window.MosaicMaskProgress?.show(owner,label,currentDetail);
+      else window.MosaicMaskProgress?.show(owner,label,currentDetail,value,true);
       renderGroups();return;
     }
     item.classList.toggle('success',status==='success');item.classList.toggle('error',status==='error');
-    fill.style.width=value+'%';percent.textContent=value+'%';description.textContent=currentDetail;track.setAttribute('aria-valuenow',String(value));
+    fill.style.width=value+'%';percent.textContent=(status?'':'≈ ')+value+'%';description.textContent=currentDetail;track.setAttribute('aria-valuenow',String(value));
+    target.onProgress?.({value,detail:currentDetail,status,estimated:!status});
   };
   set(value,detail);
   const timer=setInterval(()=>{if(value<88)set(value+Math.max(1,Math.round((90-value)*.07)))},1100);
   const finish=(kind,nextDetail)=>{
-    if(settled)return;settled=true;clearInterval(timer);set(100,nextDetail,kind);
+    if(settled)return;settled=true;clearInterval(timer);set(kind==='success'?100:value,nextDetail,kind);
     setTimeout(()=>{
       if(patch){if(patch.aiProgress?.id===id){delete patch.aiProgress;renderGroups()}}
       else item.remove();
@@ -1494,17 +1495,35 @@ async function generateComposition(prompt,files,source,markup=null,options={}){
   if(!master)throw Error('Upload an image first.');
   if(!await window.MosaicAuth.ensure())throw Error('Sign in to generate.');
   if(state.master!==master||state.selectionGeneration!==generation)throw Error('The project changed. Submit again.');
-  const references=await prepareReferenceImages(files);
-  if(state.master!==master||state.selectionGeneration!==generation)throw Error('The project changed. Submit again.');
-  const payload=encodeRequest(prompt,null,source,references,markup);
-  payload.mode='chat';
-  if(options?.quality&&['low','medium','high'].includes(options.quality))payload.quality=options.quality;
-  if(['shape','remove'].includes(options?.editIntent))payload.editIntent=options.editIntent;
-  if(options?.targetLabel)payload.targetObject=String(options.targetLabel).slice(0,80);
-  const result=await window.MosaicAuth.request('/api/ai/harmonize',payload);
-  const image=await fromGeneratedJPEG(result.image,size);
-  if(state.master!==master||state.selectionGeneration!==generation)throw Error('The project changed during generation. Your current work was kept.');
-  return image;
+  // OpenAI image generation does not stream percentage-complete information.
+  // The bar is a clearly labelled estimate, capped below completion until
+  // the response is decoded and the original Object Map has been applied.
+  const progress=beginAIProgress(options?.quality==='low'?'Generating concept preview':'Generating full image',
+    'Preparing image and references…',{scope:'canvas',onProgress:options.onProgress});
+  try{
+    progress.update(14,'Preparing reference images…');
+    const references=await prepareReferenceImages(files);
+    if(state.master!==master||state.selectionGeneration!==generation)throw Error('The project changed. Submit again.');
+    progress.update(24,'Preparing the full-image request…');
+    const payload=encodeRequest(prompt,null,source,references,markup);
+    payload.mode='chat';
+    if(options?.quality&&['low','medium','high'].includes(options.quality))payload.quality=options.quality;
+    if(['shape','remove'].includes(options?.editIntent))payload.editIntent=options.editIntent;
+    if(options?.targetLabel)payload.targetObject=String(options.targetLabel).slice(0,80);
+    progress.update(30,'OpenAI is generating the full image…');
+    const result=await window.MosaicAuth.request('/api/ai/harmonize',payload);
+    progress.update(82,'Image received. Decoding result…');
+    const image=await fromGeneratedJPEG(result.image,size);
+    if(state.master!==master||state.selectionGeneration!==generation)throw Error('The project changed during generation. Your current work was kept.');
+    progress.update(90,'Preparing the result for the current scene…');
+    // Keep the indicator alive while the costly per-object application runs.
+    if(typeof options.onResult==='function')await options.onResult(image,progress);
+    progress.done(options.onResult?'Full image saved as object Options.':'Full image ready.');
+    return image;
+  }catch(error){
+    progress.fail(error.message||'Full-image generation failed.');
+    throw error;
+  }
 }
 window.MosaicPremium = {
   generateComposition,
