@@ -155,6 +155,8 @@ async function start() {
   window.MosaicMaskProgress?.show?.('auto','SAM 3 · Auto Create','Preparing image for segmentation…');
   window.MosaicMaskProgress?.highlight?.('auto',{whole:true});
   try {
+    // Show activity before potentially expensive canvas readback and mask work.
+    await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
     core.render();
     const scale = Math.min(1, 768/Math.max(sourceCanvas.width, sourceCanvas.height));
     const width = Math.max(1, Math.round(sourceCanvas.width*scale));
