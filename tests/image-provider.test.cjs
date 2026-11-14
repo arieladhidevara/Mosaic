@@ -79,6 +79,36 @@ test('image generation request contract',async t=>{
     assert.match(sent.prompt,/x=200, y=100, width=256, height=256/);
     assert.match(sent.prompt,/output only the crop in Image 1/);
   });
+  await t.test('Create requests real RGBA PNG with scene references and a placement guide, without clipping to the original mask',async()=>{
+    const scene=image(1000,700),guide=image(256,256);
+    const result=await generate(request({
+      prompt:'Create a new blue lounge chair',
+      createObject:true,context:scene,placementGuide:guide,
+      crop:{x:200,y:100,width:256,height:256,imageWidth:1000,imageHeight:700}
+    }),true);
+    assert.equal(result.mimeType,'image/png');
+    assert.equal(sent.background,'transparent');
+    assert.equal(sent.output_format,'png');
+    assert.equal(sent.output_compression,undefined);
+    assert.equal(sent.mask,undefined);
+    assert.deepEqual(sent.images,[
+      {image_url:collage},{image_url:base},{image_url:scene},{image_url:guide}
+    ]);
+    assert.match(sent.prompt,/SCENE-CONDITIONED FOREGROUND OBJECT CREATION/);
+    assert.match(sent.prompt,/TRUE TRANSPARENT PNG CONTRACT/);
+    assert.match(sent.prompt,/PLACEMENT GUIDE: Image 4/);
+    assert.match(sent.prompt,/Match the new object to the real scene perspective/);
+    assert.doesNotMatch(sent.prompt,/MATERIAL \/ APPEARANCE GEOMETRY LOCK/);
+  });
+  await t.test('Create transparency does not affect full-image or regular regional edits',async()=>{
+    await generate(request({createObject:true}),false);
+    assert.equal(sent.output_format,'jpeg');
+    assert.equal(sent.background,undefined);
+    assert.equal(sent.mask,undefined);
+    await generate(request({createObject:false}),true);
+    assert.equal(sent.output_format,'jpeg');
+    assert.deepEqual(sent.mask,{image_url:mask});
+  });
   await t.test('legacy transparent cutout requests are ignored and always return opaque JPEG',async()=>{
     const result=await generate(request({transparentLayer:true,targetObject:'Wall with two door openings'}),true);
     assert.equal(result.mimeType,'image/jpeg');
