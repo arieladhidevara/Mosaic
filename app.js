@@ -1206,6 +1206,7 @@ function syncSidebarCategoryNodes(list,collapsed){
 
 function groupThumbnail(group){
   const active=state.patches.get(group.active);
+  if(active?.localCutoutRemoval)return ''; // Empty layer: no rasterization needed.
   if(active){
     const url=patchThumbnail(active);
     if(url)return url;
