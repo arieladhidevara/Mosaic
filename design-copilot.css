@@ -17,3 +17,16 @@
 /* Review state: the user can correct AI object selections before any paid image edit. */
 .copilot-selection-hint{margin-top:8px;padding:7px 9px;font-size:11px;line-height:1.45;color:#d9cfff;background:#2b2740;border:1px solid #615182;border-radius:8px}
 .copilot-message .copilot-actions button:first-child:focus-visible{outline:2px solid #bc9cff;outline-offset:2px}
+
+/* Generation status stays visible inside the Assistant thread while the canvas is editable. */
+.copilot-generation-progress{align-self:stretch;max-width:100%;border-color:#645987!important;background:#282538!important}
+.copilot-progress-heading{display:flex;justify-content:space-between;align-items:center;gap:10px;font-size:11px}
+.copilot-progress-percent{font-size:11px;color:#c8b5ff;font-variant-numeric:tabular-nums;white-space:nowrap}
+.copilot-progress-track{height:6px;border-radius:999px;background:#403a52;overflow:hidden;margin:8px 0}
+.copilot-progress-fill{height:100%;width:3%;background:linear-gradient(90deg,#8476df,#c2abff);border-radius:inherit;transition:width .35s ease}
+.copilot-progress-detail,.copilot-progress-note{display:block;line-height:1.4;white-space:normal}
+.copilot-progress-detail{font-size:10px;color:#eee8ff}
+.copilot-progress-note{font-size:9px;margin-top:4px;color:#b5adc7}
+.copilot-generation-progress.complete .copilot-progress-fill{background:#a8d0bd}
+.copilot-generation-progress.failed .copilot-progress-fill{background:#d57d8b}
+@media(prefers-reduced-motion:reduce){.copilot-progress-fill{transition:none}}
