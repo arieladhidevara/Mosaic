@@ -350,3 +350,24 @@
     max-height:100px!important;
   }
 }
+
+/* On touch screens the tool categories must stay visible: Select and Create
+   now both have Line / Square / Circle buttons with different semantics. */
+@media(max-width:850px){
+  #mobileToolPane>.tool-row{
+    flex-basis:73px!important;min-height:73px!important;height:73px!important;
+  }
+  #mobileToolPane .toolbar-section{
+    display:flex!important;flex-direction:column!important;align-items:flex-start!important;
+    justify-content:flex-start!important;gap:3px!important;
+  }
+  #mobileToolPane .toolbar-section-title{
+    display:block!important;flex:none!important;
+    min-height:11px!important;margin:0 0 1px 2px!important;
+    color:#aa9dbb!important;font:600 9px/11px Inter,system-ui,sans-serif!important;
+    text-transform:none!important;
+  }
+  #mobileToolPane .toolbar-section[aria-label="Select area tools"] .tool svg{
+    stroke:#dbc8f1;
+  }
+}
