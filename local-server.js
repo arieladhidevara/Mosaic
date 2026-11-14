@@ -87,7 +87,7 @@ const publicFiles = new Set([
   'object-management.js',
   'object-grouping.mjs',
   'generated-image.mjs',
-  'create-sam3.mjs',
+  'create-alpha.mjs',
   'object-map-utils.mjs',
   'object-map-cleanup.mjs',
   'object-map-geometry.mjs',
