@@ -481,6 +481,7 @@ function encodeRegionalCrop(patch){
       quality:premium.settings.regionQuality,
       projectPrompt:premium.projectPrompt,
       prompt:patch.prompt,
+      ...(patch.createObject?{createObject:true,placementGuide:editContextPreview(collage,visualMask,region)}:{}),
       targetObject:patch.objectMapParts?.map(part=>part.label).join(', ').slice(0,120)||patch.objectLabel||group?.objectName||group?.objectLabel||(group?.manualName?group.name:(group?.category&&group.category!=='Region'?group.category:'')),
       crop:{x:region.x,y:region.y,width:region.w,height:region.h,imageWidth:canvas.width,imageHeight:canvas.height},
       context:resizedFrame(collage,Math.max(128,Math.round(canvas.width*contextScale)),Math.max(128,Math.round(canvas.height*contextScale))),
@@ -576,18 +577,20 @@ async function generateRegion(patchId,regenerate=false){
       if(!await window.MosaicAuth.ensure())throw Error('OpenAI API key entry canceled.');
       const {payload,region,visibleMask}=capture;
       progress.highlight(visibleMask);
-      progress.update(24,'Understanding the selected object…');
-      try{
-        const context=await window.MosaicAuth.request('/api/ai/edit-context',{
-          image:capture.contextImage,prompt:payload.prompt,selectedObjects:capture.selectedObjects
-        });
-        if(context.confidence>=.8&&typeof context.targetObject==='string'&&context.targetObject.trim()){
-          payload.targetObject=context.targetObject.trim().slice(0,120);
-        }
-      }catch{progress.update(28,'Using the original prompt and selection…')}
+      progress.update(24,patch.createObject?'Preparing scene-conditioned placement…':'Understanding the selected object…');
+      if(!patch.createObject){
+        try{
+          const context=await window.MosaicAuth.request('/api/ai/edit-context',{
+            image:capture.contextImage,prompt:payload.prompt,selectedObjects:capture.selectedObjects
+          });
+          if(context.confidence>=.8&&typeof context.targetObject==='string'&&context.targetObject.trim()){
+            payload.targetObject=context.targetObject.trim().slice(0,120);
+          }
+        }catch{progress.update(28,'Using the original prompt and selection…')}
+      }
       if(state.patches.get(patchId)!==patch||state.selectionGeneration!==projectAtStart){patch.generating=false;progress.done('Project changed; edit skipped.');return}
-      message('Generating only the selected area with nearby architectural context…');
-      progress.update(30,'OpenAI is generating the selected area…');
+      message(patch.createObject?'Creating a transparent foreground object using scene lighting and perspective…':'Generating only the selected area with nearby architectural context…');
+      progress.update(30,patch.createObject?'OpenAI is creating the transparent object…':'OpenAI is generating the selected area…');
       const answer=await window.MosaicAuth.request('/api/ai/edit',payload);
       progress.update(82,'Image received. Decoding result…');
       let image;
@@ -598,6 +601,69 @@ async function generateRegion(patchId,regenerate=false){
         ||canvas.width!==canvasSize.width||canvas.height!==canvasSize.height){
         if(existing)existing.generating=false;renderGroups();
         progress.done('Finished, but the project changed; current work was kept.');return;
+      }
+      if(patch.createObject){
+        // Unlike Material Edit, the AI-generated alpha defines the silhouette.
+        // The drawn Create mask was only a placement hint and must never clip it.
+        if(answer.mimeType!=='image/png')throw Error('Create requires a transparent PNG from OpenAI.');
+        const rgba=image.getContext('2d',{willReadFrequently:true}).getImageData(0,0,image.width,image.height).data;
+        let subjectPixels=0,clearPixels=0;
+        for(let i=3;i<rgba.length;i+=4){
+          if(rgba[i]>=12)subjectPixels++;
+          if(rgba[i]<=4)clearPixels++;
+        }
+        if(subjectPixels<16||clearPixels<rgba.length/4*.01)
+          throw Error('AI did not return a usable transparent cutout. Regenerate Create without applying this result.');
+        const positioned=makeCanvas(canvasSize.width,canvasSize.height);
+        positioned.getContext('2d').drawImage(image,region.x,region.y,region.w,region.h);
+        const layer=core.unwarpPatchSelection(positioned,submittedPatch);
+        const objectMask=makeCanvas(canvasSize.width,canvasSize.height),m=objectMask.getContext('2d');
+        const pixels=layer.getContext('2d',{willReadFrequently:true}).getImageData(0,0,canvasSize.width,canvasSize.height);
+        // Keep antialiased and semi-transparent shadows in the SOURCE alpha.
+        // The binary object mask must not multiply those alpha values a second time.
+        for(let i=0;i<pixels.data.length;i+=4){
+          const alpha=pixels.data[i+3]>=8?255:0;
+          pixels.data[i]=pixels.data[i+1]=pixels.data[i+2]=255;
+          pixels.data[i+3]=alpha;
+        }
+        m.putImageData(pixels,0,0);
+        const bounds=core.exactMaskBoundingBox(objectMask);
+        if(!bounds)throw Error('No visible pixels were returned for the new object.');
+        const compact=core.compactOptionSource(layer,bounds,Math.max(24,Math.ceil(Math.max(bounds.w,bounds.h)*.08)));
+        if(regenerate){
+          const sourceId=uid('created_source');
+          state.sources.set(sourceId,{id:sourceId,name:'Regenerated transparent object',...compact,revealComplete:true});
+          existing.sourceId=sourceId;
+        }else{
+          Object.assign(state.sources.get(existing.sourceId),compact,{name:'Transparent Create object',revealComplete:true});
+        }
+        existing.mask=objectMask;existing.maskOffset=null;existing.bbox=bounds;
+        existing.maskPaths=core.maskPathsFromRaster(objectMask);
+        existing.maskPoints=existing.maskPaths.flat();
+        existing.editMode='create';
+        existing.maskAlignmentStatus='alpha-direct';
+        existing.maskAlignmentSegmentation=null;
+        existing.maskAlignmentIoU=null;
+        existing.maskAlignmentCoverage=null;
+        existing.awaitingResult=false;existing.hideUntilReady=false;existing.generating=false;
+        if(existing.request){delete existing.request.baseImage;delete existing.request.reference;}
+        if(!existing.manualName&&!existing.semanticNamed)
+          existing.name=core.optionNameFromPrompt(existing.prompt,'Created object');
+        core.invalidateDisplayedMask(existing);
+        const group=state.groups.find(g=>g.patchIds.includes(patchId));
+        const previous=group&&lastAppliedGenerations.get(group);
+        const activate=Boolean(group&&core.groupChoiceVersion(group)===choiceAtStart&&
+          requestOrder>(previous?.order||0)&&
+          (group.active===activeAtStart||group.active===previous?.patchId));
+        if(group){
+          if(activate){group.active=patchId;lastAppliedGenerations.set(group,{order:requestOrder,patchId});}
+          core.refreshGroupFootprint(group);
+          if(activate)core.attachGeneratedSelection(existing,group);
+        }
+        renderGroups();render();
+        progress.done(activate?'Transparent object placed.':'Transparent object saved as an Option.');
+        toast(activate?'Created object added to the scene.':'Created object saved in Group options.');
+        return;
       }
       const generatedLayer=makeCanvas(canvasSize.width,canvasSize.height);
       generatedLayer.getContext('2d').drawImage(image,region.x,region.y,region.w,region.h);
@@ -862,6 +928,13 @@ function createRegionRequest(prompt,referenceImages=[],selectedMask=state.select
     });
     group=core.newGroup(mask);group.objectMapBatch=true;patch.groupId=group.id;state.patches.set(patch.id,patch);group.patchIds.push(patch.id);
   }else group=assignGroup(patch,groupId);
+  if(group?.createdLocally){
+    // Manual Create is a new foreground identity, not a material edit on the
+    // underlying wall/floor pixels. Let GPT return its own alpha silhouette.
+    patch.createObject=true;
+    patch.editMode='create';
+    patch.objectId=group.objectId||group.id;
+  }
   // Keep the approved option visible while OpenAI works. generateRegion will
   // activate this new option when its pixels are ready, unless the user makes
   // another option choice in the meantime.
