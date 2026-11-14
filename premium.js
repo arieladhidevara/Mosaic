@@ -3,7 +3,7 @@ import './generation-pool.js';
 import './object-aware.js';
 import {assertGeneratedImage,assertGeneratedRegion} from './generated-image.mjs';
 import {alignGeneratedToLockedMask} from './geometry-mask.mjs';
-import {createSamLabel,alphaBounds,samMaskBits,refineCreatePixels} from './create-sam3.mjs';
+import {createSamLabel,alphaBounds,planCreateAlphaCrop,samMaskBits,refineCreatePixels} from './create-sam3.mjs';
 const core = window.MosaicCore;
 if (!core) throw new Error('Mosaic core must load before Premium');
 const {state, canvas, makeCanvas, uid, render, renderGroups, resetSelection, assignGroup, maskBoundingBox, toast, message} = core;
@@ -592,10 +592,9 @@ function prepareCroppedCreateLayer(image,region){
   const lc=layer.getContext('2d',{willReadFrequently:true});
   lc.drawImage(image,0,0,region.w,region.h);
   const pixels=lc.getImageData(0,0,region.w,region.h).data;
-  const localBox=alphaBounds(pixels,region.w,region.h,8);
-  if(!localBox)throw Error('No visible pixels were returned for the new object.');
-  const bbox={x:region.x+localBox.x,y:region.y+localBox.y,
-    w:localBox.width,h:localBox.height};
+  const plan=planCreateAlphaCrop(pixels,region.w,region.h,region);
+  if(!plan)throw Error('No visible pixels were returned for the new object.');
+  const {localBox,bbox,sourceRect,sourceCrop}=plan;
   // White binary selection is stored cropped, while Source RGBA keeps shadows
   // and subpixel alpha exactly as generated.
   const mask=makeCanvas(bbox.w,bbox.h);
@@ -608,18 +607,14 @@ function prepareCroppedCreateLayer(image,region){
     frame.data[dst]=frame.data[dst+1]=frame.data[dst+2]=frame.data[dst+3]=255;
   }
   mc.putImageData(frame,0,0);
-  const pad=Math.max(24,Math.ceil(Math.max(bbox.w,bbox.h)*.08));
-  const sx=Math.max(0,localBox.x-pad),sy=Math.max(0,localBox.y-pad);
-  const sr=Math.min(region.w,localBox.x+localBox.width+pad);
-  const sb=Math.min(region.h,localBox.y+localBox.height+pad);
-  const source=makeCanvas(sr-sx,sb-sy);
-  source.getContext('2d').drawImage(layer,-sx,-sy);
+  const source=makeCanvas(sourceRect.w,sourceRect.h);
+  source.getContext('2d').drawImage(layer,-sourceRect.x,-sourceRect.y);
   const paths=core.maskPathsFromCrop({mask,x:bbox.x,y:bbox.y}).map(path=>path.filter((point,index)=>{
     const before=path[(index+path.length-1)%path.length],after=path[(index+1)%path.length];
     return Math.abs((point.x-before.x)*(after.y-point.y)-(point.y-before.y)*(after.x-point.x))>1e-8;
   })).filter(path=>path.length>=3);
   return {mask,bbox,maskOffset:{x:bbox.x,y:bbox.y},paths,
-    compact:{canvas:source,crop:{x:region.x+sx,y:region.y+sy,width:sr-sx,height:sb-sy}}};
+    compact:{canvas:source,crop:sourceCrop}};
 }
 async function generateRegion(patchId,regenerate=false){
   const patch=state.patches.get(patchId);
