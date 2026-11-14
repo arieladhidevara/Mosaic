@@ -584,6 +584,43 @@ async function refineCreatedCutoutWithSAM3(image,prompt){
   if(result.applied)pixelsCtx.putImageData(rgba,0,0);
   return result;
 }
+// Common Create path: keep the generated RGBA and its alpha mask in local
+// crop coordinates. Never allocate/read a 2400px full-scene pixel buffer just
+// to position a transparent foreground (the original Base is unchanged).
+function prepareCroppedCreateLayer(image,region){
+  const layer=makeCanvas(region.w,region.h);
+  const lc=layer.getContext('2d',{willReadFrequently:true});
+  lc.drawImage(image,0,0,region.w,region.h);
+  const pixels=lc.getImageData(0,0,region.w,region.h).data;
+  const localBox=alphaBounds(pixels,region.w,region.h,8);
+  if(!localBox)throw Error('No visible pixels were returned for the new object.');
+  const bbox={x:region.x+localBox.x,y:region.y+localBox.y,
+    w:localBox.width,h:localBox.height};
+  // White binary selection is stored cropped, while Source RGBA keeps shadows
+  // and subpixel alpha exactly as generated.
+  const mask=makeCanvas(bbox.w,bbox.h);
+  const mc=mask.getContext('2d');
+  const frame=mc.createImageData(bbox.w,bbox.h);
+  for(let y=0;y<bbox.h;y++)for(let x=0;x<bbox.w;x++){
+    const src=((localBox.y+y)*region.w+localBox.x+x)*4;
+    if(pixels[src+3]<8)continue;
+    const dst=(y*bbox.w+x)*4;
+    frame.data[dst]=frame.data[dst+1]=frame.data[dst+2]=frame.data[dst+3]=255;
+  }
+  mc.putImageData(frame,0,0);
+  const pad=Math.max(24,Math.ceil(Math.max(bbox.w,bbox.h)*.08));
+  const sx=Math.max(0,localBox.x-pad),sy=Math.max(0,localBox.y-pad);
+  const sr=Math.min(region.w,localBox.x+localBox.width+pad);
+  const sb=Math.min(region.h,localBox.y+localBox.height+pad);
+  const source=makeCanvas(sr-sx,sb-sy);
+  source.getContext('2d').drawImage(layer,-sx,-sy);
+  const paths=core.maskPathsFromCrop({mask,x:bbox.x,y:bbox.y}).map(path=>path.filter((point,index)=>{
+    const before=path[(index+path.length-1)%path.length],after=path[(index+1)%path.length];
+    return Math.abs((point.x-before.x)*(after.y-point.y)-(point.y-before.y)*(after.x-point.x))>1e-8;
+  })).filter(path=>path.length>=3);
+  return {mask,bbox,maskOffset:{x:bbox.x,y:bbox.y},paths,
+    compact:{canvas:source,crop:{x:region.x+sx,y:region.y+sy,width:sr-sx,height:sb-sy}}};
+}
 async function generateRegion(patchId,regenerate=false){
   const patch=state.patches.get(patchId);
   if(!patch||patch.generating||(!regenerate&&!patch.awaitingResult))return;
@@ -669,22 +706,32 @@ async function generateRegion(patchId,regenerate=false){
           patch.generating=false;progress.done('Project changed during segmentation.');return;
         }
         progress.update(92,samStatus==='sam3-prompt'?'Applying SAM 3 object mask…':'Applying transparent PNG alpha…');
-        const positioned=makeCanvas(canvasSize.width,canvasSize.height);
-        positioned.getContext('2d').drawImage(image,region.x,region.y,region.w,region.h);
-        const layer=core.unwarpPatchSelection(positioned,submittedPatch);
-        const objectMask=makeCanvas(canvasSize.width,canvasSize.height),m=objectMask.getContext('2d');
-        const pixels=layer.getContext('2d',{willReadFrequently:true}).getImageData(0,0,canvasSize.width,canvasSize.height);
-        // Keep antialiased and semi-transparent shadows in the SOURCE alpha.
-        // The binary object mask must not multiply those alpha values a second time.
-        for(let i=0;i<pixels.data.length;i+=4){
-          const alpha=pixels.data[i+3]>=8?255:0;
-          pixels.data[i]=pixels.data[i+1]=pixels.data[i+2]=255;
-          pixels.data[i+3]=alpha;
+        // Untransformed Create cuts out locally. Explicit four-corner edits
+        // still use the existing full-frame unwarp to preserve perspective.
+        let objectMask,bounds,compact,maskOffset=null,maskPaths;
+        if(!submittedPatch.corners?.length){
+          const local=prepareCroppedCreateLayer(image,region);
+          objectMask=local.mask;bounds=local.bbox;compact=local.compact;
+          maskOffset=local.maskOffset;maskPaths=local.paths;
+        }else{
+          const positioned=makeCanvas(canvasSize.width,canvasSize.height);
+          positioned.getContext('2d').drawImage(image,region.x,region.y,region.w,region.h);
+          const layer=core.unwarpPatchSelection(positioned,submittedPatch);
+          objectMask=makeCanvas(canvasSize.width,canvasSize.height);
+          const m=objectMask.getContext('2d');
+          const pixels=layer.getContext('2d',{willReadFrequently:true}).getImageData(0,0,canvasSize.width,canvasSize.height);
+          // White mask alpha is binary; the source retains original PNG alpha.
+          for(let i=0;i<pixels.data.length;i+=4){
+            const alpha=pixels.data[i+3]>=8?255:0;
+            pixels.data[i]=pixels.data[i+1]=pixels.data[i+2]=255;
+            pixels.data[i+3]=alpha;
+          }
+          m.putImageData(pixels,0,0);
+          bounds=core.exactMaskBoundingBox(objectMask);
+          if(!bounds)throw Error('No visible pixels were returned for the new object.');
+          compact=core.compactOptionSource(layer,bounds,Math.max(24,Math.ceil(Math.max(bounds.w,bounds.h)*.08)));
+          maskPaths=core.maskPathsFromRaster(objectMask);
         }
-        m.putImageData(pixels,0,0);
-        const bounds=core.exactMaskBoundingBox(objectMask);
-        if(!bounds)throw Error('No visible pixels were returned for the new object.');
-        const compact=core.compactOptionSource(layer,bounds,Math.max(24,Math.ceil(Math.max(bounds.w,bounds.h)*.08)));
         if(regenerate){
           const sourceId=uid('created_source');
           state.sources.set(sourceId,{id:sourceId,name:'Regenerated transparent object',...compact,revealComplete:true});
@@ -692,8 +739,8 @@ async function generateRegion(patchId,regenerate=false){
         }else{
           Object.assign(state.sources.get(existing.sourceId),compact,{name:'Transparent Create object',revealComplete:true});
         }
-        existing.mask=objectMask;existing.maskOffset=null;existing.bbox=bounds;
-        existing.maskPaths=core.maskPathsFromRaster(objectMask);
+        existing.mask=objectMask;existing.maskOffset=maskOffset;existing.bbox=bounds;
+        existing.maskPaths=maskPaths;
         existing.maskPoints=existing.maskPaths.flat();
         existing.editMode='create';
         existing.maskAlignmentStatus=samStatus;
@@ -705,7 +752,9 @@ async function generateRegion(patchId,regenerate=false){
         if(existing.request){delete existing.request.baseImage;delete existing.request.reference;}
         if(!existing.manualName&&!existing.semanticNamed)
           existing.name=core.optionNameFromPrompt(existing.prompt,'Created object');
-        core.invalidateDisplayedMask(existing);
+        // New Create foreground has no Base-object geometry to repair. Avoid
+        // a synchronous full-frame object validation scan in this hot path.
+        core.invalidateDisplayedMask(existing,{geometryChanged:false});
         const group=state.groups.find(g=>g.patchIds.includes(patchId));
         const previous=group&&lastAppliedGenerations.get(group);
         const activate=Boolean(group&&core.groupChoiceVersion(group)===choiceAtStart&&
