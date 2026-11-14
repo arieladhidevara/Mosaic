@@ -67,7 +67,17 @@ window.runCreateIsolationChecks=async function(){
     assert(state.groups.some(g=>g.id===wallId),'Create result removed the wall');
     assert(state.groups.some(g=>g.id===created.id),'Create result lost its independent Group');
     assert(core.composeApprovedCanvas().toDataURL()!==originalScene,'Transparent Create result did not composite');
+    const cropPatch=state.patches.get(created.active),cropSource=state.sources.get(cropPatch.sourceId);
+    assert(cropPatch.maskOffset&&cropPatch.mask.width<canvas.width&&cropPatch.mask.height<canvas.height,
+      'Create generated a full-scene mask instead of a lightweight cropped mask');
+    assert(cropSource.crop&&cropSource.canvas.width<canvas.width&&cropSource.canvas.height<canvas.height,
+      'Create kept a full-scene RGBA buffer unnecessarily');
+    assert(cropPatch.bbox.x===cropPatch.maskOffset.x&&cropPatch.bbox.y===cropPatch.maskOffset.y,
+      'Cropped Create mask is not positioned in world coordinates');
+    assert(core.fullPatchMask(cropPatch).width===canvas.width,
+      'Create full-mask expansion is not available for legacy editing');
     checks.push('Transparent PNG output is composited as a new object without changing the original Group');
+    checks.push('Create uses cropped world-positioned RGBA/mask without full-image per-pixel readback');
     // Removing a new PNG cutout is just turning its own layer off. There is
     // already an accepted background underneath, so no image model is needed.
     const createdOption=created.active,generatedScene=core.composeApprovedCanvas().toDataURL();
