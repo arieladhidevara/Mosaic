@@ -256,7 +256,7 @@ function activePatchMarkup(){
     if(meta){
       const spans=meta.querySelectorAll('span');
       if(spans[0])spans[0].textContent=progress.detail||'';
-      if(spans[1])spans[1].textContent=progress.value+'%';
+      if(spans[1])spans[1].textContent=(progress.status?'':'≈ ')+progress.value+'%';
     }
     const bar=box.querySelector('.ai-progress-track');
     if(bar)bar.setAttribute('aria-valuenow',String(progress.value));
@@ -586,11 +586,13 @@ async function generateRegion(patchId,regenerate=false){
   const activeAtStart=groupAtStart?.active??null;
   const choiceAtStart=core.groupChoiceVersion(groupAtStart),requestOrder=++regionalRequestSerial,projectAtStart=state.selectionGeneration;
   const progress=beginAIProgress(
-    regenerate?'Regenerate · '+patch.name:'AI Edit · Region '+(patch.regionNumber||''),
+    regenerate?'Regenerate · '+patch.name:patch.createObject?'Creating object · Region '+(patch.regionNumber||''):'AI Edit · Region '+(patch.regionNumber||''),
     'Preparing selected area…',
     {patchId}
   );
   patch.generating=true;renderGroups();
+  // Paint the progress indicator before synchronous crop/PNG encoding.
+  await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
   // Freeze exactly the collage, crop and mask that were submitted. Subsequent
   // drawing/editing must not change a queued request's target or alignment.
   let capture;
