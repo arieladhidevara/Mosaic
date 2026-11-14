@@ -30,7 +30,7 @@ function overlappingGroupIds(mask){
 function registerForeground(mask,name='Created object'){
   const bbox=core.exactMaskBoundingBox(mask);if(!bbox)throw Error('Draw an area inside the image.');
   const behind=overlappingGroupIds(mask);
-  const frame=core.composeApprovedCanvas(),group=core.newGroup(mask,'Region');
+  const group=core.newGroup(mask,'Region');
   group.objectMapKey='manual';group.objectMapObjectKey=core.uid('manual_object');
   group.objectId=group.id;group.mapPrepared=true;group.manualName=true;
   group.objectName=group.name=name;group.objectBehind=[...behind];
@@ -41,7 +41,9 @@ function registerForeground(mask,name='Created object'){
   for(const id of behind){const covered=state.groups.find(item=>item.id===id);if(covered)
     covered.objectBehind=[...new Set([...(covered.objectBehind||[]),group.id])];}
   const sourceId=core.uid('create_source'),patchId=core.uid('create_option');
-  state.sources.set(sourceId,{id:sourceId,name:'Created object pixels',canvas:clone(frame)});
+  // The placement guide should NEVER copy pixels from objects beneath it.
+  // The new foreground starts empty; the AI PNG provides its RGBA pixels.
+  state.sources.set(sourceId,{id:sourceId,name:'New object (awaiting generation)',canvas:makeCanvas(canvas.width,canvas.height)});
   const paths=core.maskPathsFromRaster(mask);
   state.patches.set(patchId,{id:patchId,sourceId,groupId:group.id,mask:clone(mask),bbox,
     maskPaths:paths,maskPoints:paths.flat(),name:'Original',manualName:true,
