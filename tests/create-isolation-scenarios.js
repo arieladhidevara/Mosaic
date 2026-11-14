@@ -40,8 +40,12 @@ window.runCreateIsolationChecks=async function(){
     assert(pixels.every((value,index)=>index%4!==3||value===0),'Create copied underlying wall pixels');
     assert(core.composeApprovedCanvas().toDataURL()===originalScene,'Drawing Create modified the original scene');
     checks.push('Drawing over an existing object starts a new object ID, empty foreground and unchanged scene');
+    let samCreateRequests=0;
     window.MosaicAccount.request=async(path,options)=>{
-      if(path==='/api/ai/sam3')throw Error('Fixture: SAM 3 unavailable, use PNG alpha.');
+      if(path==='/api/ai/sam3'){
+        samCreateRequests++;
+        throw Error('Create must never send a SAM 3 request.');
+      }
       return originalSamRequest(path,options);
     };
     window.MosaicAuth.ensure=async()=>true;
@@ -64,6 +68,10 @@ window.runCreateIsolationChecks=async function(){
     c.fillStyle='#3166bb';c.fillRect(80,58,94,128);
     finish({image:cutout.toDataURL('image/png').split(',')[1],mimeType:'image/png'});
     await wait(()=>[...state.patches.values()].some(p=>p.createObject&&!p.generating&&!p.awaitingResult));
+    assert(samCreateRequests===0,'Create unexpectedly requested SAM 3 segmentation');
+    const completedCreate=[...state.patches.values()].find(p=>p.createObject&&!p.generating&&!p.awaitingResult);
+    assert(completedCreate?.maskAlignmentStatus==='png-alpha','Create must use original PNG alpha, not SAM');
+    assert(!completedCreate?.createSegmentationLabel,'Create should not retain obsolete SAM labels');
     assert(state.groups.some(g=>g.id===wallId),'Create result removed the wall');
     assert(state.groups.some(g=>g.id===created.id),'Create result lost its independent Group');
     assert(core.composeApprovedCanvas().toDataURL()!==originalScene,'Transparent Create result did not composite');
