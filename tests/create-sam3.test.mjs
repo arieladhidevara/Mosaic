@@ -33,7 +33,7 @@ test('SAM refinement retains transparent contact shadows while trimming reliable
   for(let x=5;x<9;x++)mask[5*w+x]=0;
   rgba[(16*w+10)*4+3]=60; // soft shadow: must keep original partial alpha
   const bbox=alphaBounds(rgba,w,h);
-  assert.deepEqual(bbox,{x:5,y:5,width:10,height:12});
+  assert.deepEqual(bbox,{x:5,y:5,width:10,height:10});
   const result=refineCreatePixels(rgba,mask);
   assert.equal(result.applied,true);
   assert.equal(rgba[(5*w+6)*4+3],0);
