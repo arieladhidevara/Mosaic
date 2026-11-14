@@ -1316,14 +1316,20 @@ function groupEvent(e){if(window.MosaicRegions?.handleGroupEvent(e))return;if(wi
   }
   if(action==='delete'&&group){if(state.pendingSourceId){toast('Finish the new image before removing variants.');return}group.patchIds=group.patchIds.filter(x=>x!==pid);state.patches.delete(pid);if(group.active===pid)group.active=group.patchIds.at(-1)||null;if(state.editingPatchId===pid)state.editingPatchId=null;if(state.selectedPatchId===pid)state.selectedPatchId=null;if(!group.patchIds.length)state.groups=state.groups.filter(g=>g.id!==group.id);else refreshGroupFootprint(group);resetSelection();renderGroups();render();toast('Variant removed.')}}
 function selectTool(tool){if(window.MosaicSourceEditor?.isEditing())return;
-  if(state.selectionGeometry&&['lasso','rect','ellipse','wand','reveal','erase','cut','transform'].includes(tool))ensureSelectionMask();
+  const creating=['lasso','rect','ellipse'].includes(tool);
+  const independentCreate=creating&&canCreateSelection()&&!state.maskEditOnly;
+  if(independentCreate){
+    // Create always begins a NEW foreground identity, never the active Object ID.
+    // Discard the old selection before drawing, even if it overlaps the new shape.
+    resetSelection();
+    setMode('new');
+  }else if(state.selectionGeometry&&['lasso','rect','ellipse','wand','reveal','erase','cut','transform'].includes(tool))ensureSelectionMask();
   clearHover();clearDraft();hideQuickPrompt();state.tool=tool;if(state.pendingSourceId&&tool==='reveal'){state.pendingRevealOnly=true;render()}$('resetTransformBtn').classList.toggle('hidden',tool!=='transform'||!activeTransformPatch());
   $('viewport').classList.toggle('is-selecting',['lasso','rect','ellipse','wand','reveal','erase'].includes(tool));
   $('wandOptions').classList.toggle('hidden',tool!=='wand');
   const modes=document.querySelector('.selection-modes');
-  const creating=['lasso','rect','ellipse'].includes(tool);
-  modes.classList.toggle('hidden',!creating);
-  if(creating){
+  modes.classList.toggle('hidden',!creating||independentCreate);
+  if(creating&&!independentCreate){
     const selected=Boolean(state.draftGroupId&&state.groups.some(g=>g.id===state.draftGroupId&&!g.mergedInto));
     const newButton=modes.querySelector('[data-mode="new"]');
     if(newButton){newButton.disabled=selected;newButton.title=selected?'Clear the current object selection to create a new object':'Create a new object';}
@@ -1735,43 +1741,9 @@ function commitMaskPath(trace,points=[],polygon=false){
   const hard=r.getImageData(0,0,raw.width,raw.height);for(let i=3;i<hard.data.length;i+=4)hard.data[i]=hard.data[i]>=128?255:0;r.putImageData(hard,0,0);
   if(['lasso','rect','ellipse'].includes(state.tool)&&!state.pendingSourceId&&!state.editingPatchId&&!state.maskEditOnly){
     m.restore();
-    // Add/Subtract modifies the currently selected object without creating a
-    // second overlapping object. Revealed pixels come from its unmasked image.
-    if(modifyingSelected){
-      if(state.selectionMode==='add')prepareRevealSource(selectedPatch);
-      editExistingCreateMask(selectedPatch,raw);
-      return;
-    }
-    if(['add','subtract'].includes(state.selectionMode)&&selectedGroup&&!selectedGroup.active){
-      const x=state.selectionMask.getContext('2d');
-      x.globalCompositeOperation=state.selectionMode==='subtract'?'destination-out':'source-over';
-      x.drawImage(raw,0,0);x.globalCompositeOperation='source-over';
-      if(!exactMaskBoundingBox(state.selectionMask)){toast('Selection cannot be empty.');return}
-      selectedGroup.footprint=cloneMask(state.selectionMask);
-      selectedGroup.maskCrop=null;
-      selectedGroup.maskPaths=maskPathsFromRaster(state.selectionMask);
-      state.selectionPaths=selectedGroup.maskPaths;state.selectionPoints=state.selectionPaths.flat();
-      state.selectionOverlayHidden=false;state.forceNewSelectionGroup=false;
-      selectTool('select');updateSelectionOutline();renderGroups();render();
-      return;
-    }
-    // Create tools always add a new foreground object, even when the drawn
-    // area overlaps a prepared wall, door or furniture Object ID.
-    // Multi-object editing remains available through the Select tool.
-    if(state.selectionMode==='new'){
-      window.MosaicObjectCreateCut?.create(raw);
-      return;
-    }
-    const grouped=window.MosaicObjectMap?.selectShape?.(raw);
-    if(grouped&&exactMaskBoundingBox(grouped)){
-      m.drawImage(grouped,0,0);
-      state.selectionPaths=[];state.selectionPoints=[];
-      state.selectionOverlayHidden=false;
-      finishMaskSelection();
-      message('Selected overlapping objects as one AI generation area. Object IDs remain independent.');
-    }else{
-      window.MosaicObjectCreateCut?.create(raw);
-    }
+    // Strict Create contract: the drawn path is a placement guide for a NEW
+    // foreground layer, not a lookup into Object Map or the selected mask.
+    window.MosaicObjectCreateCut?.create(raw);
     return;
   }
   if(state.selectionMode==='add')state.forceNewSelectionGroup=true;
@@ -1993,7 +1965,7 @@ function pointerDown(e){if(e.target.closest('form,button,input,textarea,select')
     else if(state.selectedPatchId){const originalTool=state.tool;editExisting(state.selectedPatchId);selectTool(originalTool)}
     else{toast('Return to the current composition to create a selection.');return}}
   const p=canvasPoint(e,!['lasso','rect','ellipse'].includes(state.tool));
-  if((e.ctrlKey||e.metaKey)&&['wand','lasso','rect','ellipse'].includes(state.tool)&&!state.lasso.length&&state.selectionMode!=='subtract')setMode('add');
+  if((e.ctrlKey||e.metaKey)&&(state.tool==='wand'||((state.pendingSourceId||state.editingPatchId||state.maskEditOnly)&&['lasso','rect','ellipse'].includes(state.tool)))&&!state.lasso.length&&state.selectionMode!=='subtract')setMode('add');
   if(state.tool==='wand'){e.preventDefault();window.MosaicSlimWand?.selectAt?.(p,{append:e.ctrlKey||e.metaKey,subtract:e.altKey});return}
   state.drawing=true;e.preventDefault();e.currentTarget.setPointerCapture(e.pointerId);
   if(state.tool==='lasso'){state.pointerStart=p;state.dragFreehand=false;state.hoverPoint=p;if(!state.lasso.length)state.lasso=[p];drawOverlay()}

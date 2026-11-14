@@ -965,8 +965,11 @@ async function generateSelection(prompt,groupId=null,referenceFiles=[]){
   const initialPoints=state.selectionPoints?.map(point=>({...point}))||[];
   const initialPaths=window.MozMaskGeometry.copyPaths(state.selectionPaths);
   const initialGroup=groupId||state.draftGroupId||null;
+  const createGroup=state.groups.find(g=>g.id===initialGroup&&g.createdLocally&&!g.createdViaAI);
   try{
-    const parts=!groupId?window.MosaicObjectMap?.partsForSelection(initialMask):null;
+    // A fresh Create must never be interpreted as a set of underlying object-map IDs.
+    // It is its own group, and the user's mask is an approximate placement guide.
+    const parts=createGroup||groupId?null:window.MosaicObjectMap?.partsForSelection(initialMask);
     // Resolve the ORIGINAL persistent Group for each selected Object ID.
     // A single existing object must never pass through a temporary batch
     // or derive a replacement mask from an approximate Object Map raster.
@@ -983,7 +986,10 @@ async function generateSelection(prompt,groupId=null,referenceFiles=[]){
       g.objectMapObjectKey===originalParts[0].objectKey);
     const selectedGroup=activeGroup||targetFromPart||null;
     let savedMask=initialMask,objectSelection=null,requestedGroupId=initialGroup;
-    if(originalParts.length>1){
+    if(createGroup){
+      savedMask=initialMask;
+      requestedGroupId=createGroup.id;
+    }else if(originalParts.length>1){
       // One OpenAI generation for a compound selection. Reuse whole EXISTING
       // object masks as the temporary union; split into the same Group IDs.
       const combined=makeCanvas(canvas.width,canvas.height),ctx=combined.getContext('2d');
