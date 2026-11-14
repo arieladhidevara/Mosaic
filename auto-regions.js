@@ -155,6 +155,8 @@ async function start() {
   window.MosaicMaskProgress?.show?.('auto','SAM 3 · Auto Create','Preparing image for segmentation…');
   window.MosaicMaskProgress?.highlight?.('auto',{whole:true});
   try {
+    // Show activity before potentially expensive canvas readback and mask work.
+    await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
     core.render();
     const scale = Math.min(1, 768/Math.max(sourceCanvas.width, sourceCanvas.height));
     const width = Math.max(1, Math.round(sourceCanvas.width*scale));
@@ -197,7 +199,8 @@ async function start() {
       if(serial!==revision)return;
       window.MosaicMaskProgress?.show?.('auto','SAM 3 · Auto Create',
         'Cleaning masks and organizing Groups…',Math.round(id/detected*100));
-      if(id%3===0)await new Promise(resolve=>setTimeout(resolve,0));
+      // Yield to the browser regularly so the indicator and canvas do not appear frozen.
+      if(id%2===0)await new Promise(resolve=>requestAnimationFrame(resolve));
       if(serial!==revision||master!==state.master)return;
       const smallMask=createMask(id);
       if(!smallMask)continue;

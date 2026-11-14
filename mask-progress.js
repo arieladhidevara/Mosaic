@@ -7,7 +7,7 @@ hud.id='maskProgressHud';
 hud.className='mask-progress-hud hidden';
 hud.setAttribute('role','status');
 hud.setAttribute('aria-live','polite');
-hud.innerHTML='<div class="mask-progress-title"><span class="mask-progress-spinner" aria-hidden="true">✦</span><strong id="maskProgressTitle">AI Mask</strong></div><div id="maskProgressDetail" class="mask-progress-detail"></div><div id="maskProgressTrack" class="mask-progress-track" role="progressbar" aria-label="AI masking progress"><div id="maskProgressFill" class="mask-progress-fill"></div></div>';
+hud.innerHTML='<div class="mask-progress-title"><span class="mask-progress-spinner" aria-hidden="true">✦</span><strong id="maskProgressTitle">AI Mask</strong><span id="maskProgressPercent" class="mask-progress-percent"></span></div><div id="maskProgressDetail" class="mask-progress-detail"></div><div id="maskProgressTrack" class="mask-progress-track" role="progressbar" aria-label="AI masking progress"><div id="maskProgressFill" class="mask-progress-fill"></div></div>';
 document.body.append(hud);
 
 const shimmer=document.createElement('div');
@@ -29,21 +29,24 @@ function drawProgress(){
   document.getElementById('maskProgressDetail').textContent=entry.detail;
   const track=document.getElementById('maskProgressTrack');
   const fill=document.getElementById('maskProgressFill');
+  const percentage=document.getElementById('maskProgressPercent');
   if(Number.isFinite(entry.percent)){
     const value=Math.max(0,Math.min(100,Math.round(entry.percent)));
     track.setAttribute('aria-valuenow',String(value));
     track.setAttribute('aria-valuemin','0');
     track.setAttribute('aria-valuemax','100');
     fill.style.width=value+'%';
+    percentage.textContent=(entry.estimated?'≈ ':'')+value+'%';
     fill.classList.remove('indeterminate');
   }else{
     track.removeAttribute('aria-valuenow');
+    percentage.textContent='Working…';
     fill.style.width='';
     fill.classList.add('indeterminate');
   }
 }
-function show(owner,title,detail,percent=null){
-  jobs.set(owner,{title,detail,percent:Number.isFinite(percent)?percent:null});
+function show(owner,title,detail,percent=null,estimated=false){
+  jobs.set(owner,{title,detail,percent:Number.isFinite(percent)?percent:null,estimated});
   drawProgress();
 }
 function hide(owner){

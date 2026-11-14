@@ -52,7 +52,7 @@ async function segmentFullFrame(image,oldGroups,onStatus=()=>{}){
   }
   return {masks,status:'sam3',segments:used.size};
 }
-async function apply(image,{type='ai-edit',prompt='',onStatus=()=>{},preserveEditing=false}={}){
+async function apply(image,{type='ai-edit',prompt='',onStatus=()=>{},onProgress=()=>{},preserveEditing=false}={}){
   if(!state.master)throw Error('Open a Base first.');
   if(image.width!==canvas.width||image.height!==canvas.height)throw Error('Full image must match the current canvas dimensions.');
   const generation=state.selectionGeneration,previous=state.master;
@@ -75,6 +75,7 @@ async function apply(image,{type='ai-edit',prompt='',onStatus=()=>{},preserveEdi
   if(generation!==state.selectionGeneration||previous!==state.master)
     throw Error('The working project changed while the original Object Map was preparing.');
   onStatus('Splitting the result with the original object masks…');
+  onProgress(91,'Splitting the result with the original object masks…');
   const before=core.composeApprovedCanvas();
   let groups=state.groups.filter(isVisible);
   if(!groups.length&&state.objectMap?.raster){
@@ -104,7 +105,10 @@ async function apply(image,{type='ai-edit',prompt='',onStatus=()=>{},preserveEdi
   // as the live Master; do not create a second full scene for history.
   const fullImage=image;
   const records=[];
-  for(const {group,mask,choice} of snapshots){
+  for(const [index,{group,mask,choice}] of snapshots.entries()){
+    // Large canvas/mask processing otherwise occupies the UI thread for
+    // many consecutive objects and makes the Assistant appear frozen.
+    if(index%2===0&&typeof requestAnimationFrame==='function')await new Promise(resolve=>requestAnimationFrame(resolve));
     const bounds=core.exactMaskBoundingBox(mask);
     if(!bounds)continue;
     const paths=core.maskPathsFromRaster(mask);
@@ -149,6 +153,7 @@ async function apply(image,{type='ai-edit',prompt='',onStatus=()=>{},preserveEdi
     if(!preserveEditing||!state.selectionTargetPatchId)group.active=patchId;
     core.refreshGroupFootprint(group);
     records.push({groupId:group.id,patchId,matched:Boolean(aligned.aligned),alignment:aligned.status});
+    onProgress(93+Math.round((index+1)/snapshots.length*6),'Saving object '+(index+1)+' of '+snapshots.length+'…');
   }
   // Immutable Base remains the background. Every AI Edit/Harmonize result is
   // represented by per-object RGB Options, never by replacing state.master.
@@ -157,6 +162,7 @@ async function apply(image,{type='ai-edit',prompt='',onStatus=()=>{},preserveEdi
   // of each object's appearance, with no archived full-scene source references.
   state.sceneVersionHistory=[];
   // If no Object Map existed, the reversible Entire image Option remains active.
+  onProgress(99,'Refreshing the updated scene…');
   renderGroups();render();
   return {category,objectCount:records.length,matched:records.filter(v=>v.matched).length,
     segmentationStatus:'locked-original'};
