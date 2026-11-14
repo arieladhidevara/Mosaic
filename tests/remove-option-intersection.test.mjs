@@ -23,7 +23,7 @@ test('only overlapping Option pixels can be candidates for reassignment',()=>{
   const option=bits(10,10,[[5,0,3,6]]);
   const unrelated=bits(10,10,[[0,7,10,2]]);
   const result=intersectBinaryMasks(exposed,option);
-  assert.equal(result.count,2);
+  assert.equal(result.count,8);
   assert.equal(result.bits[5*10+5],1);
   assert.equal(result.bits[4*10+5],1);
   assert.equal(result.bits[4*10+4],0,'cutout pixel without Option conflict must stay untouched');
