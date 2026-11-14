@@ -197,7 +197,8 @@ async function start() {
       if(serial!==revision)return;
       window.MosaicMaskProgress?.show?.('auto','SAM 3 · Auto Create',
         'Cleaning masks and organizing Groups…',Math.round(id/detected*100));
-      if(id%3===0)await new Promise(resolve=>setTimeout(resolve,0));
+      // Yield to the browser regularly so the indicator and canvas do not appear frozen.
+      if(id%2===0)await new Promise(resolve=>requestAnimationFrame(resolve));
       if(serial!==revision||master!==state.master)return;
       const smallMask=createMask(id);
       if(!smallMask)continue;
