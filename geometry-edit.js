@@ -319,7 +319,9 @@ function removeCreatedCutout(){
   }
   group.active=removed.id;
   group.objectRemoved=true;
-  core.refreshGroupFootprint(group);
+  // Geometry, pixels and masks beneath this foreground never changed.
+  // Just invalidate click picking; do NOT recalculate a Group footprint.
+  window.MosaicObjectMap?.invalidateHitIndex?.();
   core.resetSelection();
   renderGroups();render();
   window.MosaicDiskCache?.schedule?.();
