@@ -46,6 +46,8 @@ test('ownership analysis is gated by visible ready Options AND exact intersectio
   assert.match(source,/intersectBinaryMasks\(exposed,old\)/);
   assert.match(source,/if\(!intersection\.count\)return null/);
   assert.match(source,/if\(!candidates\.length\)return none/);
+  assert.match(source,/for\(const entry of candidates\.filter\(item=>item\.label\)/);
+  assert.doesNotMatch(source,/if\(!label\)return null/);
   assert.match(source,/entry\.overlapBits\[i\]&&fresh\[i\]&&!claimed\[i\]/);
   assert.match(source,/no-option-overlap/);
   assert.match(source,/return \{assignments,optionOverlapPixels:/);
