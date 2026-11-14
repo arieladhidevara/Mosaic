@@ -881,6 +881,8 @@ body:has(.source-editor-active) .mask-edit-controls,body:has(.source-editor-acti
   box-shadow:0 10px 30px #0005
 }
 .mask-progress-title{font-size:11px}
+.mask-progress-title strong{flex:1;min-width:0}
+.mask-progress-percent{flex:none;font-size:10px;color:#d9c8ff;font-variant-numeric:tabular-nums;white-space:nowrap}
 .mask-progress-track{height:4px;margin-top:3px}
 @media(max-width:650px){.mask-progress-hud{bottom:12px;right:12px}}
 /* A restrained purple/white shimmer over the selected object (or the image
