@@ -18,6 +18,7 @@ state.copilotSession??=null;
 let revision=0,busy=false,highlighted=[],pointed=null,pointerStart=null;
 let pendingReview=null,confirmedSelection=null,selectionSerial=0,reviewPointer=null;
 let lastSentContext=null;
+let chatGenerationProgress=null;
 const baseHashCache=new WeakMap(),fileHashCache=new WeakMap();
 const activeGroups=ids=>{const keys=new Set(ids||[]);return state.groups.filter(g=>keys.has(g.id)&&!g.mergedInto&&!g.objectMapBatch&&!g.objectRemoved)};
 function jpeg(source,maxEdge=940,quality=.77){
@@ -246,6 +247,31 @@ async function referenceImages(){
 function addButton(text,action,m){
   const b=document.createElement('button');b.type='button';b.textContent=text;b.onclick=()=>void execute(action,m);return b;
 }
+// An ephemeral progress row in the Assistant chat, independent of saved messages.
+function setChatGenerationProgress(event){
+  if(!event){
+    chatGenerationProgress=null;
+    thread.querySelector('#copilotGenerationProgress')?.remove();
+    return;
+  }
+  chatGenerationProgress=event;
+  let row=thread.querySelector('#copilotGenerationProgress');
+  if(!row){
+    row=document.createElement('div');
+    row.id='copilotGenerationProgress';
+    row.className='copilot-message assistant copilot-generation-progress';
+    row.innerHTML='<div class="copilot-progress-heading"><strong>Full-image generation</strong><span class="copilot-progress-percent"></span></div><div class="copilot-progress-track" role="progressbar" aria-label="Full-image generation progress" aria-valuemin="0" aria-valuemax="100"><div class="copilot-progress-fill"></div></div><small class="copilot-progress-detail"></small><small class="copilot-progress-note">Estimated progress · OpenAI does not report a live percentage</small>';
+    thread.append(row);
+  }
+  const value=Math.max(0,Math.min(100,Math.round(event.value??0)));
+  row.querySelector('.copilot-progress-percent').textContent=(event.status?'':'≈ ')+value+'%';
+  row.querySelector('.copilot-progress-fill').style.width=value+'%';
+  row.querySelector('.copilot-progress-detail').textContent=event.detail||'Preparing…';
+  row.querySelector('[role="progressbar"]').setAttribute('aria-valuenow',String(value));
+  row.classList.toggle('complete',event.status==='success');
+  row.classList.toggle('failed',event.status==='error');
+  if(thread.scrollHeight-thread.scrollTop-thread.clientHeight<160)thread.scrollTop=thread.scrollHeight;
+}
 function renderThread(){
   if(!busy)send.textContent='↑';
   thread.replaceChildren();
@@ -288,6 +314,7 @@ function renderThread(){
     }
     thread.append(el);
   }
+  if(chatGenerationProgress)setChatGenerationProgress(chatGenerationProgress);
   thread.scrollTop=thread.scrollHeight;
 }
 async function execute(action,m){
@@ -300,11 +327,15 @@ async function execute(action,m){
   if(!plan.editPrompt||busy)return;
   if(!canGenerate(m)){status.textContent='Confirm the current selection before generating.';return}
   busy=true;send.disabled=true;
+  const fullImage=(action==='preview'||action==='generate'&&plan.scope!=='region');
+  if(fullImage)setChatGenerationProgress({value:3,detail:'Preparing full-image request…'});
+  // Give the browser a chance to paint the bar before image encoding starts.
+  await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
   try{
     if(!await window.MosaicAuth.ensure())throw Error('Connect your OpenAI API key.');
     if(action==='preview'){
       status.textContent='Generating a low-quality concept preview…';
-      const img=await premium.generateComposition(plan.editPrompt,files(),core.composeApprovedCanvas(),null,{quality:'low'});
+      const img=await premium.generateComposition(plan.editPrompt,files(),core.composeApprovedCanvas(),null,{quality:'low',onProgress:setChatGenerationProgress});
       state.chatMessages.push({role:'assistant',text:'Small concept preview only. Master remains unchanged.',preview:jpeg(img,500,.75)});
       status.textContent='Preview ready · not applied';
     }else if(action==='generate'){
@@ -315,15 +346,24 @@ async function execute(action,m){
         state.chatMessages.push({role:'assistant',text:'Masked edit submitted. Original object identities remain locked. Review the generated Options in Groups.'});
       }else{
         status.textContent='Generating full composition…';
-        const img=await premium.generateComposition(plan.editPrompt,files(),core.composeApprovedCanvas());
-        await window.MosaicSceneVersions.apply(img,{type:plan.scope==='harmonize'?'harmonize':'ai-edit',prompt:plan.editPrompt,onStatus:t=>{status.textContent=t}});
+        await premium.generateComposition(plan.editPrompt,files(),core.composeApprovedCanvas(),null,{
+          onProgress:setChatGenerationProgress,
+          onResult:async(img,progress)=>{
+            await window.MosaicSceneVersions.apply(img,{
+              type:plan.scope==='harmonize'?'harmonize':'ai-edit',
+              prompt:plan.editPrompt,
+              onStatus:detail=>{status.textContent=detail;progress.update(93,detail)},
+              onProgress:(value,detail)=>progress.update(value,detail)
+            });
+          }
+        });
         state.chatMessages.push({role:'assistant',text:'New full-image version created. Review it before further editing.'});
       }
       status.textContent='Generation completed or submitted. Review your options.';
     }
     renderThread();
   }catch(e){status.textContent=e.message||'Generation failed';state.chatMessages.push({role:'assistant',text:'Generation failed: '+(e.message||'Unknown error')});renderThread()}
-  finally{busy=false;send.disabled=false}
+  finally{busy=false;send.disabled=false;setChatGenerationProgress(null)}
 }
 async function submit(event){
   event.preventDefault();event.stopImmediatePropagation();if(busy)return;
